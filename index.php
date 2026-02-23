@@ -71,7 +71,7 @@
 <section class="products container">
 
     <div class="section-header">
-        <h3>NEW SHOP DROPS</h3>
+        <h3>NEW <span class="header-span">SHOP</span> DROPS</h3>
         <a href="#" class="view-all">VIEW ALL +</a>
     </div>
 
@@ -190,7 +190,7 @@
 <section class="products container">
 
     <div class="section-header">
-        <h3>NEW MARKETPLACE DROPS</h3>
+        <h3>NEW <span class="header-span">MARKETPLACE</span> DROPS</h3>
         <a href="#" class="view-all">VIEW ALL +</a>
     </div>
 
@@ -284,6 +284,72 @@
                     </div>
                 </article>
             </div>
+        </div>
+    </div>
+</section>
+
+
+<section class="guestbook container">
+    <div class="section-header">
+        <h3>GUESTBOOK <span class="header-span">SHOUTOUTS</span></h3>
+        <a href="#" class="view-all">VIEW ALL +</a>
+    </div>
+
+    <div class="guestbook-grid">
+        <div class="product-card grainy-card guest-form-card">
+            <h4>DROP A LINE</h4>
+            <form class="simple-form">
+                <div class="input-group">
+                    <input type="text" placeholder="SKATER HANDLE" required>
+                    <input type="number" placeholder="STOKE LEVEL (1-5)" min="1" max="5" required>
+                </div>
+                <textarea placeholder="WHAT'S THE WORD?" rows="4"></textarea>
+                <button class="btn btn-primary">POST SHOUTOUT</button>
+            </form>
+        </div>
+
+        <div class="reviews-container custom-scrollbar">
+            <div class="product-card grainy-card review-item">
+                <div class="review-header">
+                    <h4>@TRICK_WIZARD</h4>
+                    <span class="stars">★★★★★</span>
+                </div>
+                <p>"The V3 trucks are absolute tanks. Fast shipping!"</p>
+                <span class="timestamp">2 HOURS AGO</span>
+            </div>
+
+            <div class="product-card grainy-card review-item">
+                <div class="review-header">
+                    <h4>RAD_DAD_88</h4>
+                    <span class="stars">★★★★☆</span>
+                </div>
+                <p>"Found a vintage board in 20 minutes. Legit."</p>
+                <span class="timestamp">YESTERDAY</span>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="service-info container">
+        <div class="section-header">
+            <h3>SERVICES</h3>
+        </div>
+
+    <div class="info-grid">
+        <div class="info-block">
+            <span class="material-icons">public</span>
+            <h4>WORLDWIDE</h4>
+            <p>Fast shipping to every corner of the universe.</p>
+        </div>
+        <div class="info-block">
+            <span class="material-icons">verified_user</span>
+            <h4>SECURE MARKET</h4>
+            <p>Every board is checked by our crew before payout.</p>
+        </div>
+        <div class="info-block">
+            <span class="material-icons">favorite</span>
+            <h4>GIVING BACK</h4>
+            <p>Supporting local skatepark builds since '24.</p>
         </div>
     </div>
 </section>
