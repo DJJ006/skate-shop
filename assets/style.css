@@ -381,16 +381,46 @@ body{
     background: var(--bg-dark);
     color: var(--bg-light);
     border-bottom: 4px solid var(--primary);
+    border-top: 4px solid var(--primary);
 }
 
 .section-header-reels{
     display: flex;
-    justify-content: flex-start; 
+    justify-content: space-between; 
     align-items: center;
     gap: 2rem;
     border-bottom: 4px solid var(--bg-light);
     margin-bottom: 3rem;
     padding-bottom: 1rem;
+}
+
+.header-title-group{
+    display: flex;
+    align-items: center;
+    gap: 2rem;
+}
+
+.btn-submit{
+    font-family: 'Staatliches', sans-serif;
+    font-size: 1.5rem;
+    padding: 1rem 2.5rem;
+    border: 4px solid var(--bg-light);
+    cursor: pointer;
+    transition: var(--transition);
+    background: transparent;
+    color: var(--textwhite);
+}
+
+.btn-submit:hover{
+    background: var(--primary);
+    color: var(--textwhite);
+    transform: translateY(-4px);
+    box-shadow:var(--boxshadow);
+}
+
+.btn-submit:active{
+    transform: translate(0, 0);
+    box-shadow: none;
 }
 
 .section-header-reels h3{ 
@@ -399,6 +429,7 @@ body{
     font-style: italic;
     font-weight: 800;
     letter-spacing: -2px;
+    color: var(--textwhite);
 }
 
 .timer-controls-group{
@@ -672,6 +703,158 @@ body{
     font-size: 1.2rem;
     color: white;
     font-weight: 600;
+}
+
+
+ /*THE MAG*/
+ .the-mag{
+    background: var(--bg-dark);
+    padding: 6rem 0;
+    border-bottom: 4px solid var(--primary);
+    border-top: 4px solid var(--primary);
+}
+
+.issue-no{
+    color: var(--primary);
+    font-size: 1.2rem;
+    font-weight: 700;
+    transform: skewX(-8deg);
+    text-transform: uppercase;
+}
+
+.mag-grid{
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 3rem;
+}
+
+@media (min-width: 992px){
+    .mag-grid {
+        grid-template-columns: 2fr 1fr;
+    }
+}
+
+.mag-card{
+    background: var(--charcoal);
+    border: 1px solid #333;
+    transition: transform 0.3s ease;
+}
+
+.mag-img-wrap{
+    position: relative;
+    overflow: hidden;
+    aspect-ratio: 16 / 9;
+}
+
+.mag-img-wrap img{
+    z-index: 1;
+    position: relative;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    filter: grayscale(100%);
+    transition: filter 0.5s ease, transform 0.5s ease;
+}
+
+.mag-card:hover .mag-img-wrap img{
+    filter: grayscale(0%);
+    transform: scale(1.05);
+}
+
+.mag-img-wrap::after{
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+    opacity: 0.15;
+    pointer-events: none; 
+    transition: opacity 0.4s ease;
+    mix-blend-mode: overlay;
+    z-index: 2;
+}
+
+.mag-card:hover .mag-img-wrap::after{
+    opacity: 0;
+}
+
+.mag-content{
+    padding: 2rem;
+}
+
+.mag-tag{
+    position: absolute;
+    top: 1rem;
+    left: 1rem;
+    background: var(--primary);
+    color: white;
+    padding: 0.3rem 0.8rem;
+    font-family: 'Staatliches', sans-serif;
+    font-size: 1.1rem;
+}
+
+.mag-date{
+    color: var(--primary);
+    font-size: 1.1rem;
+    font-weight: 700;
+    font-style: italic;
+    text-transform: uppercase;
+}
+
+.mag-card h2{
+    font-family: 'Staatliches', sans-serif;
+    font-size: 2.5rem;
+    margin: 1rem 0;
+    line-height: 1;
+    transform: skewX(-5deg);
+    color: var(--textwhite);
+}
+
+.mag-card p{
+    color: var(--bg-light);
+    margin-bottom: 1.5rem;
+    line-height: 1.6;
+    font-size: 1.2rem;
+    font-weight: 500;
+}
+
+.read-more{
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--textwhite);
+    font-family: 'Staatliches', sans-serif;
+    font-weight: bold;
+    text-decoration: none;
+    border-bottom: 2px solid var(--primary);
+    padding-bottom: 2px;
+    transition: color 0.2s ease, border-color 0.2s ease;
+    font-size: 1.1rem;
+}
+
+.read-more:hover{
+    color: var(--primary);
+    border-bottom-color: var(--textwhite);
+}
+
+
+.mag-sidebar{
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+}
+
+.mag-card.small h3{
+    font-family: 'Staatliches', sans-serif;
+    font-size: 1.5rem;
+    margin: 0.5rem 0 1rem;
+    color: var(--textwhite);
+}
+
+.mag-card.small .mag-img-wrap{
+    aspect-ratio: 21 / 9;
 }
 
 /*FOOTER*/
