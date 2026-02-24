@@ -140,7 +140,7 @@
                     <div class="scanlines"></div>
                     <div class="glitch-overlay" id="glitch-layer"></div>
                     <video id="video-display" playsinline>
-                        <source src="./Skate_Vids/skulls-dylmatic.mp4" type="video/mp4">
+                        <source src="./assets/Skate_Vids/skulls-dylmatic.mp4" type="video/mp4">
                     </video>
                     <div class="play-btn-overlay" id="play-icon">
                         <span class="material-icons">play_circle</span>
@@ -172,13 +172,13 @@
             </div>
 
             <div class="tape-library" id="tape-list">
-                <div class="tape-item active" data-video="./Skate_Vids/skulls-dylmatic.mp4" data-title="SKULLS" data-meta="FILMED BY: DYLMATIC // 01:08">
+                <div class="tape-item active" data-video="./assets/Skate_Vids/skulls-dylmatic.mp4" data-title="SKULLS" data-meta="FILMED BY: DYLMATIC // 01:08">
                     <span class="tape-label">TAPE_01: SKULLS</span>
                 </div>
-                <div class="tape-item" data-video="./Skate_Vids/hoseapeeters-ballroom.mp4" data-title="BALLROOM" data-meta="FILMED BY: Hosea Peeters // 01:54">
+                <div class="tape-item" data-video="./assets/Skate_Vids/hoseapeeters-ballroom.mp4" data-title="BALLROOM" data-meta="FILMED BY: Hosea Peeters // 01:54">
                     <span class="tape-label">TAPE_02: BALLROOM</span>
                 </div>
-                <div class="tape-item" data-video="./Skate_Vids/tearz-askateedit-danielmoore.mp4" data-title="A SKATE EDIT" data-meta="FILMED BY: Tearz and Daniel Moore // 01:42">
+                <div class="tape-item" data-video="./assets/Skate_Vids/tearz-askateedit-danielmoore.mp4" data-title="A SKATE EDIT" data-meta="FILMED BY: Tearz and Daniel Moore // 01:42">
                     <span class="tape-label">TAPE_03: A_SKATE_EDIT</span>
                 </div>
             </div>
@@ -238,6 +238,24 @@
         
     </div>
 </section>
+
+<div class="marquee-banner marketplace-section">
+    <div class="marquee-content marketplace-marquee">
+        <img src="vans-logo.svg" alt="Vans" class="brand-logo">
+        <img src="https://cdn.shopify.com/s/files/1/1111/1910/files/nikw-logo-colour_480x480.png?v=1580136851" alt="Nike SB" class="brand-logo">
+        <img src="spitfire-logo.svg" alt="Spitfire" class="brand-logo">
+        <img src="santa-cruz-logo.svg" alt="Santa Cruz" class="brand-logo">
+        <img src="element-logo.svg" alt="Element" class="brand-logo">
+        <img src="thrasher-logo.svg" alt="Thrasher" class="brand-logo">
+
+        <img src="vans-logo.svg" alt="Vans" class="brand-logo">
+        <img src="nike-sb-logo.svg" alt="Nike SB" class="brand-logo">
+        <img src="spitfire-logo.svg" alt="Spitfire" class="brand-logo">
+        <img src="santa-cruz-logo.svg" alt="Santa Cruz" class="brand-logo">
+        <img src="element-logo.svg" alt="Element" class="brand-logo">
+        <img src="thrasher-logo.svg" alt="Thrasher" class="brand-logo">
+    </div>
+</div>
 
 <section class="the-mag section">
     <div class="container">
@@ -331,23 +349,31 @@
 </section>
 
 <section class="service-info container">
-        <div class="section-header">
-            <h3>SERVICES</h3>
-        </div>
+    <div class="section-header">
+        <h3>SERVICES</h3>
+    </div>
 
     <div class="info-grid">
-        <div class="info-block">
-            <span class="material-icons">public</span>
+        <div class="info-block grainy-card">
+            <div class="icon-badge">
+                <span class="material-icons">public</span>
+            </div>
             <h4>WORLDWIDE</h4>
             <p>Fast shipping to every corner of the universe.</p>
         </div>
-        <div class="info-block">
-            <span class="material-icons">verified_user</span>
+
+        <div class="info-block grainy-card">
+            <div class="icon-badge">
+                <span class="material-icons">verified_user</span>
+            </div>
             <h4>SECURE MARKET</h4>
             <p>Every board is checked by our crew before payout.</p>
         </div>
-        <div class="info-block">
-            <span class="material-icons">favorite</span>
+
+        <div class="info-block grainy-card">
+            <div class="icon-badge">
+                <span class="material-icons">favorite</span>
+            </div>
             <h4>GIVING BACK</h4>
             <p>Supporting local skatepark builds since '24.</p>
         </div>
