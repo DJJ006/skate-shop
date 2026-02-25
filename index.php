@@ -416,7 +416,7 @@
         </div>
 
         <div class="footer-bottom">
-            <p>© 2026 SKATESHOP UNIVERSE. ALL RIGHTS RESERVED. NO REFUNDS IN SPACE.</p>
+            <p>© 2026 SKATESHOP UNIVERSE. ALL RIGHTS RESERVED.</p>
         </div>
     </div>
 </footer>
