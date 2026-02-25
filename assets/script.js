@@ -1,4 +1,32 @@
 document.addEventListener('DOMContentLoaded', () => {
+    
+    // --- 1. MOBILE HAMBURGER NAVIGATION ---
+    const menuBtn = document.getElementById('menu-btn');
+    const navMenu = document.getElementById('nav-menu');
+
+    if (menuBtn && navMenu) {
+        menuBtn.addEventListener('click', () => {
+            navMenu.classList.toggle('active');
+            
+            // Toggle between menu and close icons
+            const icon = menuBtn.querySelector('.material-icons');
+            if (navMenu.classList.contains('active')) {
+                icon.textContent = 'close';
+            } else {
+                icon.textContent = 'menu';
+            }
+        });
+
+        // Close menu when clicking a link (ideal for single-page sites)
+        document.querySelectorAll('.nav-item').forEach(link => {
+            link.addEventListener('click', () => {
+                navMenu.classList.remove('active');
+                menuBtn.querySelector('.material-icons').textContent = 'menu';
+            });
+        });
+    }
+
+
     // 1. SELECT ELEMENTS
     const video = document.getElementById('video-display');
     const playIcon = document.getElementById('play-icon');
@@ -9,6 +37,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const progressBar = document.getElementById('progress-bar');
     const currTimeText = document.getElementById('current-time');
     const durationText = document.getElementById('total-duration');
+    
 
     // ------------VIDEO PLAYERIS---------------
     

@@ -8,28 +8,27 @@
     <script src="assets/script.js" defer></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link rel="icon" href="./assets/images/skateshop_favicon.png" type="image/png">
+
 </head>
 <body>
 
 <header class="main-header">
-
     <div class="container header-content">
-
         <h1 class="logo">SKATE<span>SHOP</span></h1>
 
-        <nav class="desktop-nav">
-        <ul class="nav-links">
-            <li><a href="#" class="nav-item">SHOP</a></li>
-            <li><a href="#" class="nav-item">MARKET</a></li>
-            <li><a href="#" class="nav-item">COMMUNITY</a></li>
-            <li><a href="#" class="login-btn">LOGIN</a></li>
-        </ul>
-        </nav>
-
-        <!-- <div class="mobile-menu-icon" id="menu-btn">
+        <div class="mobile-menu-icon" id="menu-btn">
             <span class="material-icons">menu</span>
-        </div> -->
+        </div>
 
+        <nav class="desktop-nav" id="nav-menu">
+            <ul class="nav-links">
+                <li><a href="#" class="nav-item">SHOP</a></li>
+                <li><a href="#" class="nav-item">MARKET</a></li>
+                <li><a href="#" class="nav-item">COMMUNITY</a></li>
+                <li><a href="#" class="login-btn">LOGIN</a></li>
+            </ul>
+        </nav>
     </div>
 </header>
 
@@ -241,19 +240,19 @@
 
 <div class="marquee-banner marketplace-section">
     <div class="marquee-content marketplace-marquee">
-        <img src="vans-logo.svg" alt="Vans" class="brand-logo">
-        <img src="https://cdn.shopify.com/s/files/1/1111/1910/files/nikw-logo-colour_480x480.png?v=1580136851" alt="Nike SB" class="brand-logo">
-        <img src="spitfire-logo.svg" alt="Spitfire" class="brand-logo">
-        <img src="santa-cruz-logo.svg" alt="Santa Cruz" class="brand-logo">
-        <img src="element-logo.svg" alt="Element" class="brand-logo">
-        <img src="thrasher-logo.svg" alt="Thrasher" class="brand-logo">
+        <img src="./assets/svg/vans_logo_svg.svg" alt="Vans" class="brand-logo">
+        <img src="./assets/svg/nike_sb_logo_svg.svg" alt="Nike SB" class="brand-logo">
+        <img src="./assets/svg/spitfire_logo_svg.svg" alt="Spitfire" class="brand-logo">
+        <img src="./assets/svg/santa_cruz_logo_svg.svg" alt="Santa Cruz" class="brand-logo">
+        <img src="./assets/svg/element_logo_svg.svg" alt="Element" class="brand-logo">
+        <img src="./assets/svg/trasher_logo_svg.svg" alt="Thrasher" class="brand-logo">
 
-        <img src="vans-logo.svg" alt="Vans" class="brand-logo">
-        <img src="nike-sb-logo.svg" alt="Nike SB" class="brand-logo">
-        <img src="spitfire-logo.svg" alt="Spitfire" class="brand-logo">
-        <img src="santa-cruz-logo.svg" alt="Santa Cruz" class="brand-logo">
-        <img src="element-logo.svg" alt="Element" class="brand-logo">
-        <img src="thrasher-logo.svg" alt="Thrasher" class="brand-logo">
+        <img src="./assets/svg/vans_logo_svg.svg" alt="Vans" class="brand-logo">
+        <img src="./assets/svg/nike_sb_logo_svg.svg" alt="Nike SB" class="brand-logo">
+        <img src="./assets/svg/spitfire_logo_svg.svg" alt="Spitfire" class="brand-logo">
+        <img src="./assets/svg/santa_cruz_logo_svg.svg" alt="Santa Cruz" class="brand-logo">
+        <img src="./assets/svg/element_logo_svg.svg" alt="Element" class="brand-logo">
+        <img src="./assets/svg/trasher_logo_svg.svg" alt="Thrasher" class="brand-logo">
     </div>
 </div>
 
@@ -385,7 +384,7 @@
         <div class="footer-grid">
             <div class="footer-brand">
                 <h2 class="footer-logo">SKATE<span>SHOP</span></h2>
-                <p>The premier destination for the skate community. Built for the streets, inspired by the universe. Raw, DIY, and unapologetically bold.</p>
+                <p>The premier destination for the skate community. From Liepāja to the world - built for the streets, inspired by the universe. A hub for progression, style, and real skate energy.</p>
                 <div class="social-icons">
                     <a href="#"><i class="fab fa-facebook-f"></i></a>
                     <a href="#"><i class="fab fa-instagram"></i></a>
