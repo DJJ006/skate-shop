@@ -1,0 +1,207 @@
+:root{
+    --primary: #E11D48;
+    --bg-light: #F5F2E8;
+    --bg-dark: #1A1A1A;
+    --charcoal: #2D2D2D;
+    --textwhite: #ffffff;
+    --transition: 0.3s ease;
+    --boxshadow: 0 4px 10px rgba(0,0,0,0.2);
+}
+
+
+/*SHOP-TITLE*/
+.glitch-text-shop{
+    font-family: 'Staatliches', sans-serif;
+    line-height: 0.85;
+    letter-spacing: -4px;
+    font-size: 5rem; 
+    margin-top: 3rem;
+    margin-bottom: 3rem;
+    border-bottom: 4px solid var(--charcoal);
+    padding-bottom: 1rem;
+}
+
+
+/*SHOP-LAYOUT*/
+.shop-layout{
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 4rem;
+    padding-bottom: 6rem;
+}
+
+.shop-sidebar{
+    border-right: 4px solid var(--charcoal);
+    padding-right: 2rem;
+}
+
+
+/*SHOP-LAYOUT FILTER*/
+.filter-group{
+    margin-bottom: 3rem;
+    border-bottom: 2px solid var(--charcoal);
+    padding-bottom: 1.5rem;
+}
+
+.filter-group h4{
+    color: var(--primary);
+    font-size: 1.8rem;
+    margin-bottom: 1rem;
+    font-weight: 900;
+    transform: skewX(-8deg);
+    text-transform: uppercase;
+}
+
+.filter-list{
+    list-style: none;
+    padding: 0;
+}
+
+.filter-list li{
+    margin-bottom: 0.8rem;
+}
+
+.filter-list label{
+    font-family: 'Staatliches', sans-serif;
+    font-weight: 700;
+    font-size: 1.1rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    text-transform: uppercase;
+}
+
+.filter-list input[type="checkbox"],
+.filter-list input[type="radio"]{
+    appearance: none;
+    width: 20px;
+    height: 20px;
+    border: 2px solid var(--charcoal);
+    background: var(--textwhite);
+    cursor: pointer;
+}
+
+.filter-list input[type="checkbox"]:checked,
+.filter-list input[type="radio"]:checked{
+    background: var(--primary);
+    border-color: var(--primary);
+}
+
+/*SORTING*/
+.shop-controls{
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+    border-bottom: 4px solid var(--charcoal);
+    padding-bottom: 1.5rem;
+}
+
+.shop-controls p{
+    font-family: 'Staatliches', sans-serif;
+    font-size: 1.5rem;
+}
+
+.sort-dropdown{
+    background: var(--textwhite);
+    border: 3px solid var(--charcoal);
+    padding: 0.5rem 1rem;
+    font-family: 'Staatliches', sans-serif;
+    font-size: 1.2rem;
+    font-weight: 500;
+    cursor: pointer;
+}
+
+.sort-dropdown:hover{
+    background: var(--primary);
+    border: 3px solid var(--charcoal);
+    color: var(--textwhite);
+    transition: var(--transition);
+}
+
+.sort-dropdown:hover option{
+    color: var(--charcoal);
+    background: var(--textwhite);
+}
+
+.search-wrapper{
+    display: flex;
+    width: 100%;
+    max-width: 500px;
+    border: 3px solid var(--charcoal);
+    background: var(--textwhite);
+    transition: var(--transition);
+}
+
+.search-wrapper:focus-within{
+    box-shadow: 6px 6px 0px var(--primary); 
+    transform: translate(-2px, -2px);
+}
+
+#shop-search{
+    flex-grow: 1;
+    border: none;
+    padding: 1rem;
+    font-family: 'Staatliches', sans-serif;
+    font-size: 1.5rem;
+    outline: none;
+    background: transparent;
+    color: var(--charcoal);
+}
+
+.search-btn{
+    background: var(--charcoal);
+    color: var(--textwhite);
+    border: none;
+    padding: 0 1.5rem;
+    cursor: pointer;
+    transition: var(--transition);
+    display: flex;
+    align-items: center;
+}
+
+.search-btn:hover{
+    background: var(--primary);
+}
+
+.search-btn .material-icons{
+    font-size: 2rem;
+}
+
+.controls-meta{
+    display: flex;
+    align-items: center;
+    gap: 2rem;
+    justify-content: space-between;
+}
+
+/*PAGINATION*/
+.pagination{
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
+    margin-top: 4rem;
+    padding-top: 2rem;
+    border-top: 4px solid var(--charcoal);
+}
+
+.pagination .btn{
+    padding: 0.5rem 1.5rem;
+    font-size: 1.5rem;
+}
+
+@media (min-width: 992px){
+    .shop-layout{
+        grid-template-columns: 250px 1fr;
+    }
+}
+
+@media (min-width: 768px){
+    .shop-controls {
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: flex-end;
+    }
+}
+

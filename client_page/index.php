@@ -4,33 +4,16 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SkateShop</title>
-    <link rel="stylesheet" href="assets/style.css">
-    <script src="assets/script.js" defer></script>
+    <link rel="stylesheet" href="../assets/style.css">
+    <script src="../assets/script.js" defer></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-    <link rel="icon" href="./assets/images/skateshop_favicon.png" type="image/png">
+    <link rel="icon" href="../assets/images/skateshop_favicon.png" type="image/png">
 
 </head>
 <body>
 
-<header class="main-header">
-    <div class="container header-content">
-        <h1 class="logo">SKATE<span>SHOP</span></h1>
-
-        <div class="mobile-menu-icon" id="menu-btn">
-            <span class="material-icons">menu</span>
-        </div>
-
-        <nav class="desktop-nav" id="nav-menu">
-            <ul class="nav-links">
-                <li><a href="#" class="nav-item">SHOP</a></li>
-                <li><a href="#" class="nav-item">MARKET</a></li>
-                <li><a href="#" class="nav-item">COMMUNITY</a></li>
-                <li><a href="#" class="login-btn">LOGIN</a></li>
-            </ul>
-        </nav>
-    </div>
-</header>
+<?php include 'header.php'; ?>
 
 <div class="marquee-banner">
     <div class="marquee-content">
@@ -139,7 +122,7 @@
                     <div class="scanlines"></div>
                     <div class="glitch-overlay" id="glitch-layer"></div>
                     <video id="video-display" playsinline>
-                        <source src="./assets/Skate_Vids/skulls-dylmatic.mp4" type="video/mp4">
+                        <source src="../assets/Skate_Vids/skulls-dylmatic.mp4" type="video/mp4">
                     </video>
                     <div class="play-btn-overlay" id="play-icon">
                         <span class="material-icons">play_circle</span>
@@ -171,13 +154,13 @@
             </div>
 
             <div class="tape-library" id="tape-list">
-                <div class="tape-item active" data-video="./assets/Skate_Vids/skulls-dylmatic.mp4" data-title="SKULLS" data-meta="FILMED BY: DYLMATIC // 01:08">
+                <div class="tape-item active" data-video="../assets/Skate_Vids/skulls-dylmatic.mp4" data-title="SKULLS" data-meta="FILMED BY: DYLMATIC // 01:08">
                     <span class="tape-label">TAPE_01: SKULLS</span>
                 </div>
-                <div class="tape-item" data-video="./assets/Skate_Vids/hoseapeeters-ballroom.mp4" data-title="BALLROOM" data-meta="FILMED BY: Hosea Peeters // 01:54">
+                <div class="tape-item" data-video="../assets/Skate_Vids/hoseapeeters-ballroom.mp4" data-title="BALLROOM" data-meta="FILMED BY: Hosea Peeters // 01:54">
                     <span class="tape-label">TAPE_02: BALLROOM</span>
                 </div>
-                <div class="tape-item" data-video="./assets/Skate_Vids/tearz-askateedit-danielmoore.mp4" data-title="A SKATE EDIT" data-meta="FILMED BY: Tearz and Daniel Moore // 01:42">
+                <div class="tape-item" data-video="../assets/Skate_Vids/tearz-askateedit-danielmoore.mp4" data-title="A SKATE EDIT" data-meta="FILMED BY: Tearz and Daniel Moore // 01:42">
                     <span class="tape-label">TAPE_03: A_SKATE_EDIT</span>
                 </div>
             </div>
@@ -240,19 +223,19 @@
 
 <div class="marquee-banner marketplace-section">
     <div class="marquee-content marketplace-marquee">
-        <img src="./assets/svg/vans_logo_svg.svg" alt="Vans" class="brand-logo">
-        <img src="./assets/svg/nike_sb_logo_svg.svg" alt="Nike SB" class="brand-logo">
-        <img src="./assets/svg/spitfire_logo_svg.svg" alt="Spitfire" class="brand-logo">
-        <img src="./assets/svg/santa_cruz_logo_svg.svg" alt="Santa Cruz" class="brand-logo">
-        <img src="./assets/svg/element_logo_svg.svg" alt="Element" class="brand-logo">
-        <img src="./assets/svg/trasher_logo_svg.svg" alt="Thrasher" class="brand-logo">
+        <img src="../assets/svg/vans_logo_svg.svg" alt="Vans" class="brand-logo">
+        <img src="../assets/svg/nike_sb_logo_svg.svg" alt="Nike SB" class="brand-logo">
+        <img src="../assets/svg/spitfire_logo_svg.svg" alt="Spitfire" class="brand-logo">
+        <img src="../assets/svg/santa_cruz_logo_svg.svg" alt="Santa Cruz" class="brand-logo">
+        <img src="../assets/svg/element_logo_svg.svg" alt="Element" class="brand-logo">
+        <img src="../assets/svg/trasher_logo_svg.svg" alt="Thrasher" class="brand-logo">
 
-        <img src="./assets/svg/vans_logo_svg.svg" alt="Vans" class="brand-logo">
-        <img src="./assets/svg/nike_sb_logo_svg.svg" alt="Nike SB" class="brand-logo">
-        <img src="./assets/svg/spitfire_logo_svg.svg" alt="Spitfire" class="brand-logo">
-        <img src="./assets/svg/santa_cruz_logo_svg.svg" alt="Santa Cruz" class="brand-logo">
-        <img src="./assets/svg/element_logo_svg.svg" alt="Element" class="brand-logo">
-        <img src="./assets/svg/trasher_logo_svg.svg" alt="Thrasher" class="brand-logo">
+        <img src="../assets/svg/vans_logo_svg.svg" alt="Vans" class="brand-logo">
+        <img src="../assets/svg/nike_sb_logo_svg.svg" alt="Nike SB" class="brand-logo">
+        <img src="../assets/svg/spitfire_logo_svg.svg" alt="Spitfire" class="brand-logo">
+        <img src="../assets/svg/santa_cruz_logo_svg.svg" alt="Santa Cruz" class="brand-logo">
+        <img src="../assets/svg/element_logo_svg.svg" alt="Element" class="brand-logo">
+        <img src="../assets/svg/trasher_logo_svg.svg" alt="Thrasher" class="brand-logo">
     </div>
 </div>
 
@@ -374,52 +357,14 @@
                 <span class="material-icons">favorite</span>
             </div>
             <h4>GIVING BACK</h4>
-            <p>Supporting local skatepark builds since '24.</p>
+            <p>Supporting local skatepark builds since '26.</p>
         </div>
     </div>
 </section>
 
-<footer class="main-footer">
-    <div class="container">
-        <div class="footer-grid">
-            <div class="footer-brand">
-                <h2 class="footer-logo">SKATE<span>SHOP</span></h2>
-                <p>The premier destination for the skate community. From Liepāja to the world - built for the streets, inspired by the universe. A hub for progression, style, and real skate energy.</p>
-                <div class="social-icons">
-                    <a href="#"><i class="fab fa-facebook-f"></i></a>
-                    <a href="#"><i class="fab fa-instagram"></i></a>
-                    <a href="#"><i class="fab fa-youtube"></i></a>
-                </div>
-            </div>
 
-            <div class="footer-links">
-                <h4>EXPLORE</h4>
-                <ul>
-                    <li><a href="#">NEW ARRIVALS</a></li>
-                    <li><a href="#">SKATEBOARDS</a></li>
-                    <li><a href="#">STREETWEAR</a></li>
-                    <li><a href="#">ACCESSORIES</a></li>
-                    <li><a href="#">MARKETPLACE</a></li>
-                </ul>
-            </div>
+<?php include 'footer.php'; ?>
 
-            <div class="footer-links">
-                <h4>SUPPORT</h4>
-                <ul>
-                    <li><a href="#">SHIPPING INFO</a></li>
-                    <li><a href="#">RETURNS</a></li>
-                    <li><a href="#">CONTACT US</a></li>
-                    <li><a href="#">PRIVACY POLICY</a></li>
-                    <li><a href="#">TERMS OF SERVICE</a></li>
-                </ul>
-            </div>
-        </div>
 
-        <div class="footer-bottom">
-            <p>© 2026 SKATESHOP UNIVERSE. ALL RIGHTS RESERVED.</p>
-        </div>
-    </div>
-</footer>
-    
 </body>
 </html>

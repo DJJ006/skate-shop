@@ -67,6 +67,22 @@ body{
     color: var(--primary);
 }
 
+.logo a{
+    text-decoration: none; /* Removes the underline */
+    color: inherit;        /* Inherits the charcoal/white from .logo */
+    display: block;        /* Makes the entire area clickable */
+    transition: var(--transition);
+}
+
+.logo a:hover{
+    opacity: 0.8;          /* Gives a subtle visual cue it's a link */
+}
+
+/* Ensure the span (SHOP) stays your primary color */
+.logo a span{
+    color: var(--primary);
+}
+
 .desktop-nav .nav-links{
     display: flex;
     align-items: center;
@@ -1158,8 +1174,7 @@ body{
     display: inline-block;
     text-shadow: 2px 2px 0 rgba(0,0,0,0.1);
     font-weight: 900;
-    letter-spacing: -0.03em;
-    cursor: pointer;
+    letter-spacing: -0.03rem;
 }
 
 .footer-logo span{
