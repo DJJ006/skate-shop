@@ -59,27 +59,30 @@
 
     <div class="shop-main-grid">
         <div class="shop-controls">
+                <div class="controls-upper">
+                    <div class="search-section">
+                        <div class="search-wrapper">
+                            <input type="text" placeholder="SEARCH GEAR..." id="shop-search">
+                            <button class="search-btn"><span class="material-icons">search</span></button>
+                        </div>
+                        <p class="results-count">SHOWING 1-6 OF 24 ITEMS</p>
+                    </div>
 
-            <div class="search-wrapper">
-                <input type="text" placeholder="SEARCH GEAR..." id="shop-search">
-                <button class="search-btn"><span class="material-icons">search</span></button>
+                    <div class="sort-section">
+                        <select class="sort-dropdown">
+                            <option>SORT: NEWEST</option>
+                            <option>SORT: PRICE (LOW-HIGH)</option>
+                            <option>SORT: PRICE (HIGH-LOW)</option>
+                        </select>
+                    </div>
+                </div>
             </div>
-
-            <div class="controls-meta">
-                <p>SHOWING 1-6 OF 24 ITEMS</p>
-                <select class="sort-dropdown">
-                    <option>SORT: NEWEST</option>
-                    <option>SORT: PRICE (LOW-HIGH)</option>
-                    <option>SORT: PRICE (HIGH-LOW)</option>
-                </select>
-            </div>
-        </div>
     
 
       
         <div class="product-grid">
             
-            <div class="product-card grainy-card">
+            <div class="product-card grainy-card compact-card">
                 <div class="card-img">
                     <img src="https://dankiesskateboards.com/cdn/shop/files/rn-image_picker_lib_temp_7e38f2fb-809d-44f7-a5a0-56fada45739a.jpg?v=1739281202&width=1024" alt="Deck">
                 </div>
@@ -92,7 +95,7 @@
                 </div>
             </div>
 
-            <div class="product-card grainy-card">
+            <div class="product-card grainy-card compact-card">
                 <div class="card-img">
                     <img src="https://idioma.world/cdn/shop/files/Kosmos-Hood-Full-Web-Graphic_1500x1500.jpg?v=1729783863" alt="Hoodie">
                 </div>
@@ -105,7 +108,7 @@
                 </div>
             </div>
 
-            <div class="product-card grainy-card">
+            <div class="product-card grainy-card compact-card">
                 <div class="card-img">
                     <img src="https://images.unsplash.com/photo-1531565637446-32307b194362?auto=format&fit=crop&q=80&w=800" alt="Wheels">
                 </div>
@@ -117,6 +120,8 @@
                     <span class="price">$45</span>
                 </div>
             </div>
+
+            
 
         </div>
 
@@ -130,6 +135,48 @@
 
     </div>
 </section>
+
+
+<div class="commercial">
+<section class="commercial-slider container">
+    <div class="slider-wrapper">
+        <div class="commercial-slide active">
+            <a href="https://www.nike.com/skateboarding" target="_blank">
+                <div class="ad-content">
+                    <img src="../assets/images/nike_sb_ad.jpeg" alt="Nike SB Ad">
+                    <div class="ad-overlay">
+                        <h2 class="ad-title">NIKE SB</h2>
+                        <p class="ad-sub">THE NEW DUNK LOW IS HERE.</p>
+                        <span class="ad-cta">EXPLORE COLLECTION +</span>
+                    </div>
+                </div>
+            </a>
+        </div>
+
+        <div class="commercial-slide">
+            <a href="#" target="_blank">
+                <div class="ad-content">
+                    <img src="../assets/images/vans_ad.jpg" alt="Vans Ad">
+                    <div class="ad-overlay">
+                        <h2 class="ad-title">VANS</h2>
+                        <p class="ad-sub">OFF THE WALL SINCE '66.</p>
+                        <span class="ad-cta">SHOP CLASSICS +</span>
+                    </div>
+                </div>
+            </a>
+        </div>
+
+        <!-- <div class="slider-nav">
+            <button id="prev-ad" class="nav-btn"><span class="material-icons">arrow_back</span></button>
+            <div class="slider-dots">
+                <span class="dot active"></span>
+                <span class="dot"></span>
+            </div>
+            <button id="next-ad" class="nav-btn"><span class="material-icons">arrow_forward</span></button>
+        </div> -->
+    </div>
+</section>
+</div>
 
 <?php include 'footer.php'; ?>
 

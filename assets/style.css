@@ -1003,6 +1003,14 @@ body{
     transform: scale(1.02);
 }
 
+.simple-form input:hover,
+.simple-form textarea:hover{
+    outline: none;
+    border-color: var(--primary);
+    background-color: #ffffff;
+    box-shadow: 2px 2px 0px var(--charcoal);
+}
+
 .reviews-container{
     display: flex;
     flex-direction: column;
