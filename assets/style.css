@@ -1004,7 +1004,7 @@ body{
 }
 
 .simple-form input:hover,
-.simple-form textarea:hover{
+.simple-form input:hover{
     outline: none;
     border-color: var(--primary);
     background-color: #ffffff;
@@ -1601,9 +1601,6 @@ body{
         -webkit-background-clip: text; 
         -webkit-text-fill-color: transparent;
         color: transparent;
-    
-        /* The Shadow Fix */
-        /* Syntax: drop-shadow(offset-x offset-y blur-radius color) */
         filter: drop-shadow(2px 2px 0px rgba(0, 0, 0, 0.2));
     }
 

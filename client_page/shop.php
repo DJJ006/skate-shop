@@ -28,34 +28,53 @@
     </div>
 </div>
 
+<div class="gear-guide">
+<section class="gear-guide-cta container">
+    <div class="cta-box">
+        <div class="cta-text">
+            <h2>NOT SURE WHAT TO RIDE?</h2>
+            <p>CONSTRUCTION, CONCAVE, AND COMPONENTS EXPLAINED.</p>
+        </div>
+        <a href="#qna" class="btn btn-primary" style="font-size: 1.5rem; text-decoration: none;">CHECK OUT GUIDE</a>
+    </div>
+</section>
+</div>
+
 <div class="shop-header-title container">
-    <h2 class="glitch-text-shop">SHOP<br><span class="text-primary">DROPS</span></h2>
+    <h2 class="glitch-text-shop">SHOP <span class="text-primary">DROPS</span></h2>
+    <p class="search-gear-text">BEST PLACE FOR SKATING</p>
 </div>
 
 <section class="shop-layout container">
-    <aside class="shop-sidebar">
+<aside class="shop-sidebar">
+    <details class="mobile-filter-wrapper">
+        <summary class="filter-toggle-btn">
+            FILTER GEAR <span class="material-icons">expand_more</span>
+        </summary>
+        
+        <div class="filter-content-inner">
+            <div class="filter-group">
+                <h4>CATEGORY</h4>
+                <ul class="filter-list">
+                    <li><label><input type="checkbox" checked> ALL GEAR</label></li>
+                    <li><label><input type="checkbox"> DECKS</label></li>
+                    <li><label><input type="checkbox"> TRUCKS & WHEELS</label></li>
+                    <li><label><input type="checkbox"> APPAREL</label></li>
+                    <li><label><input type="checkbox"> ACCESSORIES</label></li>
+                </ul>
+            </div>
 
-    <div class="filter-group">
-            <h4>CATEGORY</h4>
-            <ul class="filter-list">
-                <li><label><input type="checkbox" checked> ALL GEAR</label></li>
-                <li><label><input type="checkbox"> DECKS</label></li>
-                <li><label><input type="checkbox"> TRUCKS & WHEELS</label></li>
-                <li><label><input type="checkbox"> APPAREL</label></li>
-                <li><label><input type="checkbox"> ACCESSORIES</label></li>
-            </ul>
+            <div class="filter-group">
+                <h4>PRICE</h4>
+                <ul class="filter-list">
+                    <li><label><input type="radio" name="price"> UNDER $50</label></li>
+                    <li><label><input type="radio" name="price"> $50 - $100</label></li>
+                    <li><label><input type="radio" name="price"> OVER $100</label></li>
+                </ul>
+            </div>
         </div>
-
-        <div class="filter-group">
-            <h4>PRICE</h4>
-            <ul class="filter-list">
-                <li><label><input type="radio" name="price"> UNDER $50</label></li>
-                <li><label><input type="radio" name="price"> $50 - $100</label></li>
-                <li><label><input type="radio" name="price"> OVER $100</label></li>
-            </ul>
-        </div>
-
-    </aside>
+    </details>
+</aside>
 
     <div class="shop-main-grid">
         <div class="shop-controls">
@@ -177,6 +196,58 @@
     </div>
 </section>
 </div>
+
+
+
+
+<section id="qna" class="qna-section container">
+    <h2 class="glitch-text">GEAR <span class="text-primary">Q&A</span></h2>
+    
+    <div class="qna-accordion">
+        <div class="qna-item">
+            <div class="qna-question">
+                <h4><span>01.</span> CHOOSING DECK WIDTH?</h4>
+                <span class="material-icons toggle-icon">add</span>
+            </div>
+            <div class="qna-answer">
+                <p>It's about your shoe size and style. Tech/street skaters usually dig 8.0" to 8.25". If you're hitting bowls or have giant feet, go 8.5" and up for that extra stability.</p>
+            </div>
+        </div>
+
+        <div class="qna-item">
+            <div class="qna-question">
+                <h4><span>02.</span> WHAT WHEEL HARDNESS IS BEST?</h4>
+                <span class="material-icons toggle-icon">add</span>
+            </div>
+            <div class="qna-answer">
+                <p>99A-101A is the standard for parks and smooth street. If your local spot is crusty asphalt, grab some 78A-86A "cloud" wheels so you don't eat pebbles for breakfast.</p>
+            </div>
+        </div>
+
+        <div class="qna-item">
+            <div class="qna-question">
+                <h4><span>03.</span> HI, LOW, OR MID TRUCKS?</h4>
+                <span class="material-icons toggle-icon">add</span>
+            </div>
+            <div class="qna-answer">
+                <p>Lows are great for flip tricks. Highs allow for bigger wheels and better turns. Mids are the "safe bet" if you want to do a bit of everything without overthinking it.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="newsletter-section">
+    <div class="newsletter-box grainy-card">
+        <div class="newsletter-content container">
+            <h2 class="glitch-text">STAY IN <span class="text-primary">TOUCH</span></h2>
+            <p>JOIN THE CREW FOR EXCLUSIVE DROPS, CLIPS, AND SALES.</p>
+            <form class="newsletter-form">
+                <input type="email" placeholder="ENTER YOUR EMAIL..." required>
+                <button type="submit" class="btn btn-primary">SIGN ME UP +</button>
+            </form>
+        </div>
+    </div>
+</section>
 
 <?php include 'footer.php'; ?>
 

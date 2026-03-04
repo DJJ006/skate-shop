@@ -135,4 +135,22 @@ document.addEventListener('DOMContentLoaded', () => {
             showSlide(currentSlide);
         }, 5000);
     }
+
+
+
+    
+        const qnaItems = document.querySelectorAll('.qna-item');
+    
+        qnaItems.forEach(item => {
+            item.addEventListener('click', () => {
+                // Optional: Close other open items (Single-dropdown mode)
+                qnaItems.forEach(otherItem => {
+                    if (otherItem !== item) otherItem.classList.remove('active');
+                });
+    
+                // Toggle current item
+                item.classList.toggle('active');
+            });
+        });
+    
 });
