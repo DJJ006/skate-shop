@@ -153,4 +153,24 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
     
+
+
+        const filterToggle = document.getElementById('filterToggle');
+        const filterContent = document.getElementById('filterContent');
+        if (filterToggle && filterContent) {
+            filterToggle.addEventListener('click', function() {
+                // Toggle the 'active' class on both button and content
+                this.classList.toggle('active');
+                filterContent.classList.toggle('active');
+    
+                // Optional: Rotate the icon when open
+                const icon = this.querySelector('.material-icons');
+                if (this.classList.contains('active')) {
+                    icon.textContent = 'expand_less';
+                } else {
+                    icon.textContent = 'expand_more';
+                }
+            });
+        }
+        
 });

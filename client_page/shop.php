@@ -12,6 +12,7 @@
     <link rel="icon" href="../assets/images/skateshop_favicon.png" type="image/png">
 
 </head>
+<body>
 
 <?php include 'header.php'; ?>
 
@@ -47,12 +48,12 @@
 
 <section class="shop-layout container">
 <aside class="shop-sidebar">
-    <details class="mobile-filter-wrapper">
-        <summary class="filter-toggle-btn">
+    <div class="mobile-filter-wrapper">
+        <button type="button" class="filter-toggle-btn" id="filterToggle">
             FILTER GEAR <span class="material-icons">expand_more</span>
-        </summary>
+        </button>
         
-        <div class="filter-content-inner">
+        <div class="filter-content-inner" id="filterContent">
             <div class="filter-group">
                 <h4>CATEGORY</h4>
                 <ul class="filter-list">
@@ -73,7 +74,7 @@
                 </ul>
             </div>
         </div>
-    </details>
+    </div>
 </aside>
 
     <div class="shop-main-grid">
@@ -251,5 +252,5 @@
 
 <?php include 'footer.php'; ?>
 
-<body>
+</body>
 </html>

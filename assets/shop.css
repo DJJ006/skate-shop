@@ -12,9 +12,9 @@
 html, body{
     scroll-behavior: smooth;
     max-width: 100%;
-    overflow-x: hidden;
     position: relative;
 }
+
 
 /*SHOP-TITLE*/
 .shop-header-title{
@@ -23,7 +23,7 @@ html, body{
     align-items: flex-end;
     border-bottom: 4px solid var(--charcoal);
     padding-bottom: 1rem;
-    margin-top: 5rem;
+    margin-top: 2rem;
     margin-bottom: 3rem;
     padding: 0;
     width: 95%; 
@@ -84,12 +84,11 @@ html, body{
 }
 
 .filter-list{
-    list-style: none;
-    padding: 0;
-}
+     list-style: none; padding: 0; 
+    }
 
-.filter-list li{
-    margin-bottom: 0.8rem;
+.filter-list li{ 
+    margin-bottom: 0.8rem; 
 }
 
 .filter-list label{
@@ -119,10 +118,9 @@ html, body{
     border-color: var(--primary);
 }
 
-.mobile-filter-wrapper summary::-webkit-details-marker { display: none; }
-
 .filter-toggle-btn{
-    display: flex;
+    display: none;
+    width: 100%;
     justify-content: space-between;
     align-items: center;
     background: var(--charcoal);
@@ -132,19 +130,18 @@ html, body{
     font-size: 1.4rem;
     cursor: pointer;
     border: 3px solid var(--primary);
-    list-style: none;
     margin-bottom: 0;
+    text-align: left;
 }
 
 .filter-content-inner{
-    background: var(--textwhite);
+    background: var(--bg-light);
     border: 3px solid var(--charcoal);
-    border-top: none;
     padding: 1.5rem;
     margin-bottom: 2rem;
 }
 
-.mobile-filter-wrapper[open] .filter-toggle-btn{
+.filter-toggle-btn.active{
     background: var(--primary);
     border-color: var(--charcoal);
 }
@@ -489,14 +486,14 @@ padding: 1rem 0;
 }
 
 .gear-guide-cta{
-    margin: 3rem auto;
+    margin: 2rem auto;
 }
 
 .cta-box{
     background: var(--charcoal);
     border: 4px solid var(--primary);
     box-shadow: 15px 15px 0px var(--charcoal);
-    padding: 4rem 3rem;
+    padding: 3rem 3rem;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -759,6 +756,11 @@ padding: 1rem 0;
     transform: skewX(-12deg);
 }
 
+.newsletter-form input::selection{
+    background: var(--primary);
+    color: white;
+}
+
 @media (max-width: 600px){
     .newsletter-form {
         flex-direction: column;
@@ -796,20 +798,24 @@ padding: 1rem 0;
 
 @media (min-width: 1024px) and (max-width: 1199px){
     .shop-layout{
-        grid-template-columns: 240px 1fr;
-        gap: 2rem;
+        grid-template-columns: 280px 1fr;
+        gap: 4rem;
     }
 
-    .mobile-filter-wrapper{ 
-        display: block !important; 
+    .filter-toggle-btn{
+        display: none !important;
     }
 
-    .filter-toggle-btn{ 
-        display: none !important; 
+    .filter-content-inner{
+        display: block !important;
+        border: none;
+        padding: 0;
+        background: transparent;
     }
 
-    .filter-content-inner{ 
-        display: block !important; border: none; padding: 0; 
+    .shop-sidebar{
+        border-right: 4px solid var(--charcoal);
+        padding-right: 2rem;
     }
 
     .glitch-text-shop{ 
@@ -819,22 +825,30 @@ padding: 1rem 0;
 
 
 @media (max-width: 1023px){
-    .shop-layout {
+    .shop-layout{
         grid-template-columns: 1fr;
+    }
+
+    .filter-toggle-btn{
+        display: flex;
+    }
+
+    .filter-content-inner{
+        display: none;
+        border-top: none;
+    }
+
+    .filter-content-inner.active{
+        display: block;
     }
 
     .shop-sidebar{
         border-right: none;
-        border-bottom: 4px solid var(--charcoal);
         padding-right: 0;
-        padding-bottom: 2rem;
-    }
-
-    .filter-toggle-btn{ 
-        display: flex;
+        margin-bottom: 2rem;
     }
     
-    .cta-box {
+    .cta-box{
         flex-direction: column;
         text-align: center;
     }
@@ -910,3 +924,128 @@ padding: 1rem 0;
         padding: 2rem 1rem;
     }
 }
+
+
+/*MARKETPLACE SPECIFIC STYLES*/
+.marketplace-cta::before{
+    content: "$$$";
+    background: var(--textwhite);
+    color: var(--primary);
+}
+
+.seller-name{
+    color: var(--primary);
+    font-weight: 800;
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.marketplace-card .card-img{
+    position: relative;
+}
+
+.condition-badge{
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    padding: 5px 10px;
+    font-family: 'Staatliches', sans-serif;
+    font-size: 1rem;
+    letter-spacing: 1px;
+    z-index: 5;
+    border: 2px solid var(--charcoal);
+    box-shadow: 2px 2px 0px var(--charcoal);
+}
+
+.condition-badge.mint{ 
+    background: #4ADE80;
+    color: var(--textwhite);
+ }
+
+.condition-badge.good{ 
+    background: #b18f06;
+    color: var(--textwhite); 
+}
+
+.condition-badge.beat{ 
+    background: var(--primary); 
+    color: var(--textwhite); 
+}
+
+/*BOUNTY*/
+.bounty-board-section{
+    margin: 6rem auto;
+}
+
+.bounty-wrapper{
+    background: #fdfaf0;
+    border: 4px dashed var(--charcoal);
+    padding: 3rem;
+    box-shadow: 15px 15px 0px rgba(0,0,0,0.1);
+}
+
+.bounty-header{
+    text-align: center;
+    border-bottom: 3px solid var(--charcoal);
+    padding-bottom: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.bounty-header h2{
+    font-family: 'Staatliches', sans-serif;
+    font-size: 3.5rem;
+    color: var(--primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+}
+
+.bounty-grid{
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 2rem;
+}
+
+.bounty-item{
+    border: 2px solid var(--charcoal);
+    background: var(--textwhite);
+    padding: 1.5rem;
+    position: relative;
+    transition: var(--transition);
+}
+
+.bounty-item:hover{
+    transform: rotate(-1deg) scale(1.02);
+    box-shadow: 4px 4px 0px var(--primary);
+}
+
+.bounty-item h5{
+    font-family: 'Staatliches', sans-serif;
+    font-size: 1.5rem;
+    margin-bottom: 10px;
+    line-height: 1.2;
+}
+
+.bounty-item p{
+    font-family: 'Staatliches', sans-serif;
+    font-size: 1.2rem;
+    color: var(--primary);
+    margin-bottom: 5px;
+}
+
+.bounty-item span{
+    font-size: 0.9rem;
+    font-weight: bold;
+    color: #666;
+}
+
+@media (max-width: 768px) {
+    .bounty-wrapper {
+        padding: 1.5rem;
+    }
+    .bounty-header h2 {
+        font-size: 2.5rem;
+    }
+}
+

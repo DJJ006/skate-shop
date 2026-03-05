@@ -11,7 +11,7 @@
         <nav class="desktop-nav" id="nav-menu">
             <ul class="nav-links">
                 <li><a href="shop.php" class="nav-item">SHOP</a></li>
-                <li><a href="#" class="nav-item">MARKET</a></li>
+                <li><a href="marketplace.php" class="nav-item">MARKET</a></li>
                 <li><a href="#" class="nav-item">COMMUNITY</a></li>
                 <li><a href="#" class="login-btn">LOGIN</a></li>
             </ul>
