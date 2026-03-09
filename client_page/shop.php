@@ -1,3 +1,31 @@
+<?php 
+include '../db.php'; 
+
+$search = isset($_GET['search']) ? $conn->real_escape_string($_GET['search']) : '';
+$page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+$limit = 6;
+$offset = ($page - 1) * $limit;
+
+
+$whereClause = "WHERE is_marketplace = 0";
+if ($search != '') {
+    $whereClause .= " AND (title LIKE '%$search%' OR brand LIKE '%$search%')";
+}
+
+$count_query = "SELECT COUNT(*) as total FROM products $whereClause";
+$count_result = $conn->query($count_query);
+$total_items = $count_result->fetch_assoc()['total'];
+$total_pages = ceil($total_items / $limit);
+
+$sql = "SELECT * FROM products $whereClause ORDER BY created_at DESC LIMIT $limit OFFSET $offset";
+$result = $conn->query($sql);
+
+$start_item = $offset + 1;
+$end_item = min($offset + $limit, $total_items);
+if ($total_items == 0) { $start_item = 0; $end_item = 0; }
+?>
+
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -80,13 +108,16 @@
     <div class="shop-main-grid">
         <div class="shop-controls">
                 <div class="controls-upper">
-                    <div class="search-section">
-                        <div class="search-wrapper">
-                            <input type="text" placeholder="SEARCH GEAR..." id="shop-search">
-                            <button class="search-btn"><span class="material-icons">search</span></button>
-                        </div>
-                        <p class="results-count">SHOWING 1-6 OF 24 ITEMS</p>
-                    </div>
+                <div class="search-section">
+
+                    <form class="search-wrapper" action="shop.php" method="GET">
+                        <input type="text" name="search" placeholder="SEARCH GEAR..." id="shop-search" value="<?php echo htmlspecialchars($search); ?>">
+                        <button type="submit" class="search-btn"><span class="material-icons">search</span></button>
+                    </form>
+
+                    <p class="results-count">SHOWING <?php echo $start_item; ?>-<?php echo $end_item; ?> OF <?php echo $total_items; ?> ITEMS</p>
+                </div>
+                </div>
 
                     <div class="sort-section">
                         <select class="sort-dropdown">
@@ -96,62 +127,54 @@
                         </select>
                     </div>
                 </div>
-            </div>
+        
     
 
       
         <div class="product-grid">
+        <?php 
             
-            <div class="product-card grainy-card compact-card">
-                <div class="card-img">
-                    <img src="https://dankiesskateboards.com/cdn/shop/files/rn-image_picker_lib_temp_7e38f2fb-809d-44f7-a5a0-56fada45739a.jpg?v=1739281202&width=1024" alt="Deck">
-                </div>
-                <div class="card-info">
-                    <div>
-                        <h4>VOID DECK v2</h4>
-                        <p>LIMITED EDITION</p>
-                    </div>
-                    <span class="price">$85</span>
-                </div>
-            </div>
-
-            <div class="product-card grainy-card compact-card">
-                <div class="card-img">
-                    <img src="https://idioma.world/cdn/shop/files/Kosmos-Hood-Full-Web-Graphic_1500x1500.jpg?v=1729783863" alt="Hoodie">
-                </div>
-                <div class="card-info">
-                    <div>
-                        <h4>COSMOS HOODIE</h4>
-                        <p>HEAVYWEIGHT</p>
-                    </div>
-                    <span class="price">$120</span>
-                </div>
-            </div>
-
-            <div class="product-card grainy-card compact-card">
-                <div class="card-img">
-                    <img src="https://images.unsplash.com/photo-1531565637446-32307b194362?auto=format&fit=crop&q=80&w=800" alt="Wheels">
-                </div>
-                <div class="card-info">
-                    <div>
-                        <h4>TRIPPY WHEELS</h4>
-                        <p>54MM / 99A</p>
-                    </div>
-                    <span class="price">$45</span>
-                </div>
-            </div>
-
-            
-
+            if ($result->num_rows > 0) {
+                while($row = $result->fetch_assoc()) {
+                    
+                    ?>
+                    <a href="product.php?id=<?php echo $row['id']; ?>" style="text-decoration: none; color: inherit;">
+                        <div class="product-card grainy-card compact-card">
+                            <div class="card-img">
+                                <img src="<?php echo $row['image_url']; ?>" alt="<?php echo htmlspecialchars($row['title']); ?>">
+                            </div>
+                            <div class="card-info">
+                                <div>
+                                    <h4><?php echo htmlspecialchars($row['title']); ?></h4>
+                                    <p><?php echo htmlspecialchars($row['condition_badge']); ?></p>
+                                </div>
+                                <span class="price">$<?php echo $row['price']; ?></span>
+                            </div>
+                        </div>
+                    </a>
+                    <?php
+                }
+            } else {
+                echo "<h3>NO GEAR FOUND. TRY ANOTHER SEARCH.</h3>";
+            }
+            ?>
         </div>
 
+        <?php if ($total_pages > 1): ?>
         <div class="pagination">
-            <button class="btn btn-outline">&lt; PREV</button>
-            <button class="btn btn-primary">1</button>
-            <button class="btn btn-outline">2</button>
-            <button class="btn btn-outline">3</button>
-            <button class="btn btn-outline">NEXT &gt;</button>
+            <?php if($page > 1): ?>
+                <a href="?page=<?php echo $page - 1; ?>&search=<?php echo $search; ?>" class="btn btn-outline">&lt; PREV</a>
+            <?php endif; ?>
+            
+            <?php for($i = 1; $i <= $total_pages; $i++): ?>
+                <a href="?page=<?php echo $i; ?>&search=<?php echo $search; ?>" class="btn <?php echo ($page == $i) ? 'btn-primary' : 'btn-outline'; ?>"><?php echo $i; ?></a>
+            <?php endfor; ?>
+
+            <?php if($page < $total_pages): ?>
+                <a href="?page=<?php echo $page + 1; ?>&search=<?php echo $search; ?>" class="btn btn-outline">NEXT &gt;</a>
+            <?php endif; ?>
         </div>
+        <?php endif; ?>
 
     </div>
 </section>

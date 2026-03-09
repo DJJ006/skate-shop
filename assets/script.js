@@ -172,5 +172,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             });
         }
+
+
+
+            // Image Swapper for Product Page
+    function swapImage(thumbElement, newImageSrc) {
+        // 1. Change the main image
+        const mainImg = document.getElementById('main-product-img');
+        mainImg.src = newImageSrc;
+        
+        // 2. Remove 'active' class from all thumbs
+        const thumbs = document.querySelectorAll('.thumb');
+        thumbs.forEach(t => t.classList.remove('active-thumb'));
+        
+        // 3. Add 'active' class to clicked thumb
+        thumbElement.classList.add('active-thumb');
+    }
         
 });

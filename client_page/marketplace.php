@@ -97,8 +97,12 @@
                 </div>
             </div>
         </div>
-        
+
+
+      
         <div class="product-grid">
+
+        <a href="product.php" style="text-decoration: none; color: inherit;">
             <div class="product-card grainy-card compact-card marketplace-card">
                 <div class="card-img">
                     <span class="condition-badge mint">MINT / WALL HANGER</span>
@@ -112,7 +116,9 @@
                     <span class="price">$250</span>
                 </div>
             </div>
+        </a>
 
+        <a href="product.php" style="text-decoration: none; color: inherit;">
             <div class="product-card grainy-card compact-card marketplace-card">
                 <div class="card-img">
                     <span class="condition-badge beat">BEAT UP / SKATEABLE</span>
@@ -126,7 +132,9 @@
                     <span class="price">$20</span>
                 </div>
             </div>
+        </a>
 
+        <a href="product.php" style="text-decoration: none; color: inherit;">
             <div class="product-card grainy-card compact-card marketplace-card">
                 <div class="card-img">
                     <span class="condition-badge good">WORN ONCE</span>
@@ -140,7 +148,10 @@
                     <span class="price">$140</span>
                 </div>
             </div>
+        </a>
+
         </div>
+
 
         <div class="pagination">
             <button class="btn btn-outline">< PREV</button>
@@ -152,31 +163,58 @@
     </div>
 </section>
 
-<section class="bounty-board-section container">
-    <div class="bounty-wrapper grainy-card">
-        <div class="bounty-header">
-            <h2><span class="material-icons">local_police</span> THE BOUNTY BOARD</h2>
-            <p>GRAILS PEOPLE ARE ACTIVELY LOOKING TO BUY. GOT ONE? MESSAGE 'EM.</p>
+<div class="bounty">
+    <section class="bounty-board-section container">
+        <div class="bounty-wrapper">
+            <div class="bounty-header">
+                <h2 class="glitch-text-shop">THE BOUNTY BOARD</h2>
+                <p>CASH REWARDS FOR RARE GEAR</p>
+            </div>
+            
+            <div class="bounty-grid">
+                <div class="bounty-item">
+                    <span class="tape-effect"></span>
+                    <div class="bounty-stamp">WANTED</div>
+                    <h5>2004 WORLD INDUSTRIES FLAME BOY</h5>
+                    <div class="reward-tag">
+                        <span>REWARD</span>
+                        <strong class="price">$300</strong>
+                    </div>
+                    <div class="buyer-info">
+                        <span class="material-icons">person</span> @OldSchoolDave
+                    </div>
+                </div>
+
+                <div class="bounty-item">
+                    <span class="tape-effect"></span>
+                    <div class="bounty-stamp red-stamp">HIGH PRIORITY</div>
+                    <h5>ZERO SKULL DECK (SIGNED BY JAMIE THOMAS)</h5>
+                    <div class="reward-tag">
+                        <span>REWARD</span>
+                        <strong class="price">NAME PRICE</strong>
+                    </div>
+                    <div class="buyer-info">
+                        <span class="material-icons">person</span> @ZeroOrDie
+                    </div>
+                </div>
+
+                <div class="bounty-item">
+                    <span class="tape-effect"></span>
+                    <div class="bounty-stamp">WANTED</div>
+                    <h5>SPITFIRE FORMULA FOUR 54MM (NEW)</h5>
+                    <div class="reward-tag">
+                        <span>REWARD</span>
+                        <strong class="price">$40</strong>
+                    </div>
+                    <div class="buyer-info">
+                        <span class="material-icons">person</span> @GromSkater
+                    </div>
+                </div>
+            </div>
         </div>
-        <div class="bounty-grid">
-            <div class="bounty-item">
-                <h5>WANTED: 2004 WORLD INDUSTRIES FLAME BOY</h5>
-                <p>REWARD: $300</p>
-                <span>BUYER: @OldSchoolDave</span>
-            </div>
-            <div class="bounty-item">
-                <h5>WANTED: SPITFIRE FORMULA FOUR 54MM (NEW)</h5>
-                <p>REWARD: $40</p>
-                <span>BUYER: @GromSkater</span>
-            </div>
-            <div class="bounty-item">
-                <h5>WANTED: ZERO SKULL DECK (SIGNED BY JAMIE THOMAS)</h5>
-                <p>REWARD: NAME YOUR PRICE</p>
-                <span>BUYER: @ZeroOrDie</span>
-            </div>
-        </div>
-    </div>
-</section>
+    </section>
+</div>
+
 
 <section id="qna" class="qna-section container">
     <h2 class="glitch-text">MARKET <span class="text-primary">Q&A</span></h2>
