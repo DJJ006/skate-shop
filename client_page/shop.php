@@ -1,28 +1,67 @@
 <?php 
 include '../db.php'; 
 
+// 1. Collect and Sanitize Inputs
 $search = isset($_GET['search']) ? $conn->real_escape_string($_GET['search']) : '';
 $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+$sort = isset($_GET['sort']) ? $_GET['sort'] : 'newest';
+$selected_categories = isset($_GET['category']) ? $_GET['category'] : []; // This will be an array
+$price_range = isset($_GET['price']) ? $_GET['price'] : '';
+
 $limit = 6;
 $offset = ($page - 1) * $limit;
 
-
+// 2. Build the WHERE Clause
 $whereClause = "WHERE is_marketplace = 0";
+
 if ($search != '') {
     $whereClause .= " AND (title LIKE '%$search%' OR brand LIKE '%$search%')";
 }
 
+if (!empty($selected_categories)) {
+    // Escaping array values for the IN() clause
+    $escaped_cats = array_map(function($cat) use ($conn) {
+        return "'" . $conn->real_escape_string($cat) . "'";
+    }, $selected_categories);
+    $whereClause .= " AND category IN (" . implode(',', $escaped_cats) . ")";
+}
+
+if ($price_range === 'under_50') {
+    $whereClause .= " AND price < 50";
+} elseif ($price_range === '50_100') {
+    $whereClause .= " AND price BETWEEN 50 AND 100";
+} elseif ($price_range === 'over_100') {
+    $whereClause .= " AND price > 100";
+}
+
+// 3. Build the ORDER BY Clause
+$orderClause = "ORDER BY created_at DESC"; // Default
+if ($sort === 'price_asc') {
+    $orderClause = "ORDER BY price ASC";
+} elseif ($sort === 'price_desc') {
+    $orderClause = "ORDER BY price DESC";
+}
+
+// 4. Execution
 $count_query = "SELECT COUNT(*) as total FROM products $whereClause";
 $count_result = $conn->query($count_query);
 $total_items = $count_result->fetch_assoc()['total'];
 $total_pages = ceil($total_items / $limit);
 
-$sql = "SELECT * FROM products $whereClause ORDER BY created_at DESC LIMIT $limit OFFSET $offset";
+$sql = "SELECT * FROM products $whereClause $orderClause LIMIT $limit OFFSET $offset";
 $result = $conn->query($sql);
 
-$start_item = $offset + 1;
+$start_item = ($total_items > 0) ? $offset + 1 : 0;
 $end_item = min($offset + $limit, $total_items);
-if ($total_items == 0) { $start_item = 0; $end_item = 0; }
+
+// Helper function to keep URL parameters during pagination
+function get_filter_url($params) {
+    $current_params = $_GET;
+    foreach($params as $key => $value) {
+        $current_params[$key] = $value;
+    }
+    return "?" . http_build_query($current_params);
+}
 ?>
 
 
@@ -76,102 +115,111 @@ if ($total_items == 0) { $start_item = 0; $end_item = 0; }
 
 <section class="shop-layout container">
 <aside class="shop-sidebar">
-    <div class="mobile-filter-wrapper">
-        <button type="button" class="filter-toggle-btn" id="filterToggle">
-            FILTER GEAR <span class="material-icons">expand_more</span>
-        </button>
-        
-        <div class="filter-content-inner" id="filterContent">
-            <div class="filter-group">
-                <h4>CATEGORY</h4>
-                <ul class="filter-list">
-                    <li><label><input type="checkbox" checked> ALL GEAR</label></li>
-                    <li><label><input type="checkbox"> DECKS</label></li>
-                    <li><label><input type="checkbox"> TRUCKS & WHEELS</label></li>
-                    <li><label><input type="checkbox"> APPAREL</label></li>
-                    <li><label><input type="checkbox"> ACCESSORIES</label></li>
-                </ul>
-            </div>
+    <form action="shop.php" method="GET" id="filterForm">
+        <input type="hidden" name="search" value="<?php echo htmlspecialchars($search); ?>">
+        <input type="hidden" name="sort" value="<?php echo htmlspecialchars($sort); ?>">
 
-            <div class="filter-group">
-                <h4>PRICE</h4>
-                <ul class="filter-list">
-                    <li><label><input type="radio" name="price"> UNDER $50</label></li>
-                    <li><label><input type="radio" name="price"> $50 - $100</label></li>
-                    <li><label><input type="radio" name="price"> OVER $100</label></li>
-                </ul>
+        <div class="mobile-filter-wrapper">
+            <button type="button" class="filter-toggle-btn" id="filterToggle">
+                FILTER GEAR <span class="material-icons">expand_more</span>
+            </button>
+            
+            <div class="filter-content-inner" id="filterContent">
+                <div class="filter-group">
+                    <h4>CATEGORY</h4>
+                    <ul class="filter-list">
+                        <li><label><input type="checkbox" name="category[]" value="Decks" <?php echo in_array('Decks', $selected_categories) ? 'checked' : ''; ?> onchange="this.form.submit()"> DECKS</label></li>
+                        <li><label><input type="checkbox" name="category[]" value="Trucks" <?php echo in_array('Trucks', $selected_categories) ? 'checked' : ''; ?> onchange="this.form.submit()"> TRUCKS & WHEELS</label></li>
+                        <li><label><input type="checkbox" name="category[]" value="Apparel" <?php echo in_array('Apparel', $selected_categories) ? 'checked' : ''; ?> onchange="this.form.submit()"> APPAREL</label></li>
+                        <li><label><input type="checkbox" name="category[]" value="Accessories" <?php echo in_array('Accessories', $selected_categories) ? 'checked' : ''; ?> onchange="this.form.submit()"> ACCESSORIES</label></li>
+                    </ul>
+                </div>
+
+                <div class="filter-group">
+                    <h4>PRICE</h4>
+                    <ul class="filter-list">
+                        <li><label><input type="radio" name="price" value="" <?php echo $price_range == '' ? 'checked' : ''; ?> onchange="this.form.submit()"> ALL PRICES</label></li>
+                        <li><label><input type="radio" name="price" value="under_50" <?php echo $price_range == 'under_50' ? 'checked' : ''; ?> onchange="this.form.submit()"> UNDER $50</label></li>
+                        <li><label><input type="radio" name="price" value="50_100" <?php echo $price_range == '50_100' ? 'checked' : ''; ?> onchange="this.form.submit()"> $50 - $100</label></li>
+                        <li><label><input type="radio" name="price" value="over_100" <?php echo $price_range == 'over_100' ? 'checked' : ''; ?> onchange="this.form.submit()"> OVER $100</label></li>
+                    </ul>
+                </div>
+                
+                <a href="shop.php" class="btn reset-btn">RESET ALL</a>
             </div>
         </div>
-    </div>
+    </form>
 </aside>
 
     <div class="shop-main-grid">
         <div class="shop-controls">
-                <div class="controls-upper">
+            <div class="controls-upper">
                 <div class="search-section">
 
-                    <form class="search-wrapper" action="shop.php" method="GET">
-                        <input type="text" name="search" placeholder="SEARCH GEAR..." id="shop-search" value="<?php echo htmlspecialchars($search); ?>">
-                        <button type="submit" class="search-btn"><span class="material-icons">search</span></button>
-                    </form>
+                <form class="search-wrapper" action="shop.php" method="GET">
+                    <input type="text" name="search" placeholder="SEARCH GEAR..." id="shop-search" value="<?php echo htmlspecialchars($search); ?>">
+                    <?php foreach($selected_categories as $cat): ?>
+                        <input type="hidden" name="category[]" value="<?php echo htmlspecialchars($cat); ?>">
+                    <?php endforeach; ?>
+                    <input type="hidden" name="price" value="<?php echo htmlspecialchars($price_range); ?>">
+                    
+                    <button type="submit" class="search-btn"><span class="material-icons">search</span></button>
+                </form>
 
                     <p class="results-count">SHOWING <?php echo $start_item; ?>-<?php echo $end_item; ?> OF <?php echo $total_items; ?> ITEMS</p>
                 </div>
-                </div>
 
-                    <div class="sort-section">
-                        <select class="sort-dropdown">
-                            <option>SORT: NEWEST</option>
-                            <option>SORT: PRICE (LOW-HIGH)</option>
-                            <option>SORT: PRICE (HIGH-LOW)</option>
-                        </select>
-                    </div>
-                </div>
+                <div class="sort-section">
+                <select class="sort-dropdown" onchange="window.location.href = '<?php echo get_filter_url(['sort' => '']); ?>'.replace('sort=', 'sort=' + this.value)">
+                    <option value="newest" <?php echo $sort == 'newest' ? 'selected' : ''; ?>>SORT: NEWEST</option>
+                    <option value="price_asc" <?php echo $sort == 'price_asc' ? 'selected' : ''; ?>>SORT: PRICE (LOW-HIGH)</option>
+                    <option value="price_desc" <?php echo $sort == 'price_desc' ? 'selected' : ''; ?>>SORT: PRICE (HIGH-LOW)</option>
+                </select>
+            </div>
+          </div>
+        </div>
         
     
 
       
         <div class="product-grid">
-        <?php 
-            
-            if ($result->num_rows > 0) {
-                while($row = $result->fetch_assoc()) {
-                    
-                    ?>
-                    <a href="product.php?id=<?php echo $row['id']; ?>" style="text-decoration: none; color: inherit;">
-                        <div class="product-card grainy-card compact-card">
-                            <div class="card-img">
-                                <img src="<?php echo $row['image_url']; ?>" alt="<?php echo htmlspecialchars($row['title']); ?>">
-                            </div>
-                            <div class="card-info">
-                                <div>
-                                    <h4><?php echo htmlspecialchars($row['title']); ?></h4>
-                                    <p><?php echo htmlspecialchars($row['condition_badge']); ?></p>
-                                </div>
-                                <span class="price">$<?php echo $row['price']; ?></span>
-                            </div>
+        <?php if ($result->num_rows > 0): ?>
+            <?php while($row = $result->fetch_assoc()): ?>
+                <a href="product.php?id=<?php echo $row['id']; ?>" style="text-decoration: none; color: inherit;">
+                    <div class="product-card grainy-card compact-card">
+                        <div class="card-img">
+                            <img src="<?php echo $row['image_url']; ?>" alt="<?php echo htmlspecialchars($row['title']); ?>">
                         </div>
-                    </a>
-                    <?php
-                }
-            } else {
-                echo "<h3>NO GEAR FOUND. TRY ANOTHER SEARCH.</h3>";
-            }
-            ?>
-        </div>
+                        <div class="card-info">
+                            <div>
+                                <h4><?php echo htmlspecialchars($row['title']); ?></h4>
+                                <p><?php echo htmlspecialchars($row['brand']); ?></p>
+                            </div>
+                            <span class="price">$<?php echo number_format($row['price'], 2); ?></span>
+                        </div>
+                    </div>
+                </a>
+            <?php endwhile; ?>
+        <?php else: ?>
+            <div  class="not-found">
+                <h3>NO GEAR FOUND.</h3>
+                <p>Try adjusting your filters or search terms.</p>
+            </div>
+        <?php endif; ?>
+    </div>
 
         <?php if ($total_pages > 1): ?>
         <div class="pagination">
             <?php if($page > 1): ?>
-                <a href="?page=<?php echo $page - 1; ?>&search=<?php echo $search; ?>" class="btn btn-outline">&lt; PREV</a>
+                <a href="<?php echo get_filter_url(['page' => $page - 1]); ?>" class="btn btn-outline">&lt; PREV</a>
             <?php endif; ?>
             
             <?php for($i = 1; $i <= $total_pages; $i++): ?>
-                <a href="?page=<?php echo $i; ?>&search=<?php echo $search; ?>" class="btn <?php echo ($page == $i) ? 'btn-primary' : 'btn-outline'; ?>"><?php echo $i; ?></a>
+                <a href="<?php echo get_filter_url(['page' => $i]); ?>" class="btn <?php echo ($page == $i) ? 'btn-primary' : 'btn-outline'; ?>"><?php echo $i; ?></a>
             <?php endfor; ?>
 
             <?php if($page < $total_pages): ?>
-                <a href="?page=<?php echo $page + 1; ?>&search=<?php echo $search; ?>" class="btn btn-outline">NEXT &gt;</a>
+                <a href="<?php echo get_filter_url(['page' => $page + 1]); ?>" class="btn btn-outline">NEXT &gt;</a>
             <?php endif; ?>
         </div>
         <?php endif; ?>

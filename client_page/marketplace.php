@@ -1,3 +1,66 @@
+<?php 
+include '../db.php'; 
+
+// 1. Collect and Sanitize Inputs
+$search = isset($_GET['search']) ? $conn->real_escape_string($_GET['search']) : '';
+$page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+$sort = isset($_GET['sort']) ? $_GET['sort'] : 'newest';
+$selected_conditions = isset($_GET['condition']) ? $_GET['condition'] : [];
+$selected_types = isset($_GET['type']) ? $_GET['type'] : [];
+
+$limit = 6; 
+$offset = ($page - 1) * $limit;
+
+// 2. Build the WHERE Clause
+$whereClause = "WHERE is_marketplace = 1";
+
+if ($search != '') {
+    $whereClause .= " AND (title LIKE '%$search%' OR brand LIKE '%$search%' OR seller_name LIKE '%$search%')";
+}
+
+// Filter by Condition (assuming you have a 'condition_badge' column)
+if (!empty($selected_conditions)) {
+    $escaped_conds = array_map(function($c) use ($conn) { return "'" . $conn->real_escape_string($c) . "'"; }, $selected_conditions);
+    $whereClause .= " AND condition_badge IN (" . implode(',', $escaped_conds) . ")";
+}
+
+// Filter by Gear Type (assuming you use the 'category' column)
+if (!empty($selected_types)) {
+    $escaped_types = array_map(function($t) use ($conn) { return "'" . $conn->real_escape_string($t) . "'"; }, $selected_types);
+    $whereClause .= " AND category IN (" . implode(',', $escaped_types) . ")";
+}
+
+// 3. Sorting Logic
+$orderClause = "ORDER BY created_at DESC"; 
+if ($sort === 'cheapest') {
+    $orderClause = "ORDER BY price ASC";
+} elseif ($sort === 'rarest') {
+    // Assuming you might have a 'rarity' column, otherwise we'll sort by price high
+    $orderClause = "ORDER BY price DESC";
+}
+
+// 4. Execution
+$count_query = "SELECT COUNT(*) as total FROM products $whereClause";
+$count_result = $conn->query($count_query);
+$total_items = $count_result->fetch_assoc()['total'];
+$total_pages = ceil($total_items / $limit);
+
+$sql = "SELECT * FROM products $whereClause $orderClause LIMIT $limit OFFSET $offset";
+$result = $conn->query($sql);
+
+$start_item = ($total_items > 0) ? $offset + 1 : 0;
+$end_item = min($offset + $limit, $total_items);
+
+// URL Persistence Helper
+function get_filter_url($params) {
+    $current_params = $_GET;
+    foreach($params as $key => $value) {
+        $current_params[$key] = $value;
+    }
+    return "?" . http_build_query($current_params);
+}
+?>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -46,53 +109,63 @@
 </div>
 
 <section class="shop-layout container">
-    <aside class="shop-sidebar">
-        <div class="mobile-filter-wrapper">
-            <button type="button" class="filter-toggle-btn" id="filterToggle">
-                FILTER JUNK <span class="material-icons">expand_more</span>
-            </button>
-            
-            <div class="filter-content-inner" id="filterContent">
-                <div class="filter-group">
-                    <h4>CONDITION</h4>
-                    <ul class="filter-list">
-                        <li><label><input type="checkbox" checked> ALL</label></li>
-                        <li><label><input type="checkbox"> DEADSTOCK (MINT)</label></li>
-                        <li><label><input type="checkbox"> LIGHTLY SCUFFED</label></li>
-                        <li><label><input type="checkbox"> TRASHED (CHEAP)</label></li>
-                        <li><label><input type="checkbox"> WALL HANGERS</label></li>
-                    </ul>
-                </div>
+<aside class="shop-sidebar">
+        <form action="marketplace.php" method="GET" id="marketFilterForm">
+            <input type="hidden" name="search" value="<?php echo htmlspecialchars($search); ?>">
+            <input type="hidden" name="sort" value="<?php echo htmlspecialchars($sort); ?>">
 
-                <div class="filter-group">
-                    <h4>GEAR TYPE</h4>
-                    <ul class="filter-list">
-                        <li><label><input type="checkbox"> VINTAGE DECKS</label></li>
-                        <li><label><input type="checkbox"> USED TRUCKS</label></li>
-                        <li><label><input type="checkbox"> STREETWEAR</label></li>
-                        <li><label><input type="checkbox"> COLLECTIBLES</label></li>
-                    </ul>
+            <div class="mobile-filter-wrapper">
+                <button type="button" class="filter-toggle-btn" id="filterToggle">
+                    FILTER JUNK <span class="material-icons">expand_more</span>
+                </button>
+                
+                <div class="filter-content-inner" id="filterContent">
+                    <div class="filter-group">
+                        <h4>CONDITION</h4>
+                        <ul class="filter-list">
+                            <li><label><input type="checkbox" name="condition[]" value="MINT / WALL HANGER" <?php echo in_array('MINT / WALL HANGER', $selected_conditions) ? 'checked' : ''; ?> onchange="this.form.submit()"> DEADSTOCK (MINT)</label></li>
+                            <li><label><input type="checkbox" name="condition[]" value="LIGHTLY SCUFFED" <?php echo in_array('LIGHTLY SCUFFED', $selected_conditions) ? 'checked' : ''; ?> onchange="this.form.submit()"> LIGHTLY SCUFFED</label></li>
+                            <li><label><input type="checkbox" name="condition[]" value="BEAT UP / SKATEABLE" <?php echo in_array('BEAT UP / SKATEABLE', $selected_conditions) ? 'checked' : ''; ?> onchange="this.form.submit()"> TRASHED</label></li>
+                        </ul>
+                    </div>
+
+                    <div class="filter-group">
+                        <h4>GEAR TYPE</h4>
+                        <ul class="filter-list">
+                            <li><label><input type="checkbox" name="type[]" value="Decks" <?php echo in_array('Decks', $selected_types) ? 'checked' : ''; ?> onchange="this.form.submit()"> VINTAGE DECKS</label></li>
+                            <li><label><input type="checkbox" name="type[]" value="Trucks" <?php echo in_array('Trucks', $selected_types) ? 'checked' : ''; ?> onchange="this.form.submit()"> USED TRUCKS</label></li>
+                            <li><label><input type="checkbox" name="type[]" value="Apparel" <?php echo in_array('Apparel', $selected_types) ? 'checked' : ''; ?> onchange="this.form.submit()"> STREETWEAR</label></li>
+                            <li><label><input type="checkbox" name="type[]" value="Collectibles" <?php echo in_array('Collectibles', $selected_types) ? 'checked' : ''; ?> onchange="this.form.submit()"> COLLECTIBLES</label></li>
+                        </ul>
+                    </div>
+
+                    <a href="marketplace.php" class="btn reset-btn">RESET ALL</a>
                 </div>
             </div>
-        </div>
+        </form>
     </aside>
 
     <div class="shop-main-grid">
         <div class="shop-controls">
             <div class="controls-upper">
                 <div class="search-section">
-                    <div class="search-wrapper">
-                        <input type="text" placeholder="SEARCH THE SCRAPHEAP..." id="shop-search">
-                        <button class="search-btn"><span class="material-icons">search</span></button>
-                    </div>
-                    <p class="results-count">SHOWING 1-6 OF 142 LISTINGS</p>
+
+                    <form class="search-wrapper" action="marketplace.php" method="GET">
+                        <input type="text" name="search" placeholder="SEARCH THE SCRAPHEAP..." id="shop-search" value="<?php echo htmlspecialchars($search); ?>">
+                        
+                        <?php foreach($selected_conditions as $c): ?><input type="hidden" name="condition[]" value="<?php echo htmlspecialchars($c); ?>"><?php endforeach; ?>
+                        <?php foreach($selected_types as $t): ?><input type="hidden" name="type[]" value="<?php echo htmlspecialchars($t); ?>"><?php endforeach; ?>
+                        
+                        <button type="submit" class="search-btn"><span class="material-icons">search</span></button>
+                    </form>
+                    <p class="results-count">SHOWING <?php echo $start_item; ?>-<?php echo $end_item; ?> OF <?php echo $total_items; ?> LISTINGS</p>
                 </div>
 
                 <div class="sort-section">
-                    <select class="sort-dropdown">
-                        <option>SORT: NEWEST LISTINGS</option>
-                        <option>SORT: CHEAPEST</option>
-                        <option>SORT: RAREST</option>
+                    <select class="sort-dropdown" onchange="window.location.href = '<?php echo get_filter_url(['sort' => '']); ?>'.replace('sort=', 'sort=' + this.value)">
+                        <option value="newest" <?php echo $sort == 'newest' ? 'selected' : ''; ?>>SORT: NEWEST</option>
+                        <option value="cheapest" <?php echo $sort == 'cheapest' ? 'selected' : ''; ?>>SORT: CHEAPEST</option>
+                        <option value="rarest" <?php echo $sort == 'rarest' ? 'selected' : ''; ?>>SORT: RAREST</option>
                     </select>
                 </div>
             </div>
@@ -101,65 +174,54 @@
 
       
         <div class="product-grid">
-
-        <a href="product.php" style="text-decoration: none; color: inherit;">
-            <div class="product-card grainy-card compact-card marketplace-card">
-                <div class="card-img">
-                    <span class="condition-badge mint">MINT / WALL HANGER</span>
-                    <img src="https://images.unsplash.com/photo-1520045892732-304bc3ac5d8e?auto=format&fit=crop&q=80&w=800" alt="Vintage Deck">
-                </div>
-                <div class="card-info">
-                    <div>
-                        <h4>OG 1999 BLIND DECK</h4>
-                        <p>SELLER: <span class="seller-name">@SkateRat99</span></p>
+        <?php 
+        if ($result->num_rows > 0) {
+            while($row = $result->fetch_assoc()) {
+                ?>
+                <a href="product.php?id=<?php echo $row['id']; ?>" style="text-decoration: none; color: inherit;">
+                    <div class="product-card grainy-card compact-card marketplace-card">
+                        <div class="card-img">
+                            <span class="condition-badge <?php echo strtolower(explode(' ', $row['condition_badge'])[0]); ?>">
+                                <?php echo htmlspecialchars($row['condition_badge']); ?>
+                            </span>
+                            <img src="<?php echo $row['image_url']; ?>" alt="<?php echo htmlspecialchars($row['title']); ?>">
+                        </div>
+                        <div class="card-info">
+                            <div>
+                                <h4><?php echo htmlspecialchars($row['title']); ?></h4>
+                                <p>SELLER: <span class="seller-name"><?php echo htmlspecialchars($row['seller_name']); ?></span></p>
+                            </div>
+                            <span class="price">$<?php echo number_format($row['price'], 2); ?></span>
+                        </div>
                     </div>
-                    <span class="price">$250</span>
-                </div>
-            </div>
-        </a>
-
-        <a href="product.php" style="text-decoration: none; color: inherit;">
-            <div class="product-card grainy-card compact-card marketplace-card">
-                <div class="card-img">
-                    <span class="condition-badge beat">BEAT UP / SKATEABLE</span>
-                    <img src="https://images.unsplash.com/photo-1547447134-cd3f5c716030?auto=format&fit=crop&q=80&w=800" alt="Used Trucks">
-                </div>
-                <div class="card-info">
-                    <div>
-                        <h4>INDEPENDENT 149 TRUCKS</h4>
-                        <p>SELLER: <span class="seller-name">@KickflipKenny</span></p>
-                    </div>
-                    <span class="price">$20</span>
-                </div>
-            </div>
-        </a>
-
-        <a href="product.php" style="text-decoration: none; color: inherit;">
-            <div class="product-card grainy-card compact-card marketplace-card">
-                <div class="card-img">
-                    <span class="condition-badge good">WORN ONCE</span>
-                    <img src="https://idioma.world/cdn/shop/files/Kosmos-Hood-Full-Web-Graphic_1500x1500.jpg?v=1729783863" alt="Hoodie">
-                </div>
-                <div class="card-info">
-                    <div>
-                        <h4>SUPREME 2018 HOODIE</h4>
-                        <p>SELLER: <span class="seller-name">@HypeBeast_22</span></p>
-                    </div>
-                    <span class="price">$140</span>
-                </div>
-            </div>
-        </a>
-
+                </a>
+                <?php
+            }
+        } else {
+            echo "<div  class='not-found'>
+            <h3>NO GEAR FOUND.</h3>
+            <p>Try adjusting your filters or search terms.</p>
+        </div>";
+        }
+        ?>
         </div>
 
 
+        <?php if ($total_pages > 1): ?>
         <div class="pagination">
-            <button class="btn btn-outline">< PREV</button>
-            <button class="btn btn-primary">1</button>
-            <button class="btn btn-outline">2</button>
-            <button class="btn btn-outline">3</button>
-            <button class="btn btn-outline">NEXT ></button>
+            <?php if($page > 1): ?>
+                <a href="<?php echo get_filter_url(['page' => $page - 1]); ?>" class="btn btn-outline">&lt; PREV</a>
+            <?php endif; ?>
+            
+            <?php for($i = 1; $i <= $total_pages; $i++): ?>
+                <a href="<?php echo get_filter_url(['page' => $i]); ?>" class="btn <?php echo ($page == $i) ? 'btn-primary' : 'btn-outline'; ?>"><?php echo $i; ?></a>
+            <?php endfor; ?>
+
+            <?php if($page < $total_pages): ?>
+                <a href="<?php echo get_filter_url(['page' => $page + 1]); ?>" class="btn btn-outline">NEXT &gt;</a>
+            <?php endif; ?>
         </div>
+        <?php endif; ?>
     </div>
 </section>
 
