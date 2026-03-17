@@ -57,7 +57,7 @@ $recent_result = $conn->query($recent_sql);
     </aside>
 
     <main class="admin-main">
-        <div class="shop-header-title" style="text-align: left; margin-bottom: 30px;">
+        <div class="shop-header-title">
             <h2 class="glitch-text-admin">COMMAND <span class="text-primary">CENTER</span></h2>
             <p class="admin-text">SYSTEM OVERVIEW & STATISTICS</p>
         </div>
@@ -78,7 +78,7 @@ $recent_result = $conn->query($recent_sql);
         </div>
 
         <div class="grainy-card" style="padding: 20px;">
-            <h3 style="margin-top: 0; border-bottom: 1px solid #333; padding-bottom: 10px;">RECENTLY ADDED GEAR</h3>
+            <h3 class="admin-table-h3">RECENTLY <span class="header-span">ADDED</span> GEAR</h3>
             
             <table class="recent-activity-table">
                 <thead>
