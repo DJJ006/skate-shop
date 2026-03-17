@@ -9,6 +9,8 @@
 }
 
 /* ===== ADMIN LAYOUT ===== */
+
+
 .admin-layout{
     display: grid;
     grid-template-columns: 260px 1fr;
@@ -16,6 +18,10 @@
     margin-top: 3rem;
     min-height: 80vh;
     align-items: start;
+}
+
+.shop-header-title {
+    width: 100%;
 }
 
 /* ===== ADMIN SIDEBAR ===== */
@@ -281,7 +287,12 @@
     border-color: var(--primary);
     background: #ffffff;
     transform: scale(1.01);
-    box-shadow: 2px 2px 0px var(--charcoal);
+    box-shadow: 1px 1px 0px var(--charcoal);
+}
+
+.admin-form input::selection{
+    background: var(--primary);
+    color: white;
 }
 
 .admin-form label {
@@ -334,11 +345,11 @@
 /* ===== MODAL CONTENT (BRUTALIST STYLE) ===== */
 .modal-content {
     background-color: var(--textwhite); 
-    border: 4px solid var(--charcoal);
+    border: 4px solid var(--primary);
     padding: 2.5rem; 
     width: 95%; 
     max-width: 650px;
-    box-shadow: 15px 15px 0px var(--charcoal); 
+    box-shadow: 5px 5px 0px var(--charcoal); 
     position: relative;
     max-height: 90vh;
     overflow-y: auto;
@@ -377,11 +388,12 @@
     margin-bottom: 2rem; 
     border-bottom: 4px solid var(--charcoal); 
     padding-bottom: 1rem;
+    margin-top: 2rem;
 }
 
 /* ===== TRASH/DANGER BUTTON ===== */
 .btn-danger { 
-    background: #000; 
+    background: var(--charcoal); 
     color: #fff; 
     border: 3px solid #000; 
     font-family: 'Staatliches', sans-serif; 
@@ -392,7 +404,9 @@
 
 .btn-danger:hover { 
     background: var(--primary); 
-    border-color: var(--charcoal); 
+    border-color: var(--charcoal);
+    transform: translateY(-4px);
+    box-shadow:var(--boxshadow);
 }
 
 /* File Input Styling */
@@ -402,14 +416,176 @@ input[type="file"] {
 }
 
 /*EDIT BUTTON*/
-.material-icons{
+.edit-icon {
     color: var(--primary);
     padding-left: 1rem;
 }
 
-.material-icons:hover{
+.edit-icon:hover {
     color: var(--charcoal);
     transition: var(--transition);
+}
+
+
+/* ===== FILTER BAR STYLES ===== */
+.filter-bar {
+    padding: 1.2rem 1.5rem 0.8rem 1.5rem; 
+    margin-bottom: 2rem;
+    margin-top: 2rem;
+    border: 4px solid var(--charcoal);
+    background: rgba(255, 255, 255, 0.4);
+    height: auto; 
+}
+
+/* FORM LAYOUT */
+.search-filter-form {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 1rem;
+    align-items: flex-end;
+    width: 100%;
+    margin: 0;
+}
+
+/* GROUP */
+.filter-group {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-width: 0;
+    border: none;
+    margin: 0;
+}
+
+/* LABEL */
+.filter-group label {
+    font-family: 'Staatliches', sans-serif;
+    font-size: 1rem;
+    margin-bottom: 6px;
+    color: var(--charcoal);
+    letter-spacing: 1px;
+    transform: skewX(-8deg);
+    font-weight: 700;
+}
+
+/* INPUTS + SELECTS (MATCHING SIMPLE FORM) */
+.filter-group input, 
+.filter-group select {
+    width: 100%;
+    padding: 1.2rem;
+    border: 3px solid var(--charcoal);
+    font-family: 'Staatliches', sans-serif;
+    font-size: 1rem;
+    letter-spacing: 1px;
+    transition: all 0.2s ease;
+    font-weight: 500;
+    text-transform: uppercase;
+    caret-color: var(--primary);
+}
+
+.filter-group input::selection,
+.filter-group textarea::selection{
+    background: var(--primary);
+    color: white;
+}
+
+/* PLACEHOLDER */
+.filter-group input::placeholder {
+    color: var(--charcoal);
+    opacity: 0.7;
+    transform: skewX(-12deg);
+    font-size: 1rem;
+}
+
+/* FOCUS */
+.filter-group input:focus, 
+.filter-group select:focus {
+    outline: none;
+    border-color: var(--primary);
+    background-color: #ffffff;
+    transform: scale(1.02);
+    box-shadow: 2px 2px 0px var(--charcoal);
+}
+
+/* HOVER */
+.filter-group input:hover,
+.filter-group select:hover {
+    border-color: var(--primary);
+    background-color: #ffffff;
+    box-shadow: 2px 2px 0px var(--charcoal);
+}
+
+/* SEARCH BOX BIGGER */
+.search-box {
+    flex: 1.5 1 auto;
+}
+
+/* BUTTON GROUP */
+.filter-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex: 0 0 auto;
+    margin-bottom: 0;
+}
+
+.filter-group input, 
+.filter-group select,
+.btn-filter, 
+.btn-reset {
+    height: 52px;
+    padding: 0 1rem;
+    box-sizing: border-box;
+}
+
+
+/* APPLY BUTTON */
+.btn-filter {
+    background: var(--charcoal);
+    color: white;
+    border: 3px solid var(--charcoal);
+    padding: 1.2rem 1rem;
+    font-family: 'Staatliches', sans-serif;
+    letter-spacing: 1px;
+    cursor: pointer;
+    transition: 0.2s ease;
+    font-size: 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+}
+
+/* RESET BUTTON */
+.btn-reset {
+    background: var(--primary);
+    color: var(--textwhite);
+    border: 3px solid var(--charcoal);
+    padding: 1.2rem 1rem;
+    font-family: 'Staatliches', sans-serif;
+    text-decoration: none;
+    text-align: center;
+    transition: 0.2s ease;
+    font-size: 1rem;
+    letter-spacing: 1px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+}
+
+/* BUTTON HOVER (BRUTALIST STYLE) */
+.btn-filter:hover{
+    background: var(--textwhite);
+    color: var(--charcoal);
+    transform: translateY(-2px);
+    box-shadow: var(--boxshadow)
+}
+
+.btn-reset:hover {
+    background: var(--textwhite);
+    color: var(--charcoal);
+    transform: translateY(-2px);
+    box-shadow: var(--boxshadow)
 }
 
 /* ===== RESPONSIVE ===== */

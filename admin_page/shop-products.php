@@ -90,7 +90,33 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_product'])) {
     }
 }
 
-$products_sql = "SELECT id, title, price, category, description, created_at FROM products WHERE is_marketplace = 0 ORDER BY created_at DESC";
+// --- HANDLE SEARCH & FILTER ---
+$search = isset($_GET['search']) ? $conn->real_escape_string($_GET['search']) : '';
+$cat_filter = isset($_GET['filter_category']) ? $conn->real_escape_string($_GET['filter_category']) : '';
+$sort_by = isset($_GET['sort_by']) ? $_GET['sort_by'] : 'created_at';
+$order = isset($_GET['order']) ? $_GET['order'] : 'DESC';
+
+// Build the WHERE clause
+$where_clauses = ["is_marketplace = 0"];
+
+if (!empty($search)) {
+    $where_clauses[] = "(title LIKE '%$search%' OR id LIKE '%$search%')";
+}
+if (!empty($cat_filter)) {
+    $where_clauses[] = "category = '$cat_filter'";
+}
+
+$where_sql = implode(' AND ', $where_clauses);
+
+// Validate sort columns to prevent SQL injection
+$allowed_sorts = ['id', 'title', 'price', 'created_at'];
+if (!in_array($sort_by, $allowed_sorts)) { $sort_by = 'created_at'; }
+
+$products_sql = "SELECT id, title, price, category, description, created_at 
+                 FROM products 
+                 WHERE $where_sql 
+                 ORDER BY $sort_by $order";
+
 $products_result = $conn->query($products_sql);
 ?>
 
@@ -145,6 +171,55 @@ $products_result = $conn->query($products_sql);
 
         <div class="grainy-card" style="padding: 20px;">
             <h3 class="admin-table-h3">CURRENT <span class="header-span">INVENTORY</span></h3>
+
+
+            <div class="grainy-card filter-bar">
+    <form method="GET" action="shop-products.php" class="search-filter-form">
+        <div class="filter-group search-box">
+            <label>SEARCH</label>
+            <input type="text" name="search" placeholder="ID or Product Name..." value="<?php echo htmlspecialchars($search); ?>">
+        </div>
+
+        <div class="filter-group">
+            <label>CATEGORY</label>
+            <select name="filter_category" onchange="this.form.submit()">
+                <option value="">ALL GEAR</option>
+                <option value="Decks" <?php if($cat_filter == 'Decks') echo 'selected'; ?>>DECKS</option>
+                <option value="Trucks" <?php if($cat_filter == 'Trucks') echo 'selected'; ?>>TRUCKS</option>
+                <option value="Wheels" <?php if($cat_filter == 'Wheels') echo 'selected'; ?>>WHEELS</option>
+                <option value="Bearings" <?php if($cat_filter == 'Bearings') echo 'selected'; ?>>BEARINGS</option>
+                <option value="Apparel" <?php if($cat_filter == 'Apparel') echo 'selected'; ?>>APPAREL</option>
+            </select>
+        </div>
+
+        <div class="filter-group">
+            <label>SORT BY</label>
+            <select name="sort_by" onchange="this.form.submit()">
+                <option value="created_at" <?php if($sort_by == 'created_at') echo 'selected'; ?>>NEWEST</option>
+                <option value="id" <?php if($sort_by == 'id') echo 'selected'; ?>>ID NUMBER</option>
+                <option value="title" <?php if($sort_by == 'title') echo 'selected'; ?>>PRODUCT NAME</option>
+                <option value="price" <?php if($sort_by == 'price') echo 'selected'; ?>>PRICE</option>
+            </select>
+        </div>
+
+        <div class="filter-group">
+            <label>ORDER</label>
+            <select name="order" onchange="this.form.submit()">
+                <option value="DESC" <?php if($order == 'DESC') echo 'selected'; ?>>DESC</option>
+                <option value="ASC" <?php if($order == 'ASC') echo 'selected'; ?>>ASC</option>
+            </select>
+        </div>
+
+        <div class="filter-group" style="flex: 0 0 auto;">
+            <label style="visibility: hidden;">ACTIONS</label> 
+            <div class="filter-actions">
+                <button type="submit" class="btn-filter">FILTER</button>
+                <a href="shop-products.php" class="btn-reset">RESET</a>
+            </div>
+        </div>
+    </form>
+</div>
+
             
             <table class="recent-activity-table">
                 <thead>
@@ -171,7 +246,9 @@ $products_result = $conn->query($products_sql);
                                 <td><strong><?php echo htmlspecialchars($row['title']); ?></strong></td>
                                 <td><span class="badge-shop"><?php echo htmlspecialchars($row['category']); ?></span></td>
                                 <td>$<?php echo number_format($row['price'], 2); ?></td>
-                                <td><span class="material-icons">edit</span></td>
+                                <td class="edit-button">
+                                <span class="material-icons edit-icon">edit</span>
+                                </td>
                             </tr>
                         <?php endwhile; ?>
                     <?php else: ?>
@@ -208,7 +285,7 @@ $products_result = $conn->query($products_sql);
             <label>GEAR IMAGE</label>
             <input type="file" name="image" accept="image/*" required>
             <button type="submit" name="add_product" class="btn btn-primary" style="width: 100%; margin-top: 1rem; font-size: 1.4rem;">
-                LOCK IT IN THE VAULT
+                ADD TO THE SHOP
             </button>
         </form>
     </div>
@@ -220,7 +297,7 @@ $products_result = $conn->query($products_sql);
         <h3 class="admin-table-h3">EDIT <span class="header-span">GEAR</span></h3>
         <form action="shop-products.php" method="POST" enctype="multipart/form-data" class="admin-form">
             <input type="hidden" id="edit_id" name="product_id">
-            <label>GEAR TITLE</label>
+            <label class="top-title">GEAR TITLE</label>
             <input type="text" id="edit_title" name="title" required>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
                 <div><label>PRICE ($)</label><input type="number" id="edit_price" name="price" step="0.01" required></div>
