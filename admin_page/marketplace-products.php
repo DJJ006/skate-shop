@@ -8,13 +8,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_product'])){
     $price = (float)$_POST['price'];
     $category = $conn->real_escape_string($_POST['category']);
     $description = $conn->real_escape_string($_POST['description']);
-    $is_marketplace = 0;
+    $is_marketplace = 1; // Set to 1 for Street Market
 
     $image_url = '';
     if (isset($_FILES['image']) && $_FILES['image']['error'] == 0){
         $target_dir = "../assets/uploads/";
         $file_extension = pathinfo($_FILES["image"]["name"], PATHINFO_EXTENSION);
-        $new_filename = uniqid('gear_') . '.' . $file_extension;
+        $new_filename = uniqid('market_') . '.' . $file_extension;
         $target_file = $target_dir . $new_filename;
         $allowed_types = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
         
@@ -29,7 +29,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_product'])){
         $sql = "INSERT INTO products (title, price, category, description, image_url, is_marketplace) 
                 VALUES ('$title', '$price', '$category', '$description', '$image_url', '$is_marketplace')";
         if ($conn->query($sql) === TRUE) {
-            $_SESSION['msg'] = "GEAR ADDED TO THE VAULT!";
+            $_SESSION['msg'] = "ITEM ADDED TO THE STREET MARKET!";
             $_SESSION['msg_type'] = "success";
         } else {
             $_SESSION['msg'] = "DATABASE ERROR: " . $conn->error;
@@ -41,7 +41,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_product'])){
     }
     
     // REDIRECT to clear POST data
-    header("Location: shop-products.php");
+    header("Location: marketplace-products.php");
     exit();
 }
 
@@ -57,7 +57,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_product'])) {
     if (isset($_FILES['image']) && $_FILES['image']['error'] == 0) {
         $target_dir = "../assets/uploads/";
         $file_extension = pathinfo($_FILES["image"]["name"], PATHINFO_EXTENSION);
-        $new_filename = uniqid('gear_') . '.' . $file_extension;
+        $new_filename = uniqid('market_') . '.' . $file_extension;
         $target_file = $target_dir . $new_filename;
         $allowed_types = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
         
@@ -69,53 +69,49 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_product'])) {
         }
     }
 
-    $sql = "UPDATE products SET title='$title', price='$price', category='$category', description='$description' $image_query_part WHERE id=$id";
+    $sql = "UPDATE products SET title='$title', price='$price', category='$category', description='$description' $image_query_part WHERE id=$id AND is_marketplace=1";
     if ($conn->query($sql) === TRUE) {
-        $_SESSION['msg'] = "GEAR UPDATED SUCCESSFULLY!";
+        $_SESSION['msg'] = "MARKET ITEM UPDATED SUCCESSFULLY!";
         $_SESSION['msg_type'] = "success";
     } else {
-        $_SESSION['msg'] = "ERROR UPDATING GEAR.";
+        $_SESSION['msg'] = "ERROR UPDATING MARKET ITEM.";
         $_SESSION['msg_type'] = "error";
     }
     
-    header("Location: shop-products.php");
+    header("Location: marketplace-products.php");
     exit();
 }
 
 // --- HANDLE DELETE ---
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_product'])) {
     $id = (int)$_POST['product_id'];
-    $sql = "DELETE FROM products WHERE id=$id";
+    $sql = "DELETE FROM products WHERE id=$id AND is_marketplace=1";
     if ($conn->query($sql) === TRUE) {
-        $_SESSION['msg'] = "GEAR TRASHED.";
+        $_SESSION['msg'] = "MARKET ITEM TRASHED.";
         $_SESSION['msg_type'] = "success";
     } else {
-        $_SESSION['msg'] = "ERROR DELETING GEAR.";
+        $_SESSION['msg'] = "ERROR DELETING ITEM.";
         $_SESSION['msg_type'] = "error";
     }
     
-    header("Location: shop-products.php");
+    header("Location: marketplace-products.php");
     exit();
 }
 
 // --- HANDLE SEARCH & FILTER ---
 $search = isset($_GET['search']) ? $conn->real_escape_string($_GET['search']) : '';
-
-// 1. Get categories as an array
 $cat_filter = isset($_GET['filter_category']) ? $_GET['filter_category'] : []; 
-
 $sort_by = isset($_GET['sort_by']) ? $_GET['sort_by'] : 'created_at';
 $order = isset($_GET['order']) ? $_GET['order'] : 'DESC';
 
-$where_clauses = ["is_marketplace = 0"];
+// ONLY PULL MARKETPLACE ITEMS
+$where_clauses = ["is_marketplace = 1"];
 
 if (!empty($search)) { 
     $where_clauses[] = "(title LIKE '%$search%' OR id LIKE '%$search%')"; 
 }
 
-// 2. Build the "IN" clause for multiple categories
 if (!empty($cat_filter) && is_array($cat_filter)) {
-    // Sanitize every item in the array
     $sanitized_cats = array_map(function($c) use ($conn) {
         return "'" . $conn->real_escape_string($c) . "'";
     }, $cat_filter);
@@ -139,7 +135,7 @@ $products_result = $conn->query($products_sql);
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SkateShop | THE VAULT</title>
+    <title>SkateShop | STREET MARKET</title>
     <link rel="stylesheet" href="../assets/style.css"> 
     <link rel="stylesheet" href="../assets/shop.css">
     <link rel="stylesheet" href="../assets/admin.css">
@@ -147,7 +143,6 @@ $products_result = $conn->query($products_sql);
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <link rel="icon" href="../assets/images/skateshop_favicon.png" type="image/png">
-    
 </head>
 <body>
 
@@ -162,8 +157,8 @@ $products_result = $conn->query($products_sql);
         <h3 class="admin-sidebar-title">SYSTEM <span class="header-span">MENU</span></h3>
         <ul class="admin-nav-list">
             <li><a href="index.php"><span class="material-icons">dashboard</span> DASHBOARD</a></li>
-            <li><a href="shop-products.php" class="active"><span class="material-icons">inventory_2</span> THE VAULT (SHOP)</a></li>
-            <li><a href="marketplace-products.php"><span class="material-icons">storefront</span> STREET MARKET</a></li>
+            <li><a href="shop-products.php"><span class="material-icons">inventory_2</span> THE VAULT (SHOP)</a></li>
+            <li><a href="marketplace-products.php" class="active"><span class="material-icons">storefront</span> STREET MARKET</a></li>
             <li><a href="../index.php"><span class="material-icons">public</span> VIEW LIVE SITE</a></li>
         </ul>
     </aside>
@@ -171,85 +166,86 @@ $products_result = $conn->query($products_sql);
     <main class="admin-main">
         <div class="top-action-bar">
             <div>
-                <h2 class="glitch-text-admin">THE <span class="text-primary">VAULT</span></h2>
-                <p class="admin-text-shop">OFFICIAL SHOP INVENTORY MANAGEMENT</p>
+                <h2 class="glitch-text-admin">STREET <span class="text-primary">MARKET</span></h2>
+                <p class="admin-text-shop">COMMUNITY GENERATED INVENTORY MANAGEMENT</p>
             </div>
-            <button class="btn btn-primary" onclick="openModal('addModal')">+ ADD NEW GEAR</button>
+            <button class="btn btn-primary" onclick="openModal('addModal')">+ ADD MARKET ITEM</button>
         </div>
 
         <?php if (isset($_SESSION['msg'])): ?>
             <div class="admin-alert alert-<?php echo $_SESSION['msg_type']; ?>">
                 <?php 
                     echo $_SESSION['msg']; 
-                    unset($_SESSION['msg']); // Clear so it doesn't repeat on refresh
+                    unset($_SESSION['msg']); 
                     unset($_SESSION['msg_type']);
                 ?>
             </div>
         <?php endif; ?>
 
         <div class="grainy-card" style="padding: 20px;">
-            <h3 class="admin-table-h3">CURRENT <span class="header-span">INVENTORY</span></h3>
+            <h3 class="admin-table-h3">MARKET <span class="header-span">LISTINGS</span></h3>
+            
             <div class="grainy-card filter-bar">
-    <form method="GET" action="shop-products.php" class="search-filter-form">
-        <div class="filter-group search-box">
-            <label>SEARCH</label>
-            <input type="text" name="search" placeholder="ID or Product Name..." value="<?php echo htmlspecialchars($search); ?>">
-        </div>
+                <form method="GET" action="marketplace-products.php" class="search-filter-form">
+                    <div class="filter-group search-box">
+                        <label>SEARCH</label>
+                        <input type="text" name="search" placeholder="ID or Product Name..." value="<?php echo htmlspecialchars($search); ?>">
+                    </div>
 
-            <div class="filter-group">
-        <label>CATEGORIES</label>
-        <div class="custom-multiselect" id="categoryDropdown">
-            <div class="select-box" onclick="toggleDropdown()">
-                <span id="selectText">
-                    <?php 
-                    if(!empty($cat_filter)) {
-                        echo count($cat_filter) . " SELECTED";
-                    } else {
-                        echo "ALL GEAR";
-                    }
-                    ?>
-                </span>
-                <span class="material-icons">expand_more</span>
+                    <div class="filter-group">
+                        <label>CATEGORIES</label>
+                        <div class="custom-multiselect" id="categoryDropdown">
+                            <div class="select-box" onclick="toggleDropdown()">
+                                <span id="selectText">
+                                    <?php 
+                                    if(!empty($cat_filter)) {
+                                        echo count($cat_filter) . " SELECTED";
+                                    } else {
+                                        echo "ALL GEAR";
+                                    }
+                                    ?>
+                                </span>
+                                <span class="material-icons">expand_more</span>
+                            </div>
+                            <div class="dropdown-content" id="dropdownOptions">
+                                <?php 
+                                $options = ['Decks', 'Trucks', 'Wheels', 'Bearings', 'Apparel'];
+                                foreach($options as $opt): 
+                                    $checked = (is_array($cat_filter) && in_array($opt, $cat_filter)) ? 'checked' : '';
+                                ?>
+                                    <label class="dropdown-item">
+                                        <input type="checkbox" name="filter_category[]" value="<?php echo $opt; ?>" <?php echo $checked; ?> onchange="this.form.submit()">
+                                        <span><?php echo strtoupper($opt); ?></span>
+                                    </label>
+                                <?php endforeach; ?>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="filter-group">
+                        <label>SORT BY</label>
+                        <select name="sort_by" onchange="this.form.submit()">
+                            <option value="created_at" <?php if($sort_by == 'created_at') echo 'selected'; ?>>NEWEST</option>
+                            <option value="id" <?php if($sort_by == 'id') echo 'selected'; ?>>ID NUMBER</option>
+                            <option value="title" <?php if($sort_by == 'title') echo 'selected'; ?>>PRODUCT NAME</option>
+                            <option value="price" <?php if($sort_by == 'price') echo 'selected'; ?>>PRICE</option>
+                        </select>
+                    </div>
+
+                    <div class="filter-group">
+                        <label>ORDER</label>
+                        <select name="order" onchange="this.form.submit()">
+                            <option value="DESC" <?php if($order == 'DESC') echo 'selected'; ?>>DESC</option>
+                            <option value="ASC" <?php if($order == 'ASC') echo 'selected'; ?>>ASC</option>
+                        </select>
+                    </div>
+
+                    <div class="filter-actions" style="margin-top:22px;">
+                        <button type="submit" class="btn-filter">FILTER</button>
+                        <a href="marketplace-products.php" class="btn-reset">RESET</a>
+                    </div>
+                </form>
             </div>
-            <div class="dropdown-content" id="dropdownOptions">
-                <?php 
-                $options = ['Decks', 'Trucks', 'Wheels', 'Bearings', 'Apparel'];
-                foreach($options as $opt): 
-                    $checked = (is_array($cat_filter) && in_array($opt, $cat_filter)) ? 'checked' : '';
-                ?>
-                    <label class="dropdown-item">
-                        <input type="checkbox" name="filter_category[]" value="<?php echo $opt; ?>" <?php echo $checked; ?> onchange="this.form.submit()">
-                        <span><?php echo strtoupper($opt); ?></span>
-                    </label>
-                <?php endforeach; ?>
-            </div>
-        </div>
-    </div>
-
-        <div class="filter-group">
-            <label>SORT BY</label>
-            <select name="sort_by" onchange="this.form.submit()">
-                <option value="created_at" <?php if($sort_by == 'created_at') echo 'selected'; ?>>NEWEST</option>
-                <option value="id" <?php if($sort_by == 'id') echo 'selected'; ?>>ID NUMBER</option>
-                <option value="title" <?php if($sort_by == 'title') echo 'selected'; ?>>PRODUCT NAME</option>
-                <option value="price" <?php if($sort_by == 'price') echo 'selected'; ?>>PRICE</option>
-            </select>
-        </div>
-
-        <div class="filter-group">
-            <label>ORDER</label>
-            <select name="order" onchange="this.form.submit()">
-                <option value="DESC" <?php if($order == 'DESC') echo 'selected'; ?>>DESC</option>
-                <option value="ASC" <?php if($order == 'ASC') echo 'selected'; ?>>ASC</option>
-            </select>
-        </div>
-
-        <div class="filter-actions" style="margin-top:22px;">
-            <button type="submit" class="btn-filter">FILTER</button>
-            <a href="shop-products.php" class="btn-reset">RESET</a>
-        </div>
-    </form>
-</div>
             
             <table class="recent-activity-table">
                 <thead>
@@ -267,13 +263,13 @@ $products_result = $conn->query($products_sql);
                             <tr class="clickable-row" onclick="openEditModal(<?php echo $row['id']; ?>, '<?php echo addslashes(htmlspecialchars($row['title'])); ?>', <?php echo $row['price']; ?>, '<?php echo addslashes(htmlspecialchars($row['category'])); ?>', '<?php echo addslashes(htmlspecialchars($row['description'])); ?>')">
                                 <td class="td-id">#<?php echo $row['id']; ?></td>
                                 <td><strong><?php echo htmlspecialchars($row['title']); ?></strong></td>
-                                <td><span class="badge-shop"><?php echo htmlspecialchars($row['category']); ?></span></td>
+                                <td><span class="badge-market"><?php echo htmlspecialchars($row['category']); ?></span></td>
                                 <td>$<?php echo number_format($row['price'], 2); ?></td>
                                 <td class="edit-button"><span class="material-icons edit-icon">edit</span></td>
                             </tr>
                         <?php endwhile; ?>
                     <?php else: ?>
-                        <tr><td colspan="5" style="text-align: center; font-weight:700; font-style: italic;">THE VAULT IS CURRENTLY EMPTY.</td></tr>
+                        <tr><td colspan="5" style="text-align: center; font-weight:700; font-style: italic;">THE STREET MARKET IS CURRENTLY EMPTY.</td></tr>
                     <?php endif; ?>
                 </tbody>
             </table>
@@ -284,9 +280,9 @@ $products_result = $conn->query($products_sql);
 <div id="addModal" class="modal-overlay">
     <div class="modal-content">
         <span class="close-modal" onclick="closeModal('addModal')">&times;</span>
-        <h3 class="admin-table-h3">ADD <span class="header-span">NEW</span> GEAR</h3>
-        <form action="shop-products.php" method="POST" enctype="multipart/form-data" class="admin-form">
-            <label class="top-title">GEAR TITLE</label>
+        <h3 class="admin-table-h3">ADD <span class="header-span">NEW</span> LISTING</h3>
+        <form action="marketplace-products.php" method="POST" enctype="multipart/form-data" class="admin-form">
+            <label class="top-title">ITEM TITLE</label>
             <input type="text" name="title" required>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
                 <div><label>PRICE ($)</label><input type="number" name="price" step="0.01" required></div>
@@ -303,9 +299,9 @@ $products_result = $conn->query($products_sql);
             </div>
             <label>DESCRIPTION</label>
             <textarea name="description" rows="3" required></textarea>
-            <label>GEAR IMAGE</label>
+            <label>ITEM IMAGE</label>
             <input type="file" name="image" accept="image/*" required>
-            <button type="submit" name="add_product" class="btn btn-primary" style="width: 100%; margin-top: 1rem; font-size: 1.4rem;">ADD TO THE SHOP</button>
+            <button type="submit" name="add_product" class="btn btn-primary" style="width: 100%; margin-top: 1rem; font-size: 1.4rem;">PUBLISH TO MARKET</button>
         </form>
     </div>
 </div>
@@ -313,10 +309,10 @@ $products_result = $conn->query($products_sql);
 <div id="editModal" class="modal-overlay">
     <div class="modal-content">
         <span class="close-modal" onclick="closeModal('editModal')">&times;</span>
-        <h3 class="admin-table-h3">EDIT <span class="header-span">GEAR</span></h3>
-        <form action="shop-products.php" method="POST" enctype="multipart/form-data" class="admin-form">
+        <h3 class="admin-table-h3">EDIT <span class="header-span">LISTING</span></h3>
+        <form action="marketplace-products.php" method="POST" enctype="multipart/form-data" class="admin-form">
             <input type="hidden" id="edit_id" name="product_id">
-            <label class="top-title">GEAR TITLE</label>
+            <label class="top-title">ITEM TITLE</label>
             <input type="text" id="edit_title" name="title" required>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
                 <div><label>PRICE ($)</label><input type="number" id="edit_price" name="price" step="0.01" required></div>
@@ -337,7 +333,7 @@ $products_result = $conn->query($products_sql);
             <input type="file" name="image" accept="image/*">
             <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 10px; margin-top: 20px;">
                 <button type="submit" name="edit_product" class="btn btn-primary">SAVE CHANGES</button>
-                <button type="submit" name="delete_product" class="btn btn-danger" onclick="return confirm('PERMANENTLY TRASH THIS GEAR?');">
+                <button type="submit" name="delete_product" class="btn btn-danger" onclick="return confirm('PERMANENTLY TRASH THIS ITEM?');">
                     <span class="material-icons" style="vertical-align: middle;">delete</span>
                 </button>
             </div>
