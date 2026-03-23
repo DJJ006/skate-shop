@@ -1,0 +1,73 @@
+<?php
+session_start();
+include '../db.php';
+
+if (isset($_SESSION['user_id'])) {
+    header("Location: index.php");
+    exit();
+}
+
+$error = '';
+
+if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+    $username_email = trim($_POST['username_email']);
+    $password = $_POST['password'];
+
+    // Find user by username or email
+    $stmt = $conn->prepare("SELECT id, username, password FROM users WHERE username = ? OR email = ?");
+    $stmt->bind_param("ss", $username_email, $username_email);
+    $stmt->execute();
+    $result = $stmt->get_result();
+
+    if ($row = $result->fetch_assoc()) {
+        // Verify password hash
+        if (password_verify($password, $row['password'])) {
+            $_SESSION['user_id'] = $row['id'];
+            $_SESSION['username'] = $row['username'];
+            header("Location: index.php"); // Redirect to profile
+            exit();
+        } else {
+            $error = "INCORRECT PASSWORD.";
+        }
+    } else {
+        $error = "USER NOT FOUND.";
+    }
+}
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>SkateShop | LOGIN</title>
+    <link rel="stylesheet" href="../assets/style.css"> 
+    <link rel="stylesheet" href="../assets/admin.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
+</head>
+<body>
+    <?php include 'header.php'; ?>
+
+    <main class="container" style="display: flex; justify-content: center; margin-top: 5rem; min-height: 60vh;">
+        <div class="grainy-card" style="width: 100%; max-width: 500px; padding: 2.5rem;">
+            <h2 class="glitch-text-admin" style="font-size: 3rem; text-align: center;">LOG<span class="text-primary">IN</span></h2>
+            
+            <?php if ($error): ?>
+                <div class="admin-alert alert-error"><?php echo $error; ?></div>
+            <?php endif; ?>
+
+            <form action="login.php" method="POST" class="admin-form">
+                <label>USERNAME OR EMAIL</label>
+                <input type="text" name="username_email" required>
+                
+                <label>PASSWORD</label>
+                <input type="password" name="password" required>
+                
+                <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 1rem; font-size: 1.4rem;">ENTER THE VAULT</button>
+                
+                <p style="text-align: center; margin-top: 1.5rem; font-family: 'Staatliches', sans-serif; font-size: 1.1rem;">
+                    NEW HERE? <a href="register.php" style="color: var(--primary);">CREATE ACCOUNT</a>
+                </p>
+            </form>
+        </div>
+    </main>
+</body>
+</html>
