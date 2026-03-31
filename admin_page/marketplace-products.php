@@ -154,11 +154,12 @@ $products_result = $conn->query($products_sql);
 
 <section class="admin-layout container">
     <aside class="admin-sidebar grainy-card">
-        <h3 class="admin-sidebar-title">SYSTEM <span class="header-span">MENU</span></h3>
+        <h3 class="admin-sidebar-title">SYSTEM <span class="header-span">MENU<span></h3>
         <ul class="admin-nav-list">
             <li><a href="index.php"><span class="material-icons">dashboard</span> DASHBOARD</a></li>
             <li><a href="shop-products.php"><span class="material-icons">inventory_2</span> THE VAULT (SHOP)</a></li>
             <li><a href="marketplace-products.php" class="active"><span class="material-icons">storefront</span> STREET MARKET</a></li>
+            <li><a href="registered-users.php"><span class="material-icons">manage_accounts</span> REGISTERED USERS</a></li>
             <li><a href="../index.php"><span class="material-icons">public</span> VIEW LIVE SITE</a></li>
         </ul>
     </aside>

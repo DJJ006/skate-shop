@@ -158,7 +158,7 @@
 
 /* ===== ADMIN TABLE ===== */
 .admin-table-h3{
-    margin-top: 0;
+    margin-top: 1rem;
     border-bottom: 3px solid #333; 
     padding-bottom: 10px;
     font-family: 'Staatliches', sans-serif;
@@ -328,6 +328,7 @@
 .admin-alert {
     padding: 15px;
     margin-bottom: 20px;
+    margin-top: 1rem;
     border: 4px solid var(--charcoal);
     font-family: 'Staatliches', sans-serif;
     font-size: 1.2rem;
@@ -343,7 +344,7 @@
 .modal-overlay {
     display: none; 
     position: fixed; 
-    z-index: 2000; 
+    z-index: 3000; 
     left: 0; 
     top: 0;
     width: 100%; 
@@ -752,3 +753,270 @@ input[type="file"] {
         -webkit-overflow-scrolling: touch;
     }
 }
+
+
+/* ========================================== */
+/* ===== NEW USER DASHBOARD ADDITIONS ====== */
+/* ========================================== */
+
+.dashboard-header {
+    border-bottom: 4px solid var(--charcoal);
+    padding-bottom: 1rem;
+    margin-top: 3rem;
+    margin-bottom: 3rem;
+    text-align: center;
+}
+
+/* Dashboard Options Grid */
+.option-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1.5rem;
+    margin: 3rem 0;
+    margin-bottom: 7rem;
+}
+
+.option-card {
+    background: var(--textwhite);
+    border: 4px solid var(--charcoal);
+    padding: 2.5rem;
+    text-align: center;
+    cursor: pointer;
+    transition: var(--transition);
+    position: relative;
+    box-shadow: 5px 5px 0px var(--charcoal);
+}
+
+.option-card:hover {
+    border-color: var(--primary);
+    transform: translateY(-5px);
+    box-shadow: 8px 8px 0px var(--charcoal);
+}
+
+.option-card i { 
+    font-size: 3rem; 
+    color: var(--primary); 
+    margin-bottom: 1rem; 
+}
+
+.option-card h3 { 
+    font-family: 'Staatliches', sans-serif; 
+    font-size: 1.8rem; 
+    letter-spacing: 1px; 
+    color: var(--charcoal);
+    margin: 0;
+}
+
+/* Danger Card for Account Delete */
+.option-card.card-danger {
+    border-color: #ff4444;
+}
+.option-card.card-danger i,
+.option-card.card-danger h3 {
+    color: #ff4444;
+}
+.option-card.card-danger:hover {
+    background: rgba(255, 68, 68, 0.05);
+    box-shadow: 8px 8px 0px #ff4444;
+}
+
+/* Modals & Layout Tweaks */
+.btn-full {
+    width: 100%;
+}
+.btn-space-bottom {
+    margin-bottom: 1rem;
+    margin-top: 1rem;
+    font-size: 1rem;
+}
+.btn-cancel {
+    background: #333 !important; 
+    color: white !important;
+}
+
+.avatar-edit-preview {
+    text-align: center; 
+    margin-bottom: 1.5rem;
+    margin-top: 1.5rem;
+}
+.avatar-edit-img {
+    width: 120px; 
+    height: 120px; 
+    border-radius: 50%; 
+    border: 4px solid var(--primary); 
+    object-fit: cover; 
+    box-shadow: 4px 4px 0px var(--charcoal);
+}
+
+.form-grid-2-1 {
+    display: grid; 
+    grid-template-columns: 2fr 1fr; 
+    gap: 15px;
+    margin-top: 1rem;
+}
+.form-grid-3 {
+    display: grid; 
+    grid-template-columns: 1fr 1fr 1fr; 
+    gap: 15px;
+}
+
+/* Mini Listing Cards in Modals */
+.listings-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 1rem;
+}
+
+.mini-listing {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    background: var(--textwhite);
+    padding: 12px;
+    border: 3px solid var(--charcoal);
+    box-shadow: 4px 4px 0px var(--charcoal);
+    transition: var(--transition);
+}
+
+.mini-listing:hover {
+    transform: translateY(-2px);
+    box-shadow: 6px 6px 0px var(--charcoal);
+}
+
+.mini-listing img { 
+    width: 60px; 
+    height: 60px; 
+    object-fit: cover; 
+    border: 2px solid var(--charcoal);
+}
+.mini-listing-info {
+    flex-grow: 1;
+}
+.mini-listing-title {
+    margin: 0; 
+    font-family: 'Staatliches', sans-serif; 
+    font-size: 1.2rem;
+}
+.mini-listing-price {
+    margin: 0; 
+    color: var(--primary); 
+    font-family: 'Staatliches', sans-serif;
+}
+.mini-listing-id {
+    font-family: 'Staatliches', sans-serif; 
+    color: var(--charcoal); 
+    opacity: 0.6;
+}
+
+/* Empty States */
+.empty-placeholder-box {
+    text-align: center; 
+    padding: 2.5rem; 
+    border: 3px dashed var(--charcoal); 
+    background: rgba(0,0,0,0.03);
+    margin-top: 1rem;
+}
+.empty-placeholder-title {
+    font-family: 'Staatliches', sans-serif; 
+    font-size: 1.5rem; 
+    margin: 0;
+}
+.empty-placeholder-text {
+    margin: 0.5rem 0 0 0; 
+    font-size: 0.9rem; 
+    text-transform: uppercase;
+}
+
+/* Danger Modal Specifics */
+.modal-danger-dialog {
+    max-width: 450px; 
+    text-align: center;
+}
+
+.modal-danger-text {
+    font-family: 'Staatliches', sans-serif;
+    margin-top: 1.5rem;
+    text-transform: uppercase; 
+    font-weight: bold; 
+    color: var(--charcoal);
+    font-size: 1.3rem;
+}
+
+/* Fallback Primary Button Style for Dash Modals */
+.btn-primary-brutal {
+    height: 52px;
+    background: var(--primary);
+    color: var(--textwhite);
+    border: 3px solid var(--charcoal);
+    font-family: 'Staatliches', sans-serif;
+    font-size: 1.2rem;
+    letter-spacing: 1px;
+    cursor: pointer;
+    margin-top: 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: 0.2s ease;
+}
+
+.btn-primary-brutal:hover {
+    background: var(--textwhite);
+    color: var(--charcoal);
+    transform: translateY(-3px);
+    box-shadow: 4px 4px 0px var(--charcoal);
+}
+
+/*registered-users.php*/
+        .action-cell{
+             display: flex; 
+             gap: 10px; 
+             align-items: center; 
+            }
+
+        .btn-mini{ 
+            padding: 5px 10px; 
+            font-size: 1rem; 
+            border: 2px solid var(--charcoal); 
+            cursor: pointer;
+            font-family: 'Staatliches', sans-serif; 
+            transition: 0.2s; 
+        }
+
+        .btn-view{ 
+            background: var(--textwhite);
+            color: var(--charcoal); 
+        }
+
+        .btn-view:hover{
+             background: var(--charcoal); 
+             color: var(--textwhite); 
+            }
+
+        .btn-block{ 
+            background: #f59e0b; 
+            color: var(--textwhite); 
+            border-color: var(--charcoal); 
+        }
+
+        .btn-block:hover{
+             background: var(--charcoal);
+             }
+
+        .badge-blocked{ 
+            background: var(--primary); 
+            color: white; 
+            padding: 3px 10px; 
+            font-family: 'Staatliches', sans-serif; 
+            border: 2px solid var(--charcoal);
+            font-size: 1rem;
+        }
+
+        .badge-active{ 
+            background: #22c55e; 
+            color: white; 
+            padding: 3px 10px; 
+            font-family: 'Staatliches', sans-serif; 
+            border: 2px solid var(--charcoal); 
+            font-size: 1rem;
+        }

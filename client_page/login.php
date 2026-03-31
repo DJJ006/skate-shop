@@ -13,8 +13,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $username_email = trim($_POST['username_email']);
     $password = $_POST['password'];
 
-    // Find user by username or email
-    $stmt = $conn->prepare("SELECT id, username, password FROM users WHERE username = ? OR email = ?");
+    // 1. Added is_blocked to the SELECT statement
+    $stmt = $conn->prepare("SELECT id, username, password, is_blocked FROM users WHERE username = ? OR email = ?");
     $stmt->bind_param("ss", $username_email, $username_email);
     $stmt->execute();
     $result = $stmt->get_result();
@@ -22,18 +22,26 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     if ($row = $result->fetch_assoc()) {
         // Verify password hash
         if (password_verify($password, $row['password'])) {
-            $_SESSION['user_id'] = $row['id'];
-            $_SESSION['username'] = $row['username'];
-            header("Location: index.php"); // Redirect to profile
-            exit();
+            
+            // 2. Check if the account is banned before letting them in
+            if (isset($row['is_blocked']) && $row['is_blocked'] == 1) {
+                $error = "ACCESS DENIED. YOUR ACCOUNT HAS BEEN SUSPENDED.";
+            } else {
+                $_SESSION['user_id'] = $row['id'];
+                $_SESSION['username'] = $row['username'];
+                header("Location: index.php"); // Redirect to profile
+                exit();
+            }
+            
         } else {
-            $error = "INCORRECT PASSWORD.";
+            $error = "INCORRECT PASSWORD/USER NAME.";
         }
     } else {
-        $error = "USER NOT FOUND.";
+        $error = "INCORRECT PASSWORD/USER NAME.";
     }
 }
 ?>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
