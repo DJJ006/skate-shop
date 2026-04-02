@@ -2,11 +2,10 @@
 session_start();
 include '../db.php'; 
 
-
+// --- 1. HANDLE POST REQUESTS (DELETE & TOGGLE BLOCK) ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_user'])) {
     $target_user = (int)$_POST['user_id'];
     
-  
     $del_products = $conn->prepare("DELETE FROM products WHERE seller_id = ?");
     $del_products->bind_param("i", $target_user);
     $del_products->execute();
@@ -32,8 +31,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['toggle_block'])) {
     exit();
 }
 
-$users_sql = "SELECT id, username, email, is_blocked FROM users ORDER BY id DESC";
-$users_result = $conn->query($users_sql);
+// --- 2. HANDLE SEARCH & FILTER LOGIC ---
+$search = isset($_GET['search']) ? trim($_GET['search']) : '';
+$status_filter = isset($_GET['status']) ? $_GET['status'] : '';
+
+// Base query
+$users_sql = "SELECT id, username, email, is_blocked FROM users WHERE 1=1";
+$params = [];
+$types = "";
+
+// If user is searching something
+if ($search !== '') {
+    $users_sql .= " AND (username LIKE ? OR email LIKE ? OR id = ?)";
+    $search_param = "%$search%";
+    $params[] = $search_param;
+    $params[] = $search_param;
+    $params[] = $search; // exact ID match
+    $types .= "ssi";
+}
+
+// Dropdown status filters
+if ($status_filter === 'blocked') {
+    $users_sql .= " AND is_blocked = 1";
+} elseif ($status_filter === 'unblocked') {
+    $users_sql .= " AND (is_blocked = 0 OR is_blocked IS NULL)";
+}
+
+$users_sql .= " ORDER BY id DESC";
+
+// Execute prepared statement for fetching users
+$stmt = $conn->prepare($users_sql);
+if ($types !== "") {
+    $stmt->bind_param($types, ...$params);
+}
+$stmt->execute();
+$users_result = $stmt->get_result();
 
 $modals_html = [];
 ?>
@@ -95,7 +127,36 @@ $modals_html = [];
             </div>
         <?php endif; ?>
 
+        
+
         <div class="grainy-card" style="padding: 20px;">
+        <h3 class="admin-table-h3">USER <span class="header-span">LISTINGS</span></h3>
+
+        <div class="grainy-card filter-bar">
+            <form method="GET" action="registered-users.php" class="search-filter-form">
+                
+                <div class="filter-group search-box">
+                    <label>SEARCH</label>
+                    <input type="text" name="search" placeholder="ID, Username or Email..." value="<?php echo htmlspecialchars($search); ?>">
+                </div>
+
+                <div class="filter-group">
+                    <label>STATUS</label>
+                    <select name="status" onchange="this.form.submit()">
+                        <option value="">ALL STATUSES</option>
+                        <option value="unblocked" <?php echo $status_filter === 'unblocked' ? 'selected' : ''; ?>>UNBLOCKED</option>
+                        <option value="blocked" <?php echo $status_filter === 'blocked' ? 'selected' : ''; ?>>BLOCKED</option>
+                    </select>
+                </div>
+
+                <div class="filter-actions" style="margin-top:22px;">
+                    <button type="submit" class="btn-filter">FILTER</button>
+                    <a href="registered-users.php" class="btn-reset">RESET</a>
+                </div>
+                
+            </form>
+        </div>
+
             <table class="recent-activity-table">
                 <thead>
                     <tr>
@@ -178,7 +239,7 @@ $modals_html = [];
                         <?php endwhile; ?>
                     <?php else: ?>
                         <tr>
-                            <td colspan="5" style="text-align: center;">NO USERS FOUND.</td>
+                            <td colspan="5" style="text-align: center; font-weight:700; font-style: italic;">NO USERS MATCHING YOUR SEARCH.</td>
                         </tr>
                     <?php endif; ?>
                 </tbody>
