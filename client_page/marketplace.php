@@ -12,7 +12,7 @@ $limit = 6;
 $offset = ($page - 1) * $limit;
 
 // 2. Build the WHERE Clause
-$whereClause = "WHERE is_marketplace = 1";
+$whereClause = "WHERE is_marketplace = 1 AND is_approved = 1";
 
 if ($search != '') {
     $whereClause .= " AND (title LIKE '%$search%' OR brand LIKE '%$search%' OR seller_name LIKE '%$search%')";

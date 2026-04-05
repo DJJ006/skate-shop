@@ -2,6 +2,16 @@
 session_start();
 include '../db.php'; 
 
+$count_sql = "SELECT COUNT(*) as pending_count FROM products WHERE is_marketplace = 1 AND is_approved = 0";
+$count_result = $conn->query($count_sql);
+$pending_count = 0;
+
+if ($count_result) {
+    $count_row = $count_result->fetch_assoc();
+    $pending_count = (int)$count_row['pending_count'];
+}
+
+
 // --- 1. HANDLE POST REQUESTS (DELETE & TOGGLE BLOCK) ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_user'])) {
     $target_user = (int)$_POST['user_id'];
@@ -108,6 +118,14 @@ $modals_html = [];
             <li><a href="shop-products.php"><span class="material-icons">inventory_2</span> THE VAULT (SHOP)</a></li>
             <li><a href="marketplace-products.php"><span class="material-icons">storefront</span> STREET MARKET</a></li>
             <li><a href="registered-users.php" class="active"><span class="material-icons">manage_accounts</span> REGISTERED USERS</a></li>
+            <li>
+                <a href="accept-product.php" class="<?php echo (basename($_SERVER['PHP_SELF']) == 'accept-product.php') ? '' : ''; ?>" style="position: relative;">
+                    <span class="material-icons">gavel</span> PENDING GEAR
+                    <?php if ($pending_count > 0): ?>
+                        <span class="notification-badge"><?php echo $pending_count; ?></span>
+                    <?php endif; ?>
+                </a>
+            </li>
             <li><a href="../index.php"><span class="material-icons">public</span> VIEW LIVE SITE</a></li>
         </ul>
     </aside>

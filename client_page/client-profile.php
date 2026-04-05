@@ -19,19 +19,18 @@ if (isset($_SESSION['msg'])) {
     unset($_SESSION['msg_type']);
 }
 
-
 $stmt = $conn->prepare("SELECT email, profile_pic FROM users WHERE id = ?");
 $stmt->bind_param("i", $user_id);
 $stmt->execute();
 $user_data = $stmt->get_result()->fetch_assoc();
 
-$list_stmt = $conn->prepare("SELECT id, title, price, image_url FROM products WHERE seller_id = ? AND is_marketplace = 1");
+
+$list_stmt = $conn->prepare("SELECT id, title, price, image_url, is_approved FROM products WHERE seller_id = ? AND is_marketplace = 1 ORDER BY id DESC");
 $list_stmt->bind_param("i", $user_id);
 $list_stmt->execute();
 $user_listings = $list_stmt->get_result();
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_account'])) {
-    
     $del_listings = $conn->prepare("DELETE FROM products WHERE seller_id = ?");
     $del_listings->bind_param("i", $user_id);
     $del_listings->execute();
@@ -101,10 +100,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_market_item'])) {
     if (isset($_FILES['item_image']) && $_FILES['item_image']['error'] == 0){
         $target_file = "../assets/uploads/" . uniqid('market_') . '.' . pathinfo($_FILES["item_image"]["name"], PATHINFO_EXTENSION);
         if (move_uploaded_file($_FILES["item_image"]["tmp_name"], $target_file)) {
-            $stmt = $conn->prepare("INSERT INTO products (title, brand, price, category, condition_badge, description, image_url, is_marketplace, seller_id, seller_name) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)");
+            $stmt = $conn->prepare("INSERT INTO products (title, brand, price, category, condition_badge, description, image_url, is_marketplace, is_approved, seller_id, seller_name) VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)");
             $stmt->bind_param("ssdssssis", $title, $brand, $price, $category, $condition, $description, $target_file, $user_id, $username);
             $stmt->execute();
-            $_SESSION['msg'] = "GEAR PUBLISHED!";
+            $_SESSION['msg'] = "GEAR SUBMITTED FOR REVIEW!";
             $_SESSION['msg_type'] = "success";
         }
     }
@@ -130,11 +129,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_market_item'])) {
 <main class="container">
     <div class="dashboard-header">
         <h2 class="glitch-text-admin">USER <span class="text-primary">DASHBOARD</span></h2>
-        <p class="admin-text-shop">WELCOME BACK, @<?php echo $username; ?></p>
+        <p class="admin-text-shop">WELCOME BACK, @<?php echo htmlspecialchars($username); ?></p>
     </div>
 
     <?php if ($msg): ?>
-        <div id="alert-box" class="admin-alert alert-<?php echo $msg_type; ?>"><?php echo $msg; ?></div>
+        <div id="alert-box" class="admin-alert alert-<?php echo $msg_type; ?>"><?php echo htmlspecialchars($msg); ?></div>
     <?php endif; ?>
 
     <div class="option-grid">
@@ -222,7 +221,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_market_item'])) {
             <label>IMAGE</label>
             <input type="file" name="item_image" required>
             
-            <button type="submit" name="add_market_item" class="btn-primary-brutal btn-full">PUBLISH LISTING</button>
+            <button type="submit" name="add_market_item" class="btn-primary-brutal btn-full">SUBMIT FOR REVIEW</button>
         </form>
     </div>
 </div>
@@ -235,11 +234,17 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_market_item'])) {
         <?php if($user_listings->num_rows > 0): ?>
             <div class="listings-grid">
                 <?php while($row = $user_listings->fetch_assoc()): ?>
-                    <div class="mini-listing">
-                        <img src="<?php echo $row['image_url']; ?>" alt="Listing Image">
+                    <div class="mini-listing" style="position: relative;">
+                        <?php if($row['is_approved'] == 0): ?>
+                            <span class="listing-status-pending">PENDING</span>
+                        <?php else: ?>
+                            <span class="listing-status-active">ACTIVE</span>
+                        <?php endif; ?>
+
+                        <img src="<?php echo htmlspecialchars($row['image_url']); ?>" alt="Listing Image">
                         <div class="mini-listing-info">
-                            <h4 class="mini-listing-title"><?php echo strtoupper($row['title']); ?></h4>
-                            <p class="mini-listing-price">$<?php echo $row['price']; ?></p>
+                            <h4 class="mini-listing-title"><?php echo strtoupper(htmlspecialchars($row['title'])); ?></h4>
+                            <p class="mini-listing-price">$<?php echo number_format($row['price'], 2); ?></p>
                         </div>
                         <span class="mini-listing-id">ID: #<?php echo $row['id']; ?></span>
                     </div>
