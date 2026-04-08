@@ -12,31 +12,53 @@ if ($count_result) {
     $pending_count = (int)$count_row['pending_count'];
 }
 
-
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['accept_product'])) {
     $id = (int)$_POST['product_id'];
+    
+    $info_stmt = $conn->prepare("SELECT title, seller_id FROM products WHERE id = ?");
+    $info_stmt->bind_param("i", $id);
+    $info_stmt->execute();
+    $prod = $info_stmt->get_result()->fetch_assoc();
+
     $sql = "UPDATE products SET is_approved = 1 WHERE id = $id AND is_marketplace = 1";
     if ($conn->query($sql) === TRUE) {
-        $_SESSION['msg'] = "LISTING APPROVED! IT IS NOW LIVE.";
+        
+        $msg = "Your product '" . $prod['title'] . "' has been approved and is now live!";
+        $notif = $conn->prepare("INSERT INTO notifications (user_id, message) VALUES (?, ?)");
+        $notif->bind_param("is", $prod['seller_id'], $msg);
+        $notif->execute();
+
+        $_SESSION['msg'] = "LISTING APPROVED! CLIENT NOTIFIED.";
         $_SESSION['msg_type'] = "success";
     }
     header("Location: accept-product.php");
     exit();
 }
 
-
-if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reject_product'])) {
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reject_product_final'])) {
     $id = (int)$_POST['product_id'];
+    $reason = $conn->real_escape_string($_POST['rejection_reason']);
+
+    $info_stmt = $conn->prepare("SELECT title, seller_id FROM products WHERE id = ?");
+    $info_stmt->bind_param("i", $id);
+    $info_stmt->execute();
+    $prod = $info_stmt->get_result()->fetch_assoc();
+
     $sql = "DELETE FROM products WHERE id = $id AND is_marketplace = 1";
     if ($conn->query($sql) === TRUE) {
-        $_SESSION['msg'] = "LISTING REJECTED AND DELETED.";
+        
+        $msg = "Your product '" . $prod['title'] . "' was rejected. Reason: " . $reason;
+        $notif = $conn->prepare("INSERT INTO notifications (user_id, message) VALUES (?, ?)");
+        $notif->bind_param("is", $prod['seller_id'], $msg);
+        $notif->execute();
+
+        $_SESSION['msg'] = "LISTING REJECTED & CLIENT NOTIFIED.";
         $_SESSION['msg_type'] = "success";
     }
     header("Location: accept-product.php");
     exit();
 }
 
-// FETCH PENDING PRODUCTS
 $pending_sql = "SELECT id, title, price, category, condition_badge, brand, description, image_url, seller_name, created_at 
                 FROM products 
                 WHERE is_marketplace = 1 AND is_approved = 0 
@@ -185,14 +207,40 @@ $modals_html = [];
                                             <button type="submit" name="accept_product" class="btn btn-accept btn-full btn-heavy-font">ACCEPT & PUBLISH</button>
                                         </form>
 
-                                        <form method="POST" action="accept-product.php" onsubmit="return confirm('ARE YOU SURE YOU WANT TO TRASH THIS SUBMISSION?');">
-                                            <input type="hidden" name="product_id" value="<?php echo $item['id']; ?>">
-                                            <button type="submit" name="reject_product" class="btn btn-danger btn-full btn-heavy-font">REJECT / DELETE</button>
-                                        </form>
+                                        <button type="button" class="btn btn-danger btn-full btn-heavy-font" onclick="openModal('reject-reason-<?php echo $item['id']; ?>')">
+                                            REJECT / DELETE
+                                        </button>
                                     </div>
                                 </div>
                             </div>
                             <?php $modals_html[] = ob_get_clean(); ?>
+
+                            <?php ob_start(); ?>
+                                <div id="reject-reason-<?php echo $item['id']; ?>" class="modal-overlay modal-top-layer">
+                                    <div class="modal-content">
+                                        <span class="close-modal" onclick="closeModal('reject-reason-<?php echo $item['id']; ?>')">&times;</span>
+                                        <h3 class="admin-table-h3">REJECTION <span class="header-span">REASON</span></h3>
+                                        
+                                        <form method="POST" action="accept-product.php">
+                                            <input type="hidden" name="product_id" value="<?php echo $item['id']; ?>">
+                                            
+                                            <div class="admin-form-group">
+                                                <label class="admin-form-label">WHY ARE YOU REJECTING THIS GEAR?</label>
+                                                <textarea 
+                                                    name="rejection_reason" 
+                                                    rows="4" 
+                                                    class="admin-input-dark" 
+                                                    placeholder="E.g. Photos are too blurry..." 
+                                                    required></textarea>
+                                            </div>
+                                            
+                                            <button type="submit" name="reject_product_final" class="btn btn-danger btn-full btn-heavy-font">
+                                                SEND REJECTION & DELETE
+                                            </button>
+                                        </form>
+                                    </div>
+                                </div>
+                                <?php $modals_html[] = ob_get_clean(); ?>
 
                         <?php endwhile; ?>
                     <?php else: ?>
