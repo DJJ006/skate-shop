@@ -16,13 +16,21 @@ const closeModal = (modalId) => {
 
 /**
  * Populates and opens the edit modal with product data
+ * UPDATED to include condition parameter
  */
-const openEditModal = (id, title, price, category, description) => {
+const openEditModal = (id, title, brand, price, category, description, condition) => {
     document.getElementById('edit_id').value = id;
     document.getElementById('edit_title').value = title;
+    document.getElementById('edit_brand').value = brand; // <--- BRAND ADDED HERE
     document.getElementById('edit_price').value = price;
     document.getElementById('edit_category').value = category;
     document.getElementById('edit_description').value = description;
+    
+    // Target the condition dropdown (mainly for marketplace-products.php)
+    const conditionField = document.getElementById('edit_condition');
+    if (conditionField) {
+        conditionField.value = condition || ''; 
+    }
     
     openModal('editModal');
 };
@@ -74,8 +82,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const dropdown = document.getElementById("dropdownOptions");
         
         if (wrapper && !wrapper.contains(e.target)) {
-            dropdown.classList.remove("show");
-            wrapper.classList.remove("active");
+            if(dropdown) dropdown.classList.remove("show");
+            if(wrapper) wrapper.classList.remove("active");
         }
     });
 });

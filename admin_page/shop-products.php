@@ -14,6 +14,7 @@ if ($count_result) {
 // --- HANDLE ADD FORM SUBMISSION ---
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_product'])){
     $title = $conn->real_escape_string($_POST['title']);
+    $brand = $conn->real_escape_string($_POST['brand']); // <--- BRAND ADDED HERE
     $price = (float)$_POST['price'];
     $category = $conn->real_escape_string($_POST['category']);
     $description = $conn->real_escape_string($_POST['description']);
@@ -35,8 +36,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_product'])){
     }
 
     if ($image_url != '') {
-        $sql = "INSERT INTO products (title, price, category, description, image_url, is_marketplace) 
-                VALUES ('$title', '$price', '$category', '$description', '$image_url', '$is_marketplace')";
+        // UPDATED INSERT QUERY TO INCLUDE BRAND
+        $sql = "INSERT INTO products (title, brand, price, category, description, image_url, is_marketplace) 
+                VALUES ('$title', '$brand', '$price', '$category', '$description', '$image_url', '$is_marketplace')"; // <--- BRAND ADDED HERE
         if ($conn->query($sql) === TRUE) {
             $_SESSION['msg'] = "GEAR ADDED TO THE VAULT!";
             $_SESSION['msg_type'] = "success";
@@ -49,7 +51,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_product'])){
         $_SESSION['msg_type'] = "error";
     }
     
-    // REDIRECT to clear POST data
     header("Location: shop-products.php");
     exit();
 }
@@ -58,6 +59,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_product'])){
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_product'])) {
     $id = (int)$_POST['product_id'];
     $title = $conn->real_escape_string($_POST['title']);
+    $brand = $conn->real_escape_string($_POST['brand']); // <--- BRAND ADDED HERE
     $price = (float)$_POST['price'];
     $category = $conn->real_escape_string($_POST['category']);
     $description = $conn->real_escape_string($_POST['description']);
@@ -78,7 +80,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_product'])) {
         }
     }
 
-    $sql = "UPDATE products SET title='$title', price='$price', category='$category', description='$description' $image_query_part WHERE id=$id";
+    // UPDATED UPDATE QUERY TO INCLUDE BRAND
+    $sql = "UPDATE products SET title='$title', brand='$brand', price='$price', category='$category', description='$description' $image_query_part WHERE id=$id"; // <--- BRAND ADDED HERE
     if ($conn->query($sql) === TRUE) {
         $_SESSION['msg'] = "GEAR UPDATED SUCCESSFULLY!";
         $_SESSION['msg_type'] = "success";
@@ -109,10 +112,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_product'])) {
 
 // --- HANDLE SEARCH & FILTER ---
 $search = isset($_GET['search']) ? $conn->real_escape_string($_GET['search']) : '';
-
-// 1. Get categories as an array
 $cat_filter = isset($_GET['filter_category']) ? $_GET['filter_category'] : []; 
-
 $sort_by = isset($_GET['sort_by']) ? $_GET['sort_by'] : 'created_at';
 $order = isset($_GET['order']) ? $_GET['order'] : 'DESC';
 
@@ -122,9 +122,7 @@ if (!empty($search)) {
     $where_clauses[] = "(title LIKE '%$search%' OR id LIKE '%$search%')"; 
 }
 
-// 2. Build the "IN" clause for multiple categories
 if (!empty($cat_filter) && is_array($cat_filter)) {
-    // Sanitize every item in the array
     $sanitized_cats = array_map(function($c) use ($conn) {
         return "'" . $conn->real_escape_string($c) . "'";
     }, $cat_filter);
@@ -138,8 +136,9 @@ $where_sql = implode(' AND ', $where_clauses);
 $allowed_sorts = ['id', 'title', 'price', 'created_at'];
 if (!in_array($sort_by, $allowed_sorts)) { $sort_by = 'created_at'; }
 
-$products_sql = "SELECT id, title, price, category, description, created_at 
-                 FROM products WHERE $where_sql ORDER BY $sort_by $order";
+// UPDATED SELECT QUERY TO INCLUDE BRAND
+$products_sql = "SELECT id, title, brand, price, category, description, created_at 
+                 FROM products WHERE $where_sql ORDER BY $sort_by $order"; // <--- BRAND ADDED HERE
 $products_result = $conn->query($products_sql);
 ?>
 
@@ -231,7 +230,7 @@ $products_result = $conn->query($products_sql);
             </div>
             <div class="dropdown-content" id="dropdownOptions">
                 <?php 
-                $options = ['Decks', 'Trucks', 'Wheels', 'Bearings', 'Apparel'];
+                $options = ['Decks', 'Trucks', 'Wheels', 'Bearings', 'Apparel',  'Accesories', 'Other'];
                 foreach($options as $opt): 
                     $checked = (is_array($cat_filter) && in_array($opt, $cat_filter)) ? 'checked' : '';
                 ?>
@@ -282,9 +281,19 @@ $products_result = $conn->query($products_sql);
                 <tbody>
                     <?php if ($products_result->num_rows > 0): ?>
                         <?php while($row = $products_result->fetch_assoc()): ?>
-                            <tr class="clickable-row" onclick="openEditModal(<?php echo $row['id']; ?>, '<?php echo addslashes(htmlspecialchars($row['title'])); ?>', <?php echo $row['price']; ?>, '<?php echo addslashes(htmlspecialchars($row['category'])); ?>', '<?php echo addslashes(htmlspecialchars($row['description'])); ?>')">
+                            <tr class="clickable-row" onclick="openEditModal(
+                                <?php echo $row['id']; ?>, 
+                                '<?php echo addslashes(htmlspecialchars($row['title'])); ?>', 
+                                '<?php echo addslashes(htmlspecialchars($row['brand'])); ?>', 
+                                <?php echo $row['price']; ?>, 
+                                '<?php echo addslashes(htmlspecialchars($row['category'])); ?>', 
+                                '<?php echo addslashes(htmlspecialchars($row['description'])); ?>'
+                            )">
                                 <td class="td-id">#<?php echo $row['id']; ?></td>
-                                <td><strong><?php echo htmlspecialchars($row['title']); ?></strong></td>
+                                <td>
+                                    <strong><?php echo htmlspecialchars($row['title']); ?></strong><br>
+                                    <small style="opacity: 0.7;"><?php echo htmlspecialchars($row['brand']); ?></small>
+                                </td>
                                 <td><span class="badge-shop"><?php echo htmlspecialchars($row['category']); ?></span></td>
                                 <td>$<?php echo number_format($row['price'], 2); ?></td>
                                 <td class="edit-button"><span class="material-icons edit-icon">edit</span></td>
@@ -304,8 +313,17 @@ $products_result = $conn->query($products_sql);
         <span class="close-modal" onclick="closeModal('addModal')">&times;</span>
         <h3 class="admin-table-h3">ADD <span class="header-span">NEW</span> GEAR</h3>
         <form action="shop-products.php" method="POST" enctype="multipart/form-data" class="admin-form">
-            <label class="top-title">GEAR TITLE</label>
-            <input type="text" name="title" required>
+            <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 20px;">
+                <div>
+                    <label>GEAR TITLE</label>
+                    <input type="text" name="title" placeholder="E.G. STAGE 11 HOLLOW" required>
+                </div>
+                <div>
+                    <label>BRAND</label>
+                    <input type="text" name="brand" placeholder="E.G. INDY" required>
+                </div>
+            </div>
+
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
                 <div><label>PRICE ($)</label><input type="number" name="price" step="0.01" required></div>
                 <div>
@@ -316,6 +334,8 @@ $products_result = $conn->query($products_sql);
                         <option value="Wheels">WHEELS</option>
                         <option value="Bearings">BEARINGS</option>
                         <option value="Apparel">APPAREL</option>
+                        <option value="Accesories">ACCESORIES</option>
+                        <option value="Other">OTHER</option>
                     </select>
                 </div>
             </div>
@@ -334,8 +354,18 @@ $products_result = $conn->query($products_sql);
         <h3 class="admin-table-h3">EDIT <span class="header-span">GEAR</span></h3>
         <form action="shop-products.php" method="POST" enctype="multipart/form-data" class="admin-form">
             <input type="hidden" id="edit_id" name="product_id">
-            <label class="top-title">GEAR TITLE</label>
-            <input type="text" id="edit_title" name="title" required>
+            
+            <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 20px;">
+                <div>
+                    <label>GEAR TITLE</label>
+                    <input type="text" id="edit_title" name="title" required>
+                </div>
+                <div>
+                    <label>BRAND</label>
+                    <input type="text" id="edit_brand" name="brand" required>
+                </div>
+            </div>
+
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
                 <div><label>PRICE ($)</label><input type="number" id="edit_price" name="price" step="0.01" required></div>
                 <div>
@@ -346,6 +376,8 @@ $products_result = $conn->query($products_sql);
                         <option value="Wheels">WHEELS</option>
                         <option value="Bearings">BEARINGS</option>
                         <option value="Apparel">APPAREL</option>
+                        <option value="Accesories">ACCESORIES</option>
+                        <option value="Other">OTHER</option>
                     </select>
                 </div>
             </div>

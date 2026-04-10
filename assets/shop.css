@@ -291,11 +291,42 @@ caret-color: var(--primary);
     margin-top: 4rem;
     padding-top: 2rem;
     border-top: 4px solid var(--charcoal);
+    
 }
 
 .pagination .btn{
     padding: 0.5rem 1.5rem;
     font-size: 1.5rem;
+    text-decoration: none;
+}
+
+
+
+.pagination .btn-outline {
+    color: var(--charcoal); 
+    background-color: transparent;
+    transition: all 0.3s ease;
+}
+
+
+.pagination .btn-outline:hover {
+    background-color: var(--primary);
+    color: #ffffff !important;
+}
+
+
+.pagination a, 
+.pagination a:visited {
+    text-decoration: none;
+}
+
+
+.pagination .btn-primary:hover {
+    cursor: default;
+    background-color: var(--primary);
+    color: #ffffff; 
+    transform: none;
+    box-shadow: none;
 }
 
 /*PRODUCT-CARD*/
@@ -966,7 +997,7 @@ padding: 1rem 0;
     color: var(--textwhite);
  }
 
-.condition-badge.good{ 
+ .condition-badge.lightly{ 
     background: #b18f06;
     color: var(--textwhite); 
 }

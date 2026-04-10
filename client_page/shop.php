@@ -129,9 +129,12 @@ function get_filter_url($params) {
                     <h4>CATEGORY</h4>
                     <ul class="filter-list">
                         <li><label><input type="checkbox" name="category[]" value="Decks" <?php echo in_array('Decks', $selected_categories) ? 'checked' : ''; ?> onchange="this.form.submit()"> DECKS</label></li>
-                        <li><label><input type="checkbox" name="category[]" value="Trucks" <?php echo in_array('Trucks', $selected_categories) ? 'checked' : ''; ?> onchange="this.form.submit()"> TRUCKS & WHEELS</label></li>
+                        <li><label><input type="checkbox" name="category[]" value="Trucks" <?php echo in_array('Trucks', $selected_categories) ? 'checked' : ''; ?> onchange="this.form.submit()"> TRUCKS</label></li>
+                        <li><label><input type="checkbox" name="category[]" value="Wheels" <?php echo in_array('Wheels', $selected_categories) ? 'checked' : ''; ?> onchange="this.form.submit()">WHEELS</label></li>
+                        <li><label><input type="checkbox" name="category[]" value="Bearings" <?php echo in_array('Bearings', $selected_categories) ? 'checked' : ''; ?> onchange="this.form.submit()">BEARINGS</label></li>
                         <li><label><input type="checkbox" name="category[]" value="Apparel" <?php echo in_array('Apparel', $selected_categories) ? 'checked' : ''; ?> onchange="this.form.submit()"> APPAREL</label></li>
-                        <li><label><input type="checkbox" name="category[]" value="Accessories" <?php echo in_array('Accessories', $selected_categories) ? 'checked' : ''; ?> onchange="this.form.submit()"> ACCESSORIES</label></li>
+                        <li><label><input type="checkbox" name="category[]" value="Accesories" <?php echo in_array('Accesories', $selected_categories) ? 'checked' : ''; ?> onchange="this.form.submit()">ACCESORIES</label></li>
+                        <li><label><input type="checkbox" name="category[]" value="Other" <?php echo in_array('Other', $selected_categories) ? 'checked' : ''; ?> onchange="this.form.submit()">OTHER</label></li>
                     </ul>
                 </div>
 

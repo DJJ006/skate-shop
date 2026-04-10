@@ -259,9 +259,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_market_item'])) {
                 <div>
                     <label>CATEGORY</label>
                     <select name="category">
-                        <option>Decks</option>
-                        <option>Trucks</option>
-                        <option>Wheels</option>
+                        <option>DECKS</option>
+                        <option>TRUCKS</option>
+                        <option>WHEELS</option>
+                        <option>BEARINGS</option>
+                        <option>APPAREL</option>
+                        <option>ACCESORIES</option>
+                        <option>OTHER</option>
                     </select>
                 </div>
                 <div>

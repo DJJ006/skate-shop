@@ -90,7 +90,7 @@ $modals_html = [];
 </header>
 
 <section class="admin-layout container">
-    <aside class="admin-sidebar grainy-card sidebar-accept">
+    <aside class="admin-sidebar grainy-card sidebar-accept" style="margin-top: 2.9rem;">
         <h3 class="admin-sidebar-title">SYSTEM <span class="header-span">MENU<span></h3>
         <ul class="admin-nav-list">
             <li><a href="index.php"><span class="material-icons">dashboard</span> DASHBOARD</a></li>
@@ -116,6 +116,8 @@ $modals_html = [];
                 <p class="admin-text-shop">REVIEW CLIENT SUBMITTED MARKETPLACE GEAR</p>
             </div>
         </div>
+
+        
 
         <?php if (isset($_SESSION['msg'])): ?>
             <div class="admin-alert alert-<?php echo $_SESSION['msg_type']; ?>">

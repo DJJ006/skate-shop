@@ -11,14 +11,15 @@ if ($count_result) {
     $pending_count = (int)$count_row['pending_count'];
 }
 
-
 // --- HANDLE ADD FORM SUBMISSION ---
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_product'])){
     $title = $conn->real_escape_string($_POST['title']);
+    $brand = $conn->real_escape_string($_POST['brand']); // BRAND ADDED
     $price = (float)$_POST['price'];
     $category = $conn->real_escape_string($_POST['category']);
+    $condition = $conn->real_escape_string($_POST['condition_badge']); 
     $description = $conn->real_escape_string($_POST['description']);
-    $is_marketplace = 1; // Set to 1 for Street Market
+    $is_marketplace = 1; 
 
     $image_url = '';
     if (isset($_FILES['image']) && $_FILES['image']['error'] == 0){
@@ -36,8 +37,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_product'])){
     }
 
     if ($image_url != '') {
-        $sql = "INSERT INTO products (title, price, category, description, image_url, is_marketplace) 
-                VALUES ('$title', '$price', '$category', '$description', '$image_url', '$is_marketplace')";
+        // Updated INSERT to include brand
+        $sql = "INSERT INTO products (title, brand, price, category, condition_badge, description, image_url, is_marketplace) 
+                VALUES ('$title', '$brand', '$price', '$category', '$condition', '$description', '$image_url', '$is_marketplace')";
         if ($conn->query($sql) === TRUE) {
             $_SESSION['msg'] = "ITEM ADDED TO THE STREET MARKET!";
             $_SESSION['msg_type'] = "success";
@@ -50,7 +52,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_product'])){
         $_SESSION['msg_type'] = "error";
     }
     
-    // REDIRECT to clear POST data
     header("Location: marketplace-products.php");
     exit();
 }
@@ -59,8 +60,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_product'])){
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_product'])) {
     $id = (int)$_POST['product_id'];
     $title = $conn->real_escape_string($_POST['title']);
+    $brand = $conn->real_escape_string($_POST['brand']); // BRAND ADDED
     $price = (float)$_POST['price'];
     $category = $conn->real_escape_string($_POST['category']);
+    $condition = $conn->real_escape_string($_POST['condition_badge']); 
     $description = $conn->real_escape_string($_POST['description']);
 
     $image_query_part = "";
@@ -69,17 +72,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_product'])) {
         $file_extension = pathinfo($_FILES["image"]["name"], PATHINFO_EXTENSION);
         $new_filename = uniqid('market_') . '.' . $file_extension;
         $target_file = $target_dir . $new_filename;
-        $allowed_types = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
         
-        if (in_array(strtolower($file_extension), $allowed_types)) {
-            if (move_uploaded_file($_FILES["image"]["tmp_name"], $target_file)) {
-                $image_url = "../assets/uploads/" . $new_filename;
-                $image_query_part = ", image_url='$image_url'";
-            }
+        if (move_uploaded_file($_FILES["image"]["tmp_name"], $target_file)) {
+            $image_url = "../assets/uploads/" . $new_filename;
+            $image_query_part = ", image_url='$image_url'";
         }
     }
 
-    $sql = "UPDATE products SET title='$title', price='$price', category='$category', description='$description' $image_query_part WHERE id=$id AND is_marketplace=1";
+    // Updated UPDATE query to include brand
+    $sql = "UPDATE products SET title='$title', brand='$brand', price='$price', category='$category', condition_badge='$condition', description='$description' $image_query_part WHERE id=$id AND is_marketplace=1";
+    
     if ($conn->query($sql) === TRUE) {
         $_SESSION['msg'] = "MARKET ITEM UPDATED SUCCESSFULLY!";
         $_SESSION['msg_type'] = "success";
@@ -114,7 +116,6 @@ $cat_filter = isset($_GET['filter_category']) ? $_GET['filter_category'] : [];
 $sort_by = isset($_GET['sort_by']) ? $_GET['sort_by'] : 'created_at';
 $order = isset($_GET['order']) ? $_GET['order'] : 'DESC';
 
-// ONLY PULL MARKETPLACE ITEMS
 $where_clauses = ["is_marketplace = 1"];
 
 if (!empty($search)) { 
@@ -135,7 +136,8 @@ $where_sql = implode(' AND ', $where_clauses);
 $allowed_sorts = ['id', 'title', 'price', 'created_at'];
 if (!in_array($sort_by, $allowed_sorts)) { $sort_by = 'created_at'; }
 
-$products_sql = "SELECT id, title, price, category, description, created_at 
+// FINAL SELECT QUERY: Added brand here so it shows up in your table/modals
+$products_sql = "SELECT id, title, brand, price, category, condition_badge, description, created_at 
                  FROM products WHERE $where_sql ORDER BY $sort_by $order";
 $products_result = $conn->query($products_sql);
 ?>
@@ -171,7 +173,7 @@ $products_result = $conn->query($products_sql);
             <li><a href="marketplace-products.php" class="active"><span class="material-icons">storefront</span> STREET MARKET</a></li>
             <li><a href="registered-users.php"><span class="material-icons">manage_accounts</span> REGISTERED USERS</a></li>
             <li>
-                <a href="accept-product.php" class="<?php echo (basename($_SERVER['PHP_SELF']) == 'accept-product.php') ? '' : ''; ?>" style="position: relative;">
+                <a href="accept-product.php" style="position: relative;">
                     <span class="material-icons">gavel</span> PENDING GEAR
                     <?php if ($pending_count > 0): ?>
                         <span class="notification-badge"><?php echo $pending_count; ?></span>
@@ -228,7 +230,7 @@ $products_result = $conn->query($products_sql);
                             </div>
                             <div class="dropdown-content" id="dropdownOptions">
                                 <?php 
-                                $options = ['Decks', 'Trucks', 'Wheels', 'Bearings', 'Apparel'];
+                                $options = ['Decks', 'Trucks', 'Wheels', 'Bearings', 'Apparel', 'Accesories', 'Other'];
                                 foreach($options as $opt): 
                                     $checked = (is_array($cat_filter) && in_array($opt, $cat_filter)) ? 'checked' : '';
                                 ?>
@@ -279,9 +281,21 @@ $products_result = $conn->query($products_sql);
                 <tbody>
                     <?php if ($products_result->num_rows > 0): ?>
                         <?php while($row = $products_result->fetch_assoc()): ?>
-                            <tr class="clickable-row" onclick="openEditModal(<?php echo $row['id']; ?>, '<?php echo addslashes(htmlspecialchars($row['title'])); ?>', <?php echo $row['price']; ?>, '<?php echo addslashes(htmlspecialchars($row['category'])); ?>', '<?php echo addslashes(htmlspecialchars($row['description'])); ?>')">
+                            <tr class="clickable-row" onclick="openEditModal(
+                                <?php echo $row['id']; ?>, 
+                                '<?php echo addslashes(htmlspecialchars($row['title'])); ?>', 
+                                '<?php echo addslashes(htmlspecialchars($row['brand'])); ?>', 
+                                <?php echo $row['price']; ?>, 
+                                '<?php echo addslashes(htmlspecialchars($row['category'])); ?>', 
+                                '<?php echo addslashes(htmlspecialchars($row['description'])); ?>', 
+                                '<?php echo addslashes(htmlspecialchars($row['condition_badge'])); ?>'
+                            )">
                                 <td class="td-id">#<?php echo $row['id']; ?></td>
-                                <td><strong><?php echo htmlspecialchars($row['title']); ?></strong></td>
+                                <td>
+                                    <strong><?php echo htmlspecialchars($row['title']); ?></strong><br>
+                                    <small style="opacity: 0.7;"><?php echo htmlspecialchars($row['brand']); ?></small> | 
+                                    <small class="badge-condition"><?php echo htmlspecialchars($row['condition_badge']); ?></small>
+                                </td>
                                 <td><span class="badge-market"><?php echo htmlspecialchars($row['category']); ?></span></td>
                                 <td>$<?php echo number_format($row['price'], 2); ?></td>
                                 <td class="edit-button"><span class="material-icons edit-icon">edit</span></td>
@@ -301,21 +315,39 @@ $products_result = $conn->query($products_sql);
         <span class="close-modal" onclick="closeModal('addModal')">&times;</span>
         <h3 class="admin-table-h3">ADD <span class="header-span">NEW</span> LISTING</h3>
         <form action="marketplace-products.php" method="POST" enctype="multipart/form-data" class="admin-form">
-            <label class="top-title">ITEM TITLE</label>
-            <input type="text" name="title" required>
+            
+            <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 20px;">
+                <div>
+                    <label>ITEM TITLE</label>
+                    <input type="text" name="title" placeholder="E.G. USED BAKER DECK" required>
+                </div>
+                <div>
+                    <label>BRAND</label>
+                    <input type="text" name="brand" placeholder="E.G. BAKER" required>
+                </div>
+            </div>
+
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
                 <div><label>PRICE ($)</label><input type="number" name="price" step="0.01" required></div>
                 <div>
-                    <label>CATEGORY</label>
-                    <select name="category" required>
-                        <option value="Decks">DECKS</option>
-                        <option value="Trucks">TRUCKS</option>
-                        <option value="Wheels">WHEELS</option>
-                        <option value="Bearings">BEARINGS</option>
-                        <option value="Apparel">APPAREL</option>
+                    <label>CONDITION</label>
+                    <select name="condition_badge" required>
+                        <option value="MINT / WALL HANGER">MINT / WALL HANGER</option>
+                        <option value="LIGHTLY SCUFFED">LIGHTLY SCUFFED</option>
+                        <option value="BEAT UP / SKATEABLE">BEAT UP / SKATEABLE</option>
                     </select>
                 </div>
             </div>
+            <label>CATEGORY</label>
+            <select name="category" required>
+                <option value="Decks">DECKS</option>
+                <option value="Trucks">TRUCKS</option>
+                <option value="Wheels">WHEELS</option>
+                <option value="Bearings">BEARINGS</option>
+                <option value="Apparel">APPAREL</option>
+                <option value="Accesories">ACCESORIES</option>
+                <option value="Other">OTHER</option>
+            </select>
             <label>DESCRIPTION</label>
             <textarea name="description" rows="3" required></textarea>
             <label>ITEM IMAGE</label>
@@ -331,21 +363,39 @@ $products_result = $conn->query($products_sql);
         <h3 class="admin-table-h3">EDIT <span class="header-span">LISTING</span></h3>
         <form action="marketplace-products.php" method="POST" enctype="multipart/form-data" class="admin-form">
             <input type="hidden" id="edit_id" name="product_id">
-            <label class="top-title">ITEM TITLE</label>
-            <input type="text" id="edit_title" name="title" required>
+            
+            <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 20px;">
+                <div>
+                    <label>ITEM TITLE</label>
+                    <input type="text" id="edit_title" name="title" required>
+                </div>
+                <div>
+                    <label>BRAND</label>
+                    <input type="text" id="edit_brand" name="brand" required>
+                </div>
+            </div>
+
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
                 <div><label>PRICE ($)</label><input type="number" id="edit_price" name="price" step="0.01" required></div>
                 <div>
-                    <label>CATEGORY</label>
-                    <select id="edit_category" name="category" required>
-                        <option value="Decks">DECKS</option>
-                        <option value="Trucks">TRUCKS</option>
-                        <option value="Wheels">WHEELS</option>
-                        <option value="Bearings">BEARINGS</option>
-                        <option value="Apparel">APPAREL</option>
+                    <label>CONDITION</label>
+                    <select id="edit_condition" name="condition_badge" required>
+                        <option value="MINT / WALL HANGER">MINT / WALL HANGER</option>
+                        <option value="LIGHTLY SCUFFED">LIGHTLY SCUFFED</option>
+                        <option value="BEAT UP / SKATEABLE">BEAT UP / SKATEABLE</option>
                     </select>
                 </div>
             </div>
+            <label>CATEGORY</label>
+            <select id="edit_category" name="category" required>
+                <option value="Decks">DECKS</option>
+                <option value="Trucks">TRUCKS</option>
+                <option value="Wheels">WHEELS</option>
+                <option value="Bearings">BEARINGS</option>
+                <option value="Apparel">APPAREL</option>
+                <option value="Accesories">ACCESORIES</option>
+                <option value="Other">OTHER</option>
+            </select>
             <label>DESCRIPTION</label>
             <textarea id="edit_description" name="description" rows="3" required></textarea>
             <label>CHANGE IMAGE (OPTIONAL)</label>

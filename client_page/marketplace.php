@@ -123,19 +123,22 @@ function get_filter_url($params) {
                     <div class="filter-group">
                         <h4>CONDITION</h4>
                         <ul class="filter-list">
-                            <li><label><input type="checkbox" name="condition[]" value="MINT / WALL HANGER" <?php echo in_array('MINT / WALL HANGER', $selected_conditions) ? 'checked' : ''; ?> onchange="this.form.submit()"> DEADSTOCK (MINT)</label></li>
-                            <li><label><input type="checkbox" name="condition[]" value="LIGHTLY SCUFFED" <?php echo in_array('LIGHTLY SCUFFED', $selected_conditions) ? 'checked' : ''; ?> onchange="this.form.submit()"> LIGHTLY SCUFFED</label></li>
-                            <li><label><input type="checkbox" name="condition[]" value="BEAT UP / SKATEABLE" <?php echo in_array('BEAT UP / SKATEABLE', $selected_conditions) ? 'checked' : ''; ?> onchange="this.form.submit()"> TRASHED</label></li>
+                            <li><label><input type="checkbox" name="condition[]" value="MINT / WALL HANGER" <?php echo in_array('MINT / WALL HANGER', $selected_conditions) ? 'checked' : ''; ?> onchange="this.form.submit()">MINT / WALLHANGER</label></li>
+                            <li><label><input type="checkbox" name="condition[]" value="LIGHTLY SCUFFED" <?php echo in_array('LIGHTLY SCUFFED', $selected_conditions) ? 'checked' : ''; ?> onchange="this.form.submit()">LIGHTLY SCUFFED</label></li>
+                            <li><label><input type="checkbox" name="condition[]" value="BEAT UP / SKATEABLE" <?php echo in_array('BEAT UP / SKATEABLE', $selected_conditions) ? 'checked' : ''; ?> onchange="this.form.submit()">BEAT UP / SKATEABLE</label></li>
                         </ul>
                     </div>
 
                     <div class="filter-group">
-                        <h4>GEAR TYPE</h4>
+                        <h4>CATEGORY</h4>
                         <ul class="filter-list">
-                            <li><label><input type="checkbox" name="type[]" value="Decks" <?php echo in_array('Decks', $selected_types) ? 'checked' : ''; ?> onchange="this.form.submit()"> VINTAGE DECKS</label></li>
-                            <li><label><input type="checkbox" name="type[]" value="Trucks" <?php echo in_array('Trucks', $selected_types) ? 'checked' : ''; ?> onchange="this.form.submit()"> USED TRUCKS</label></li>
-                            <li><label><input type="checkbox" name="type[]" value="Apparel" <?php echo in_array('Apparel', $selected_types) ? 'checked' : ''; ?> onchange="this.form.submit()"> STREETWEAR</label></li>
-                            <li><label><input type="checkbox" name="type[]" value="Collectibles" <?php echo in_array('Collectibles', $selected_types) ? 'checked' : ''; ?> onchange="this.form.submit()"> COLLECTIBLES</label></li>
+                            <li><label><input type="checkbox" name="type[]" value="Decks" <?php echo in_array('Decks', $selected_types) ? 'checked' : ''; ?> onchange="this.form.submit()">DECKS</label></li>
+                            <li><label><input type="checkbox" name="type[]" value="Trucks" <?php echo in_array('Trucks', $selected_types) ? 'checked' : ''; ?> onchange="this.form.submit()">TRUCKS</label></li>
+                            <li><label><input type="checkbox" name="type[]" value="Wheels" <?php echo in_array('Wheels', $selected_types) ? 'checked' : ''; ?> onchange="this.form.submit()">WHEELS</label></li>
+                            <li><label><input type="checkbox" name="type[]" value="Bearings" <?php echo in_array('Bearings', $selected_types) ? 'checked' : ''; ?> onchange="this.form.submit()">BEARINGS</label></li>
+                            <li><label><input type="checkbox" name="type[]" value="Apparel" <?php echo in_array('Apparel', $selected_types) ? 'checked' : ''; ?> onchange="this.form.submit()"> APPAREL</label></li>
+                            <li><label><input type="checkbox" name="type[]" value="Accesories" <?php echo in_array('Accesories', $selected_types) ? 'checked' : ''; ?> onchange="this.form.submit()">ACCESORIES</label></li>
+                            <li><label><input type="checkbox" name="type[]" value="Other" <?php echo in_array('Other', $selected_types) ? 'checked' : ''; ?> onchange="this.form.submit()">OTHER</label></li>
                         </ul>
                     </div>
 
@@ -214,7 +217,11 @@ function get_filter_url($params) {
             <?php endif; ?>
             
             <?php for($i = 1; $i <= $total_pages; $i++): ?>
-                <a href="<?php echo get_filter_url(['page' => $i]); ?>" class="btn <?php echo ($page == $i) ? 'btn-primary' : 'btn-outline'; ?>"><?php echo $i; ?></a>
+                <?php if ($page == $i): ?>
+                    <span class="btn btn-primary active-page"><?php echo $i; ?></span>
+                <?php else: ?>
+                    <a href="<?php echo get_filter_url(['page' => $i]); ?>" class="btn btn-outline"><?php echo $i; ?></a>
+                <?php endif; ?>
             <?php endfor; ?>
 
             <?php if($page < $total_pages): ?>
