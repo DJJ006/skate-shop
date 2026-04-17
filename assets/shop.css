@@ -1180,7 +1180,7 @@ padding: 1rem 0;
 
 /* Breadcrumbs */
 .breadcrumbs {
-    padding: 2rem 0;
+    padding: 2rem 2rem;
     font-family: 'Staatliches', sans-serif;
     font-size: 1.2rem;
     color: var(--charcoal);
@@ -1273,6 +1273,83 @@ padding: 1rem 0;
     border-color: var(--primary);
 }
 
+.marketplace-seller-info {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 10px;
+    background: #f4f4f4;
+    padding: 8px 15px;
+    border-left: 4px solid var(--primary-color, #ff4b2b);
+    font-size: 0.9rem;
+}
+.marketplace-seller-info a {
+    color: #000;
+    text-decoration: none;
+    font-weight: bold;
+}
+.official-tag {
+    font-size: 0.8rem;
+    color: #2ecc71;
+    font-weight: 800;
+    letter-spacing: 1px;
+    display: block;
+    margin-bottom: 20px;
+}
+.condition-badge.marketplace-badge {
+    background: #222 !important;
+    color: #fff !important;
+    border: 1px solid #444;
+}
+
+/* NEW BRUTALIST INFO BLOCKS */
+.product-info-block {
+    margin-top: 25px;
+    border: 3px solid #222;
+    background: #fff;
+    box-shadow: 6px 6px 0px #222;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.product-info-block:hover {
+    transform: translate(-2px, -2px);
+    box-shadow: 8px 8px 0px #222;
+}
+.block-title {
+    background: #222;
+    color: #fff;
+    margin: 0;
+    padding: 12px 15px;
+    font-size: 1.1rem;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.block-content {
+    padding: 20px;
+    font-size: 0.95rem;
+    line-height: 1.6;
+    color: #333;
+}
+
+/* Market Safety Specific Styling */
+.safety-block {
+    border-color: #ff4b2b;
+    box-shadow: 6px 6px 0px #ff4b2b;
+}
+.safety-block:hover {
+    box-shadow: 8px 8px 0px #ff4b2b;
+}
+.warning-title {
+    background: #ff4b2b;
+    color: #fff;
+}
+.safety-block .block-content {
+    background: #fff5f3; /* Slight red tint to the background */
+    font-weight: 600;
+}
+
 /* Right: Info Panel */
 .product-info-panel {
     display: flex;
@@ -1299,7 +1376,7 @@ padding: 1rem 0;
     display: flex;
     align-items: center;
     gap: 2rem;
-    padding-bottom: 2rem;
+    padding-bottom: .5rem;
     border-bottom: 4px solid var(--charcoal);
 }
 
@@ -1308,6 +1385,84 @@ padding: 1rem 0;
     font-size: 3rem;
     color: var(--primary);
 }
+
+.marketplace-seller-info {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 10px;
+            background: var(--bg-light);
+            padding: 8px 15px;
+            border-left: 4px solid var(--primary-color, #ff4b2b);
+            font-size: 1.3rem;
+        }
+        .marketplace-seller-info a {
+            color: #000;
+            text-decoration: none;
+            font-weight: bold;
+        }
+        .official-tag {
+            font-size: 0.8rem;
+            color: #2ecc71;
+            font-weight: 800;
+            letter-spacing: 1px;
+            display: block;
+            margin-bottom: 5px;
+        }
+        .condition-badge.marketplace-badge {
+            background: #222 !important;
+            color: #fff !important;
+            border: 1px solid #444;
+        }
+
+        /* NEW BRUTALIST INFO BLOCKS */
+        .product-info-block {
+            margin-top: 0;
+            border: 3px solid #222;
+            background: #fff;
+            box-shadow: 6px 6px 0px #222;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        .product-info-block:hover {
+            transform: translate(-2px, -2px);
+            box-shadow: 8px 8px 0px #222;
+        }
+        .block-title {
+            background: #222;
+            color: #fff;
+            margin: 0;
+            padding: 12px 15px;
+            font-size: 1.1rem;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .block-content {
+            padding: 20px;
+            font-size: 1.2rem;
+            line-height: 1.6;
+            color: var(--charcoal);
+            font-family: 'Staatliches', sans-serif;
+        }
+        
+        /* Market Safety Specific Styling */
+        .safety-block {
+            border-color: #ff4b2b;
+            box-shadow: 6px 6px 0px #ff4b2b;
+        }
+        .safety-block:hover {
+            box-shadow: 8px 8px 0px #ff4b2b;
+        }
+        .warning-title {
+            background: #ff4b2b;
+            color: #fff;
+        }
+        .safety-block .block-content {
+            background: #fff5f3; /* Slight red tint to the background */
+            font-weight: 600;
+        }
 
 /* Size Selector */
 .option-header {

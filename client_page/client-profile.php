@@ -2,7 +2,6 @@
 session_start();
 include '../db.php'; 
 
-
 if (!isset($_SESSION['user_id'])) {
     header("Location: login.php");
     exit();
@@ -11,18 +10,22 @@ if (!isset($_SESSION['user_id'])) {
 $user_id = $_SESSION['user_id'];
 $username = $_SESSION['username'];
 
+// --- AJAX: FETCH SINGLE PRODUCT FOR EDIT ---
+if (isset($_GET['get_listing_details'])) {
+    $p_id = (int)$_GET['get_listing_details'];
+    $stmt = $conn->prepare("SELECT * FROM products WHERE id = ? AND seller_id = ?");
+    $stmt->bind_param("ii", $p_id, $user_id);
+    $stmt->execute();
+    echo json_encode($stmt->get_result()->fetch_assoc());
+    exit();
+}
+
+// --- AJAX: MARK NOTIF AS READ ---
 if (isset($_GET['ajax_read_notif'])) {
     $notif_id = (int)$_GET['ajax_read_notif'];
-    
-    
     $stmt = $conn->prepare("UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?");
     $stmt->bind_param("ii", $notif_id, $user_id);
-    
-    if($stmt->execute()) {
-        echo "success";
-    } else {
-        echo "error";
-    }
+    echo $stmt->execute() ? "success" : "error";
     exit();
 }
 
@@ -53,40 +56,31 @@ if (isset($_SESSION['msg'])) {
     unset($_SESSION['msg_type']);
 }
 
+// Fetch basic user data
 $stmt = $conn->prepare("SELECT email, profile_pic FROM users WHERE id = ?");
 $stmt->bind_param("i", $user_id);
 $stmt->execute();
 $user_data = $stmt->get_result()->fetch_assoc();
 
+// Unread count
 $notif_count_stmt = $conn->prepare("SELECT COUNT(*) as unread FROM notifications WHERE user_id = ? AND is_read = 0");
 $notif_count_stmt->bind_param("i", $user_id);
 $notif_count_stmt->execute();
 $unread_count = $notif_count_stmt->get_result()->fetch_assoc()['unread'];
 
+// Fetch Notifications
 $notif_stmt = $conn->prepare("SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC");
 $notif_stmt->bind_param("i", $user_id);
 $notif_stmt->execute();
 $notifications = $notif_stmt->get_result();
 
+// Fetch Listings
 $list_stmt = $conn->prepare("SELECT id, title, price, image_url, is_approved FROM products WHERE seller_id = ? AND is_marketplace = 1 ORDER BY id DESC");
 $list_stmt->bind_param("i", $user_id);
 $list_stmt->execute();
 $user_listings = $list_stmt->get_result();
 
-if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_account'])) {
-    $del_listings = $conn->prepare("DELETE FROM products WHERE seller_id = ?");
-    $del_listings->bind_param("i", $user_id);
-    $del_listings->execute();
-
-    $del_stmt = $conn->prepare("DELETE FROM users WHERE id = ?");
-    $del_stmt->bind_param("i", $user_id);
-    if ($del_stmt->execute()) {
-        session_destroy();
-        header("Location: ../client_page/index.php");
-        exit();
-    }
-}
-
+// --- POST: UPDATE PROFILE ---
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_profile'])) {
     $new_password = $_POST['new_password'];
     $confirm_password = $_POST['confirm_password'];
@@ -132,6 +126,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_profile'])) {
     exit();
 }
 
+// --- POST: SUBMIT NEW GEAR ---
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_market_item'])) {
     $title = $conn->real_escape_string($_POST['title']);
     $brand = $conn->real_escape_string($_POST['brand']);
@@ -153,6 +148,72 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_market_item'])) {
     header("Location: client-profile.php");
     exit();
 }
+
+// --- POST: UPDATE EXISTING LISTING ---
+// --- POST: UPDATE EXISTING LISTING ---
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_listing'])) {
+    $p_id = (int)$_POST['product_id'];
+    $title = $conn->real_escape_string($_POST['title']);
+    $brand = $conn->real_escape_string($_POST['brand']);
+    $price = (float)$_POST['price'];
+    $category = $conn->real_escape_string($_POST['category']);
+    $condition = $conn->real_escape_string($_POST['condition_badge']);
+    $description = $conn->real_escape_string($_POST['description']);
+
+    // 1. Initial query parts
+    // We reset is_approved to 0 so admin reviews changes.
+    $sql = "UPDATE products SET title=?, brand=?, price=?, category=?, condition_badge=?, description=?, is_approved=0";
+    $types = "ssdsss"; // Match the 6 fields above: title(s), brand(s), price(d), category(s), condition(s), description(s)
+    $params = [$title, $brand, $price, $category, $condition, $description];
+
+    // 2. Check if a new image was uploaded
+    if (isset($_FILES['item_image']) && $_FILES['item_image']['error'] == 0) {
+        $target_file = "../assets/uploads/" . uniqid('market_') . '.' . pathinfo($_FILES["item_image"]["name"], PATHINFO_EXTENSION);
+        if (move_uploaded_file($_FILES["item_image"]["tmp_name"], $target_file)) {
+            $sql .= ", image_url=?";
+            $types .= "s";
+            $params[] = $target_file;
+        }
+    }
+
+    // 3. Add WHERE clause
+    $sql .= " WHERE id=? AND seller_id=?";
+    $types .= "ii";
+    $params[] = $p_id;
+    $params[] = $user_id;
+
+    // 4. Prepare and Bind
+    $stmt = $conn->prepare($sql);
+    
+    // THE FIX: We pass the types string first, then the unpacked params array
+    $stmt->bind_param($types, ...$params);
+    
+    if ($stmt->execute()) {
+        $_SESSION['msg'] = "LISTING UPDATED AND SENT FOR REVIEW.";
+        $_SESSION['msg_type'] = "success";
+    } else {
+        $_SESSION['msg'] = "DATABASE ERROR: COULD NOT UPDATE.";
+        $_SESSION['msg_type'] = "error";
+    }
+    
+    header("Location: client-profile.php");
+    exit();
+}
+
+// --- POST: DELETE ACCOUNT ---
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_account'])) {
+    $del_listings = $conn->prepare("DELETE FROM products WHERE seller_id = ?");
+    $del_listings->bind_param("i", $user_id);
+    $del_listings->execute();
+
+    $del_stmt = $conn->prepare("DELETE FROM users WHERE id = ?");
+    $del_stmt->bind_param("i", $user_id);
+    if ($del_stmt->execute()) {
+        session_destroy();
+        header("Location: ../client_page/index.php");
+        exit();
+    }
+}
 ?>
 
 <!DOCTYPE html>
@@ -164,6 +225,137 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_market_item'])) {
     <link rel="stylesheet" href="../assets/style.css"> 
     <link rel="stylesheet" href="../assets/admin.css"> 
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        /* --- Optimized Listings Design --- */
+        .listings-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 20px;
+    padding: 10px 0;
+}
+
+.mini-listing {
+    /* Changed from #1a1a1a to #ffffff */
+    background: #ffffff; 
+    /* Changed from #333 to a solid black for contrast */
+    border: 3px solid #000000; 
+    position: relative;
+    padding: 15px;
+    display: flex;
+    flex-direction: column;
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    cursor: pointer;
+    overflow: hidden;
+    /* Added a subtle light shadow for depth */
+    box-shadow: 4px 4px 0px #000000;
+}
+
+.mini-listing:hover {
+    border-color: var(--primary);
+    transform: translate(-2px, -2px);
+    /* Stronger shadow on hover to match the single product page style */
+    box-shadow: 8px 8px 0px #000000;
+}
+
+.mini-listing img {
+    width: 100%;
+    height: 160px;
+    object-fit: cover;
+    margin-bottom: 12px;
+    filter: grayscale(0%); /* Removed grayscale for a cleaner light look */
+    border: 2px solid #000000;
+    background: #f9f9f9;
+}
+
+.mini-listing-info {
+    flex-grow: 1;
+}
+
+.mini-listing-title {
+    font-size: 1.1rem;
+    /* Changed from #fff to #000 */
+    color: #000000; 
+    margin: 0 0 5px 0;
+    font-family: 'Arial Black', sans-serif;
+    letter-spacing: -0.5px;
+    text-transform: uppercase;
+}
+
+.mini-listing-price {
+    color: var(--primary);
+    font-weight: bold;
+    font-size: 1.2rem;
+    margin: 0;
+}
+
+.mini-listing-id {
+    font-size: 0.7rem;
+    /* Changed to a darker grey for readability on light bg */
+    color: #444; 
+    margin-top: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+/* Status Badges */
+.listing-status-badge {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    padding: 4px 8px;
+    font-size: 0.65rem;
+    font-weight: 900;
+    z-index: 5;
+    letter-spacing: 1px;
+    border: 1px solid #000; /* Added border to badges */
+    box-shadow: 2px 2px 0px #000;
+}
+
+.status-active {
+    background: #00ff88;
+    color: #000;
+}
+
+.status-pending {
+    background: #ffcc00;
+    color: #000;
+}
+
+/* Pagination Styling */
+.listing-pagination {
+    margin-top: 30px;
+    /* Changed from #333 to #000 */
+    border-top: 3px solid #000000; 
+    padding-top: 20px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 20px;
+}
+
+.page-number {
+    font-weight: bold;
+    color: #000;
+}
+
+.btn-pagination {
+    background: #fff;
+    color: #000;
+    border: 3px solid #000;
+    padding: 10px 14px;
+    cursor: pointer;
+    box-shadow: 4px 4px 0 #000;
+}
+
+.btn-pagination i {
+    color: #000;
+}
+
+.btn-pagination:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+    </style>
 </head>
 <body>
 
@@ -214,21 +406,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_market_item'])) {
     <div class="modal-content">
         <span class="close-modal" onclick="closeModal('editProfile')">&times;</span>
         <h3 class="admin-table-h3">EDIT <span class="header-span">PROFILE</span></h3>
-
         <form action="client-profile.php" method="POST" enctype="multipart/form-data" class="admin-form">
             <div class="avatar-edit-preview">
                 <img src="<?php echo htmlspecialchars($user_data['profile_pic'] ? $user_data['profile_pic'] : '../assets/images/default-avatar.png'); ?>" class="avatar-edit-img">
             </div>
-
             <label>CHANGE AVATAR</label>
             <input type="file" name="profile_pic" accept="image/*">
-
             <label>NEW PASSWORD</label>
             <input type="password" name="new_password" placeholder="LEAVE BLANK TO KEEP CURRENT">
-
             <label>CONFIRM PASSWORD</label>
             <input type="password" name="confirm_password" placeholder="REPEAT NEW PASSWORD">
-
             <button type="submit" name="update_profile" class="btn-primary-brutal btn-full">SAVE CHANGES</button>
         </form>
     </div>
@@ -238,7 +425,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_market_item'])) {
     <div class="modal-content">
         <span class="close-modal" onclick="closeModal('sellGear')">&times;</span>
         <h3 class="admin-table-h3">SELL <span class="header-span">GEAR</span></h3>
-
         <form action="client-profile.php" method="POST" enctype="multipart/form-data" class="admin-form">
             <div class="form-grid-2-1">
                 <div>
@@ -250,7 +436,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_market_item'])) {
                     <input type="text" name="brand" placeholder="E.G. INDY" required>
                 </div>
             </div>
-
             <div class="form-grid-3">
                 <div>
                     <label>PRICE ($)</label>
@@ -259,87 +444,125 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_market_item'])) {
                 <div>
                     <label>CATEGORY</label>
                     <select name="category">
-                        <option>DECKS</option>
-                        <option>TRUCKS</option>
-                        <option>WHEELS</option>
-                        <option>BEARINGS</option>
-                        <option>APPAREL</option>
-                        <option>ACCESORIES</option>
-                        <option>OTHER</option>
+                        <option>DECKS</option><option>TRUCKS</option><option>WHEELS</option>
+                        <option>BEARINGS</option><option>APPAREL</option><option>ACCESORIES</option><option>OTHER</option>
                     </select>
                 </div>
                 <div>
                     <label>CONDITION</label>
                     <select name="condition_badge">
-                        <option>MINT / WALL HANGER</option>
-                        <option>LIGHTLY SCUFFED</option>
-                        <option>BEAT UP / SKATEABLE</option>
+                        <option>MINT / WALL HANGER</option><option>LIGHTLY SCUFFED</option><option>BEAT UP / SKATEABLE</option>
                     </select>
                 </div>
             </div>
-
             <label>DESCRIPTION</label>
             <textarea name="description" rows="3" placeholder="DESCRIBE YOUR GEAR..." required></textarea>
-
             <label>IMAGE</label>
             <input type="file" name="item_image" required>
-
             <button type="submit" name="add_market_item" class="btn-primary-brutal btn-full">SUBMIT FOR REVIEW</button>
         </form>
     </div>
 </div>
 
 <div id="myListings" class="modal-overlay">
-    <div class="modal-content">
-        <span class="close-modal" onclick="closeModal('myListings')">&times;</span>
-        <h3 class="admin-table-h3">ACTIVE <span class="header-span">LISTINGS</span></h3>
+    <div class="modal-content" style="max-width: 900px;"> <span class="close-modal" onclick="closeModal('myListings')">&times;</span>
+        <h3 class="admin-table-h3">MY <span class="header-span">INVENTORY</span></h3>
 
         <?php if($user_listings->num_rows > 0): ?>
-            <div class="listings-grid">
+            <div class="listings-grid" id="listings-wrapper">
                 <?php while($row = $user_listings->fetch_assoc()): ?>
-                    <div class="mini-listing" style="position: relative;">
+                    <div class="mini-listing listing-page-item" onclick="openEditListing(<?php echo $row['id']; ?>)">
+                        
                         <?php if($row['is_approved'] == 0): ?>
-                            <span class="listing-status-pending">PENDING</span>
+                            <span class="listing-status-badge status-pending">PENDING</span>
                         <?php else: ?>
-                            <span class="listing-status-active">ACTIVE</span>
+                            <span class="listing-status-badge status-active">ACTIVE</span>
                         <?php endif; ?>
 
-                        <img src="<?php echo htmlspecialchars($row['image_url']); ?>" alt="Listing Image">
+                        <img src="<?php echo htmlspecialchars($row['image_url']); ?>" alt="Gear Image">
                         
                         <div class="mini-listing-info">
                             <h4 class="mini-listing-title"><?php echo strtoupper(htmlspecialchars($row['title'])); ?></h4>
                             <p class="mini-listing-price">$<?php echo number_format($row['price'], 2); ?></p>
                         </div>
-                        <span class="mini-listing-id">ID: #<?php echo $row['id']; ?></span>
+                        
+                        <span class="mini-listing-id">REF_#<?php echo $row['id']; ?></span>
                     </div>
                 <?php endwhile; ?>
             </div>
+
+            <div id="listing-pagination-controls" class="listing-pagination">
+                <button class="btn-pagination" onclick="changeListingPage(-1)" id="prevListBtn">
+                    <i class="fa-solid fa-chevron-left"></i>
+                </button>
+                <span id="listingPageIndicator" class="page-number">PAGE 1</span>
+                <button class="btn-pagination" onclick="changeListingPage(1)" id="nextListBtn">
+                    <i class="fa-solid fa-chevron-right"></i>
+                </button>
+            </div>
+
         <?php else: ?>
             <div class="empty-placeholder-box">
-                <p class="empty-placeholder-title">YOU HAVEN'T LISTED ANYTHING YET.</p>
+                <p class="empty-placeholder-title">NO GEAR FOUND IN YOUR LOCKER.</p>
+                <button class="btn-primary-brutal" onclick="closeModal('myListings'); openModal('sellGear');">START SELLING</button>
             </div>
         <?php endif; ?>
     </div>
 </div>
 
-<div id="buyHistory" class="modal-overlay">
+<div id="editListingModal" class="modal-overlay">
     <div class="modal-content">
-        <span class="close-modal" onclick="closeModal('buyHistory')">&times;</span>
-        <h3 class="admin-table-h3">BUY <span class="header-span">HISTORY</span></h3>
-        
-        <div class="empty-placeholder-box">
-            <p class="empty-placeholder-title">STREET MARKET UNDER CONSTRUCTION</p>
-            <p class="empty-placeholder-text">Purchasing functionality coming in the next update. Shred on.</p>
-        </div>
+        <span class="close-modal" onclick="backToListings()">&times;</span>
+        <h3 class="admin-table-h3">EDIT <span class="header-span">LISTING</span></h3>
+        <form action="client-profile.php" method="POST" enctype="multipart/form-data" class="admin-form" id="edit-listing-form">
+            <input type="hidden" name="product_id" id="edit-p-id">
+            
+            <div class="form-grid-2-1">
+                <div>
+                    <label>TITLE</label>
+                    <input type="text" name="title" id="edit-p-title" required>
+                </div>
+                <div>
+                    <label>BRAND</label>
+                    <input type="text" name="brand" id="edit-p-brand" required>
+                </div>
+            </div>
+
+            <div class="form-grid-3">
+                <div>
+                    <label>PRICE ($)</label>
+                    <input type="number" name="price" id="edit-p-price" step="0.01" required>
+                </div>
+                <div>
+                    <label>CATEGORY</label>
+                    <select name="category" id="edit-p-category">
+                        <option>DECKS</option><option>TRUCKS</option><option>WHEELS</option>
+                        <option>BEARINGS</option><option>APPAREL</option><option>ACCESORIES</option><option>OTHER</option>
+                    </select>
+                </div>
+                <div>
+                    <label>CONDITION</label>
+                    <select name="condition_badge" id="edit-p-condition">
+                        <option>MINT / WALL HANGER</option><option>LIGHTLY SCUFFED</option><option>BEAT UP / SKATEABLE</option>
+                    </select>
+                </div>
+            </div>
+
+            <label>DESCRIPTION</label>
+            <textarea name="description" id="edit-p-desc" rows="3" required></textarea>
+
+            <label>REPLACE IMAGE (LEAVE BLANK TO KEEP CURRENT)</label>
+            <input type="file" name="item_image">
+
+            <button type="submit" name="update_listing" class="btn-primary-brutal btn-full">UPDATE & RE-SUBMIT</button>
+        </form>
     </div>
 </div>
 
 <div id="notificationsModal" class="modal-overlay">
     <div class="modal-content">
         <span class="close-modal" onclick="closeModal('notificationsModal')">&times;</span>
-        
         <h3 class="admin-table-h3">SYSTEM <span class="header-span">MESSAGES</span></h3>
-        
         <div id="notif-wrapper" class="notifications-list">
             <?php if ($notifications->num_rows > 0): ?>
                 <?php while($n = $notifications->fetch_assoc()): 
@@ -356,31 +579,23 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_market_item'])) {
                             <p class="notif-msg"><?php echo htmlspecialchars($short_msg); ?></p>
                             <span class="notif-date"><?php echo $formatted_date; ?></span>
                         </div>
-                        <a href="client-profile.php?delete_notif=<?php echo $n['id']; ?>" 
-                        class="notif-delete-btn" 
-                        onclick="return confirm('SHRED THIS MESSAGE PERMANENTLY?')">
+                        <a href="client-profile.php?delete_notif=<?php echo $n['id']; ?>" class="notif-delete-btn" onclick="return confirm('SHRED THIS MESSAGE PERMANENTLY?')">
                             <i class="fa-solid fa-trash-can"></i>
                         </a>
                     </div>
                 <?php endwhile; ?>
             <?php else: ?>
-                <div class="empty-placeholder-box">
-                    <p class="empty-placeholder-title">NO NOTIFICATIONS YET.</p>
-                </div>
+                <div class="empty-placeholder-box"><p class="empty-placeholder-title">NO NOTIFICATIONS YET.</p></div>
             <?php endif; ?>
         </div>
-
         <?php if ($unread_count > 0): ?>
             <a href="client-profile.php?clear_notifs=1" class="btn-mark-read">MARK ALL READ</a>
         <?php endif; ?>
-
         <div id="pagination-controls" class="notif-pagination">
             <button class="btn-pagination" onclick="changePage(-1)" id="prevBtn"><i class="fa-solid fa-chevron-left"></i></button>
             <span id="pageIndicator" class="page-number">PAGE 1</span>
             <button class="btn-pagination" onclick="changePage(1)" id="nextBtn"><i class="fa-solid fa-chevron-right"></i></button>
         </div>
-
-        
     </div>
 </div>
 
@@ -388,13 +603,22 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_market_item'])) {
     <div class="modal-content">
         <span class="close-modal" onclick="closeModal('fullMessageModal')">&times;</span>
         <h3 class="admin-table-h3">MESSAGE <span class="header-span">DETAILS</span></h3>
-        
         <div class="full-message-box">
             <p id="fullMessageDisplay" class="full-message-text"></p>
             <span id="fullMessageDateDisplay" class="notif-date"></span>
         </div>
-
         <button type="button" class="btn-primary-brutal btn-full" onclick="backToNotifications()">BACK TO INBOX</button>
+    </div>
+</div>
+
+<div id="buyHistory" class="modal-overlay">
+    <div class="modal-content">
+        <span class="close-modal" onclick="closeModal('buyHistory')">&times;</span>
+        <h3 class="admin-table-h3">BUY <span class="header-span">HISTORY</span></h3>
+        <div class="empty-placeholder-box">
+            <p class="empty-placeholder-title">STREET MARKET UNDER CONSTRUCTION</p>
+            <p class="empty-placeholder-text">Purchasing functionality coming in the next update. Shred on.</p>
+        </div>
     </div>
 </div>
 
@@ -403,7 +627,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_market_item'])) {
         <span class="close-modal" onclick="closeModal('deleteProfile')">&times;</span>
         <h3 class="admin-table-h3">ARE <span class="header-span">YOU</span> SURE?</h3>
         <p class="modal-danger-text">This action is permanent. All your listings will be dragged to the graveyard.</p>
-        
         <form action="client-profile.php" method="POST">
             <button type="submit" name="delete_account" class="btn-danger btn-full btn-space-bottom">YES, DELETE EVERYTHING</button>
         </form>
@@ -411,118 +634,130 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_market_item'])) {
 </div>
 
 <script>
-    function openModal(id) { document.getElementById(id).style.display = 'flex'; }
+    function openModal(id) { 
+        document.getElementById(id).style.display = 'flex'; 
+        if (id === 'notificationsModal') {
+            currentNotifPage = 1;
+            updatePagination();
+        }
+        if (id === 'myListings') {
+            currentListPage = 1;
+            updateListingPagination();
+        }
+    }
     function closeModal(id) { document.getElementById(id).style.display = 'none'; }
 
-    // Opens the individual full-text modal
+    // --- LISTING EDIT LOGIC ---
+    function openEditListing(id) {
+        fetch(`client-profile.php?get_listing_details=${id}`)
+        .then(res => res.json())
+        .then(data => {
+            document.getElementById('edit-p-id').value = data.id;
+            document.getElementById('edit-p-title').value = data.title;
+            document.getElementById('edit-p-brand').value = data.brand;
+            document.getElementById('edit-p-price').value = data.price;
+            document.getElementById('edit-p-category').value = data.category;
+            document.getElementById('edit-p-condition').value = data.condition_badge;
+            document.getElementById('edit-p-desc').value = data.description;
+            
+            closeModal('myListings');
+            openModal('editListingModal');
+        });
+    }
+
+    function backToListings() {
+        closeModal('editListingModal');
+        openModal('myListings');
+    }
+
+    // --- LISTING PAGINATION ---
+    let currentListPage = 1;
+    const listItemsPerPage = 6; // Grid looks better with 4 items per page (2x2)
+
+    function updateListingPagination() {
+        const items = document.querySelectorAll('.listing-page-item');
+        const totalPages = Math.ceil(items.length / listItemsPerPage);
+        const prevBtn = document.getElementById('prevListBtn');
+        const nextBtn = document.getElementById('nextListBtn');
+        const indicator = document.getElementById('listingPageIndicator');
+
+        if (items.length === 0) {
+            document.getElementById('listing-pagination-controls').style.display = 'none';
+            return;
+        }
+
+        items.forEach(item => item.style.display = 'none');
+        let start = (currentListPage - 1) * listItemsPerPage;
+        let end = start + listItemsPerPage;
+        for (let i = start; i < end; i++) { if (items[i]) items[i].style.display = 'block'; }
+
+        indicator.innerText = `PAGE ${currentListPage} / ${totalPages}`;
+        prevBtn.disabled = currentListPage === 1;
+        nextBtn.disabled = currentListPage === totalPages || totalPages === 0;
+    }
+
+    function changeListingPage(step) {
+        currentListPage += step;
+        updateListingPagination();
+    }
+
+    // --- NOTIFICATION LOGIC (Existing) ---
+    let currentNotifPage = 1;
+    const itemsPerPage = 5;
+
+    function updatePagination() {
+        const items = document.querySelectorAll('.notif-page-item');
+        const totalPages = Math.ceil(items.length / itemsPerPage);
+        const prevBtn = document.getElementById('prevBtn');
+        const nextBtn = document.getElementById('nextBtn');
+        const indicator = document.getElementById('pageIndicator');
+        if (items.length === 0) {
+            if(document.getElementById('pagination-controls')) document.getElementById('pagination-controls').style.display = 'none';
+            return;
+        }
+        items.forEach(item => item.style.display = 'none');
+        let start = (currentNotifPage - 1) * itemsPerPage;
+        let end = start + itemsPerPage;
+        for (let i = start; i < end; i++) { if (items[i]) items[i].style.display = 'flex'; }
+        indicator.innerText = `PAGE ${currentNotifPage} / ${totalPages}`;
+        prevBtn.disabled = currentNotifPage === 1;
+        nextBtn.disabled = currentNotifPage === totalPages;
+    }
+
+    function changePage(step) {
+        currentNotifPage += step;
+        updatePagination();
+    }
+
     function openFullMessage(el) {
-    const notifId = el.getAttribute('data-notif-id');
-    const fullText = el.getAttribute('data-full-msg');
-    const fullDate = el.getAttribute('data-date');
-
-    // 1. Show the message in the modal
-    document.getElementById('fullMessageDisplay').innerText = fullText;
-    document.getElementById('fullMessageDateDisplay').innerText = fullDate;
-    
-    closeModal('notificationsModal');
-    openModal('fullMessageModal');
-
-    // 2. Mark as read in the database (Background AJAX)
-    // Only run if the parent item still has the 'unread' class
-    const parentItem = el.closest('.notification-item');
-    if (parentItem.classList.contains('unread')) {
-        fetch(`client-profile.php?ajax_read_notif=${notifId}`)
-            .then(() => {
-                // 3. Update UI: Remove the red/bold unread styling
+        const notifId = el.getAttribute('data-notif-id');
+        document.getElementById('fullMessageDisplay').innerText = el.getAttribute('data-full-msg');
+        document.getElementById('fullMessageDateDisplay').innerText = el.getAttribute('data-date');
+        closeModal('notificationsModal');
+        openModal('fullMessageModal');
+        const parentItem = el.closest('.notification-item');
+        if (parentItem.classList.contains('unread')) {
+            fetch(`client-profile.php?ajax_read_notif=${notifId}`).then(() => {
                 parentItem.classList.remove('unread');
-                
-                
                 const badge = document.querySelector('.notification-badge-client');
                 if (badge) {
                     let count = parseInt(badge.innerText);
-                    if (count > 1) {
-                        badge.innerText = count - 1;
-                    } else {
-                        badge.remove(); // Remove badge if it hits 0
-                    }
+                    if (count > 1) badge.innerText = count - 1; else badge.remove();
                 }
-            })
-            .catch(err => console.error("Error marking read:", err));
-    }
-}
-
-    // Allows user to easily step back to the list
-    function backToNotifications() {
-    closeModal('fullMessageModal');
-    openModal('notificationsModal');
-}
-
-    window.onclick = function(event) {
-        if (event.target.className === 'modal-overlay') {
-            event.target.style.display = 'none';
+            });
         }
     }
+
+    function backToNotifications() { closeModal('fullMessageModal'); openModal('notificationsModal'); }
+
+    window.onclick = function(event) { if (event.target.className === 'modal-overlay') { event.target.style.display = 'none'; } }
 
     document.addEventListener("DOMContentLoaded", () => {
         const alertBox = document.getElementById('alert-box');
-        if (alertBox) {
-            setTimeout(() => {
-                alertBox.style.opacity = "0";
-                setTimeout(() => alertBox.remove(), 500);
-            }, 4000);
-        }
+        if (alertBox) { setTimeout(() => { alertBox.style.opacity = "0"; setTimeout(() => alertBox.remove(), 500); }, 4000); }
     });
-
-
-    let currentNotifPage = 1;
-const itemsPerPage = 5;
-
-function updatePagination() {
-    const items = document.querySelectorAll('.notif-page-item');
-    const totalPages = Math.ceil(items.length / itemsPerPage);
-    const prevBtn = document.getElementById('prevBtn');
-    const nextBtn = document.getElementById('nextBtn');
-    const indicator = document.getElementById('pageIndicator');
-
-    // If no notifications, hide controls
-    if (items.length === 0) {
-        document.getElementById('pagination-controls').style.display = 'none';
-        return;
-    }
-
-    // Hide all items
-    items.forEach(item => item.style.display = 'none');
-
-    // Show only the items for current page
-    let start = (currentNotifPage - 1) * itemsPerPage;
-    let end = start + itemsPerPage;
-    
-    for (let i = start; i < end; i++) {
-        if (items[i]) items[i].style.display = 'flex';
-    }
-
-    // Update UI
-    indicator.innerText = `PAGE ${currentNotifPage} / ${totalPages}`;
-    prevBtn.disabled = currentNotifPage === 1;
-    nextBtn.disabled = currentNotifPage === totalPages;
-}
-
-function changePage(step) {
-    currentNotifPage += step;
-    updatePagination();
-}
-
-// Overwrite your existing openModal slightly to reset pagination when opened
-function openModal(id) { 
-    document.getElementById(id).style.display = 'flex'; 
-    if (id === 'notificationsModal') {
-        currentNotifPage = 1; // Reset to page 1 every time it opens
-        updatePagination();
-    }
-}
 </script>
 
 <?php include 'footer.php'; ?>
-
 </body>
 </html>

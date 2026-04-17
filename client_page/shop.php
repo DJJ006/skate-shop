@@ -5,7 +5,10 @@ include '../db.php';
 $search = isset($_GET['search']) ? $conn->real_escape_string($_GET['search']) : '';
 $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
 $sort = isset($_GET['sort']) ? $_GET['sort'] : 'newest';
-$selected_categories = isset($_GET['category']) ? $_GET['category'] : []; // This will be an array
+$selected_categories = isset($_GET['category']) ? $_GET['category'] : [];
+if (!is_array($selected_categories) && !empty($selected_categories)) {
+    $selected_categories = [$selected_categories];
+}
 $price_range = isset($_GET['price']) ? $_GET['price'] : '';
 
 $limit = 6;

@@ -5,8 +5,18 @@ include '../db.php';
 $search = isset($_GET['search']) ? $conn->real_escape_string($_GET['search']) : '';
 $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
 $sort = isset($_GET['sort']) ? $_GET['sort'] : 'newest';
+
+// FIX: Ensure Condition is always an array
 $selected_conditions = isset($_GET['condition']) ? $_GET['condition'] : [];
-$selected_types = isset($_GET['type']) ? $_GET['type'] : [];
+if (!is_array($selected_conditions) && !empty($selected_conditions)) {
+    $selected_conditions = [$selected_conditions];
+}
+
+// FIX: Ensure Category is always an array (Renamed from 'type' for consistency)
+$selected_categories = isset($_GET['category']) ? $_GET['category'] : [];
+if (!is_array($selected_categories) && !empty($selected_categories)) {
+    $selected_categories = [$selected_categories];
+}
 
 $limit = 6; 
 $offset = ($page - 1) * $limit;
@@ -18,16 +28,20 @@ if ($search != '') {
     $whereClause .= " AND (title LIKE '%$search%' OR brand LIKE '%$search%' OR seller_name LIKE '%$search%')";
 }
 
-// Filter by Condition (assuming you have a 'condition_badge' column)
+// Filter by Condition
 if (!empty($selected_conditions)) {
-    $escaped_conds = array_map(function($c) use ($conn) { return "'" . $conn->real_escape_string($c) . "'"; }, $selected_conditions);
+    $escaped_conds = array_map(function($c) use ($conn) { 
+        return "'" . $conn->real_escape_string($c) . "'"; 
+    }, $selected_conditions);
     $whereClause .= " AND condition_badge IN (" . implode(',', $escaped_conds) . ")";
 }
 
-// Filter by Gear Type (assuming you use the 'category' column)
-if (!empty($selected_types)) {
-    $escaped_types = array_map(function($t) use ($conn) { return "'" . $conn->real_escape_string($t) . "'"; }, $selected_types);
-    $whereClause .= " AND category IN (" . implode(',', $escaped_types) . ")";
+// Filter by Category
+if (!empty($selected_categories)) {
+    $escaped_cats = array_map(function($t) use ($conn) { 
+        return "'" . $conn->real_escape_string($t) . "'"; 
+    }, $selected_categories);
+    $whereClause .= " AND category IN (" . implode(',', $escaped_cats) . ")";
 }
 
 // 3. Sorting Logic
@@ -35,7 +49,6 @@ $orderClause = "ORDER BY created_at DESC";
 if ($sort === 'cheapest') {
     $orderClause = "ORDER BY price ASC";
 } elseif ($sort === 'rarest') {
-    // Assuming you might have a 'rarity' column, otherwise we'll sort by price high
     $orderClause = "ORDER BY price DESC";
 }
 
@@ -132,13 +145,13 @@ function get_filter_url($params) {
                     <div class="filter-group">
                         <h4>CATEGORY</h4>
                         <ul class="filter-list">
-                            <li><label><input type="checkbox" name="type[]" value="Decks" <?php echo in_array('Decks', $selected_types) ? 'checked' : ''; ?> onchange="this.form.submit()">DECKS</label></li>
-                            <li><label><input type="checkbox" name="type[]" value="Trucks" <?php echo in_array('Trucks', $selected_types) ? 'checked' : ''; ?> onchange="this.form.submit()">TRUCKS</label></li>
-                            <li><label><input type="checkbox" name="type[]" value="Wheels" <?php echo in_array('Wheels', $selected_types) ? 'checked' : ''; ?> onchange="this.form.submit()">WHEELS</label></li>
-                            <li><label><input type="checkbox" name="type[]" value="Bearings" <?php echo in_array('Bearings', $selected_types) ? 'checked' : ''; ?> onchange="this.form.submit()">BEARINGS</label></li>
-                            <li><label><input type="checkbox" name="type[]" value="Apparel" <?php echo in_array('Apparel', $selected_types) ? 'checked' : ''; ?> onchange="this.form.submit()"> APPAREL</label></li>
-                            <li><label><input type="checkbox" name="type[]" value="Accesories" <?php echo in_array('Accesories', $selected_types) ? 'checked' : ''; ?> onchange="this.form.submit()">ACCESORIES</label></li>
-                            <li><label><input type="checkbox" name="type[]" value="Other" <?php echo in_array('Other', $selected_types) ? 'checked' : ''; ?> onchange="this.form.submit()">OTHER</label></li>
+                            <li><label><input type="checkbox" name="category[]" value="Decks" <?php echo in_array('Decks', $selected_categories) ? 'checked' : ''; ?> onchange="this.form.submit()">DECKS</label></li>
+                            <li><label><input type="checkbox" name="category[]" value="Trucks" <?php echo in_array('Trucks', $selected_categories) ? 'checked' : ''; ?> onchange="this.form.submit()">TRUCKS</label></li>
+                            <li><label><input type="checkbox" name="category[]" value="Wheels" <?php echo in_array('Wheels', $selected_categories) ? 'checked' : ''; ?> onchange="this.form.submit()">WHEELS</label></li>
+                            <li><label><input type="checkbox" name="category[]" value="Bearings" <?php echo in_array('Bearings', $selected_categories) ? 'checked' : ''; ?> onchange="this.form.submit()">BEARINGS</label></li>
+                            <li><label><input type="checkbox" name="category[]" value="Apparel" <?php echo in_array('Apparel', $selected_categories) ? 'checked' : ''; ?> onchange="this.form.submit()"> APPAREL</label></li>
+                            <li><label><input type="checkbox" name="category[]" value="Accesories" <?php echo in_array('Accesories', $selected_categories) ? 'checked' : ''; ?> onchange="this.form.submit()">ACCESORIES</label></li>
+                            <li><label><input type="checkbox" name="category[]" value="Other" <?php echo in_array('Other', $selected_categories) ? 'checked' : ''; ?> onchange="this.form.submit()">OTHER</label></li>
                         </ul>
                     </div>
 
@@ -157,7 +170,7 @@ function get_filter_url($params) {
                         <input type="text" name="search" placeholder="SEARCH THE SCRAPHEAP..." id="shop-search" value="<?php echo htmlspecialchars($search); ?>">
                         
                         <?php foreach($selected_conditions as $c): ?><input type="hidden" name="condition[]" value="<?php echo htmlspecialchars($c); ?>"><?php endforeach; ?>
-                        <?php foreach($selected_types as $t): ?><input type="hidden" name="type[]" value="<?php echo htmlspecialchars($t); ?>"><?php endforeach; ?>
+                        <?php foreach($selected_categories as $t): ?><input type="hidden" name="category[]" value="<?php echo htmlspecialchars($t); ?>"><?php endforeach; ?>
                         
                         <button type="submit" class="search-btn"><span class="material-icons">search</span></button>
                     </form>
