@@ -189,23 +189,38 @@ function get_filter_url($params) {
 
       
         <div class="product-grid">
-        <?php if ($result->num_rows > 0): ?>
-            <?php while($row = $result->fetch_assoc()): ?>
-                <a href="product.php?id=<?php echo $row['id']; ?>" style="text-decoration: none; color: inherit;">
-                    <div class="product-card grainy-card compact-card">
-                        <div class="card-img">
-                            <img src="<?php echo $row['image_url']; ?>" alt="<?php echo htmlspecialchars($row['title']); ?>">
+<?php if ($result->num_rows > 0): ?>
+    <?php while($row = $result->fetch_assoc()): ?>
+        <a href="product.php?id=<?php echo $row['id']; ?>" style="text-decoration: none; color: inherit;">
+            <div class="product-card grainy-card compact-card">
+                <div class="card-img" style="position: relative; overflow: hidden;">
+                    
+                    <?php if((int)$row['quantity'] <= 0): ?>
+                        <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 10; pointer-events: none;">
+                            <span style="background: #ff4b2b; color: #fff; padding: 8px 20px; font-family: 'Arial Black', sans-serif; font-size: 1.1rem; transform: rotate(-12deg); border: 3px solid #000; box-shadow: 5px 5px 0 #000; text-transform: uppercase; letter-spacing: 1px;">
+                                SOLD OUT
+                            </span>
                         </div>
-                        <div class="card-info">
-                            <div>
-                                <h4><?php echo htmlspecialchars($row['title']); ?></h4>
-                                <p><?php echo htmlspecialchars($row['brand']); ?></p>
-                            </div>
-                            <span class="price">$<?php echo number_format($row['price'], 2); ?></span>
-                        </div>
+                    <?php endif; ?>
+
+                    <img src="<?php echo $row['image_url']; ?>" 
+                         alt="<?php echo htmlspecialchars($row['title']); ?>" 
+                         style="<?php echo ((int)$row['quantity'] <= 0) ? 'filter: grayscale(100%) blur(1px); opacity: 0.7;' : ''; ?>">
+                </div>
+                
+                <div class="card-info">
+                    <div>
+                        <h4><?php echo htmlspecialchars($row['title']); ?></h4>
+                        <p><?php echo htmlspecialchars($row['brand']); ?></p>
                     </div>
-                </a>
-            <?php endwhile; ?>
+                    <span class="price" style="<?php echo ((int)$row['quantity'] <= 0) ? 'text-decoration: line-through; color: #888;' : ''; ?>">
+                        $<?php echo number_format($row['price'], 2); ?>
+                    </span>
+                </div>
+            </div>
+        </a>
+    <?php endwhile; ?>
+
         <?php else: ?>
             <div  class="not-found">
                 <h3>NO GEAR FOUND.</h3>

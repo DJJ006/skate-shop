@@ -105,6 +105,11 @@ $modals_html = [];
                     <?php endif; ?>
                 </a>
             </li>
+            <li>
+                <a href="verify-seller.php" class="nav-relative">
+                    <span class="material-icons">verified_user</span> TRUST & SAFETY
+                </a>
+            </li>
             <li><a href="../index.php"><span class="material-icons">public</span> VIEW LIVE SITE</a></li>
         </ul>
     </aside>

@@ -62,6 +62,12 @@ $stmt->bind_param("i", $user_id);
 $stmt->execute();
 $user_data = $stmt->get_result()->fetch_assoc();
 
+// Fetch basic user data including wallet_balance
+$stmt = $conn->prepare("SELECT email, profile_pic, wallet_balance FROM users WHERE id = ?");
+$stmt->bind_param("i", $user_id);
+$stmt->execute();
+$user_data = $stmt->get_result()->fetch_assoc();
+
 // Unread count
 $notif_count_stmt = $conn->prepare("SELECT COUNT(*) as unread FROM notifications WHERE user_id = ? AND is_read = 0");
 $notif_count_stmt->bind_param("i", $user_id);
@@ -223,7 +229,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_account'])) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SkateShop | DASHBOARD</title>
     <link rel="stylesheet" href="../assets/style.css"> 
-    <link rel="stylesheet" href="../assets/admin.css"> 
+    <link rel="stylesheet" href="../assets/admin.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
         /* --- Optimized Listings Design --- */
@@ -394,6 +400,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_account'])) {
             <?php if ($unread_count > 0): ?>
                 <span class="notification-badge-client"><?php echo $unread_count; ?></span>
             <?php endif; ?>
+        </div>
+        <div class="option-card" onclick="openModal('myWallet')">
+            <i class="fa-solid fa-wallet"></i>
+            <h3>MY WALLET</h3>
+            <span style="color: #2ecc71; font-weight: 900;">$<?php echo number_format($user_data['wallet_balance'] ?? 0, 2); ?></span>
         </div>
         <div class="option-card card-danger" onclick="openModal('deleteProfile')">
             <i class="fa-solid fa-trash-can"></i>
@@ -619,6 +630,24 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_account'])) {
             <p class="empty-placeholder-title">STREET MARKET UNDER CONSTRUCTION</p>
             <p class="empty-placeholder-text">Purchasing functionality coming in the next update. Shred on.</p>
         </div>
+    </div>
+</div>
+
+<div id="myWallet" class="modal-overlay">
+    <div class="modal-content">
+        <span class="close-modal" onclick="closeModal('myWallet')">&times;</span>
+        <h3 class="admin-table-h3">MY <span class="header-span">WALLET</span></h3>
+        
+        <div class="grainy-card" style="text-align: center; padding: 40px 20px; background: #111; border: 2px solid #333; margin-bottom: 20px;">
+            <p style="color: #888; font-family: 'Arial Black', sans-serif; margin: 0; letter-spacing: 2px;">AVAILABLE BALANCE</p>
+            <h1 style="color: #2ecc71; font-size: 4rem; margin: 10px 0;">$<?php echo number_format($user_data['wallet_balance'] ?? 0, 2); ?></h1>
+        </div>
+
+        <button class="btn-primary-brutal btn-full" onclick="alert('Withdrawal system coming soon! Connect your bank in settings.')">WITHDRAW TO BANK</button>
+        
+        <p style="font-size: 0.8rem; color: #666; text-align: center; margin-top: 15px;">
+            Funds from your marketplace sales appear here instantly.
+        </p>
     </div>
 </div>
 
