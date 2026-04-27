@@ -117,7 +117,8 @@ $modals_html = [];
             <li><a href="index.php"><span class="material-icons">dashboard</span> DASHBOARD</a></li>
             <li><a href="shop-products.php"><span class="material-icons">inventory_2</span> THE VAULT (SHOP)</a></li>
             <li><a href="marketplace-products.php"><span class="material-icons">storefront</span> STREET MARKET</a></li>
-            <li><a href="registered-users.php" class="active"><span class="material-icons">manage_accounts</span> REGISTERED USERS</a></li>
+            <li><a href="registered-users.php" class="nav-relative active"><span class="material-icons">manage_accounts</span> REGISTERED USERS</a></li>
+            <li><a href="client-orders.php"><span class="material-icons">receipt_long</span> CLIENT ORDERS</a></li>
             <li>
                 <a href="accept-product.php" class="<?php echo (basename($_SERVER['PHP_SELF']) == 'accept-product.php') ? '' : ''; ?>" style="position: relative;">
                     <span class="material-icons">gavel</span> PENDING GEAR

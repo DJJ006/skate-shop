@@ -86,6 +86,29 @@ $list_stmt->bind_param("i", $user_id);
 $list_stmt->execute();
 $user_listings = $list_stmt->get_result();
 
+// Fetch Buy History
+$buy_history_stmt = $conn->prepare("SELECT o.id as order_id, o.amount, o.created_at, o.status, p.title, p.image_url FROM orders o JOIN products p ON o.product_id = p.id WHERE o.buyer_id = ? AND o.status IN ('PAID', 'CANCELLED', 'RECEIVED') ORDER BY o.created_at DESC");
+$buy_history_stmt->bind_param("i", $user_id);
+$buy_history_stmt->execute();
+$buy_history_result = $buy_history_stmt->get_result();
+
+// --- POST: CONFIRM RECEIPT ---
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_receipt'])) {
+    $order_id = (int)$_POST['order_id'];
+    $update_stmt = $conn->prepare("UPDATE orders SET status = 'RECEIVED' WHERE id = ? AND buyer_id = ? AND status = 'PAID'");
+    $update_stmt->bind_param("ii", $order_id, $user_id);
+    if ($update_stmt->execute() && $update_stmt->affected_rows > 0) {
+        $_SESSION['msg'] = "ORDER MARKED AS RECEIVED.";
+        $_SESSION['msg_type'] = "success";
+    } else {
+        $_SESSION['msg'] = "COULD NOT UPDATE ORDER.";
+        $_SESSION['msg_type'] = "error";
+    }
+    header("Location: client-profile.php");
+    exit();
+}
+
+
 // --- POST: UPDATE PROFILE ---
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_profile'])) {
     $new_password = $_POST['new_password'];
@@ -315,6 +338,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_account'])) {
     letter-spacing: 1px;
     border: 1px solid #000; /* Added border to badges */
     box-shadow: 2px 2px 0px #000;
+}
+
+.status-cancelled {
+    background: #e74c3c;
+    color: #fff;
 }
 
 .status-active {
@@ -623,15 +651,68 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_account'])) {
 </div>
 
 <div id="buyHistory" class="modal-overlay">
-    <div class="modal-content">
+    <div class="modal-content" style="max-width: 900px;">
         <span class="close-modal" onclick="closeModal('buyHistory')">&times;</span>
         <h3 class="admin-table-h3">BUY <span class="header-span">HISTORY</span></h3>
-        <div class="empty-placeholder-box">
-            <p class="empty-placeholder-title">STREET MARKET UNDER CONSTRUCTION</p>
-            <p class="empty-placeholder-text">Purchasing functionality coming in the next update. Shred on.</p>
-        </div>
+        
+        <?php if ($buy_history_result && $buy_history_result->num_rows > 0): ?>
+            <div class="listings-grid">
+                <?php while ($purchase = $buy_history_result->fetch_assoc()): ?>
+                    <?php $purchase_code = "ORD-" . str_pad($purchase['order_id'], 6, "0", STR_PAD_LEFT); ?>
+                    
+                    <div class="mini-listing buy-history-page-item" style="cursor: default;">
+                        
+                        <?php if ($purchase['status'] === 'CANCELLED'): ?>
+                            <span class="listing-status-badge status-cancelled">CANCELLED</span>
+                        <?php elseif ($purchase['status'] === 'RECEIVED'): ?>
+                            <span class="listing-status-badge" style="background:#3498db; color:#fff;">RECEIVED</span>
+                        <?php else: ?>
+                            <span class="listing-status-badge status-active">PAID</span>
+                        <?php endif; ?>
+
+                        <img src="<?php echo htmlspecialchars($purchase['image_url']); ?>" alt="Product">
+                        
+                        <div class="mini-listing-info">
+                            <h4 class="mini-listing-title"><?php echo strtoupper(htmlspecialchars($purchase['title'])); ?></h4>
+                            <p class="mini-listing-price">$<?php echo number_format($purchase['amount'], 2); ?></p>
+                        </div>
+                        
+                        <div style="margin-top: 10px; border-top: 2px dashed #000; padding-top: 10px;">
+                            <span class="mini-listing-id" style="display: block; font-weight: bold; color: #000;">
+                                CODE: <?php echo $purchase_code; ?>
+                            </span>
+                            <span class="mini-listing-id" style="display: block; margin-top: 5px;">
+                                DATE: <?php echo date("M d, Y", strtotime($purchase['created_at'])); ?>
+                            </span>
+                        </div>
+                        
+                        <?php if ($purchase['status'] === 'PAID'): ?>
+                            <button type="button" class="btn-primary-brutal btn-full" style="margin-top: 10px; font-size:1rem; padding:8px;" onclick="openConfirmReceiptModal(<?php echo $purchase['order_id']; ?>)">CONFIRM RECEIPT</button>
+                        <?php endif; ?>
+
+                    </div>
+                <?php endwhile; ?>
+            </div>
+
+            <div id="buy-history-pagination-controls" class="listing-pagination">
+                <button class="btn-pagination" onclick="changeBuyPage(-1)" id="prevBuyBtn">
+                    <i class="fa-solid fa-chevron-left"></i>
+                </button>
+                <span id="buyPageIndicator" class="page-number">PAGE 1</span>
+                <button class="btn-pagination" onclick="changeBuyPage(1)" id="nextBuyBtn">
+                    <i class="fa-solid fa-chevron-right"></i>
+                </button>
+            </div>
+        <?php else: ?>
+            <div class="empty-placeholder-box">
+                <p class="empty-placeholder-title">NO PURCHASES YET.</p>
+                <p style="font-family: 'Staatliches', sans-serif; color: #666; margin-bottom: 20px;">Hit the shop or street market to score some gear.</p>
+                <button class="btn-primary-brutal" onclick="window.location.href='shop.php'">GO TO SHOP</button>
+            </div>
+        <?php endif; ?>
     </div>
 </div>
+
 
 <div id="myWallet" class="modal-overlay">
     <div class="modal-content">
@@ -673,6 +754,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_account'])) {
             currentListPage = 1;
             updateListingPagination();
         }
+        if (id === 'buyHistory') {
+            currentBuyPage = 1;
+            updateBuyPagination();
+        }
     }
     function closeModal(id) { document.getElementById(id).style.display = 'none'; }
 
@@ -697,6 +782,38 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_account'])) {
     function backToListings() {
         closeModal('editListingModal');
         openModal('myListings');
+    }
+
+    // --- BUY HISTORY PAGINATION ---
+    let currentBuyPage = 1;
+    const buyItemsPerPage = 6;
+
+    function updateBuyPagination() {
+        const items = document.querySelectorAll('.buy-history-page-item');
+        const totalPages = Math.ceil(items.length / buyItemsPerPage);
+        const prevBtn = document.getElementById('prevBuyBtn');
+        const nextBtn = document.getElementById('nextBuyBtn');
+        const indicator = document.getElementById('buyPageIndicator');
+
+        if (items.length === 0) {
+            const controls = document.getElementById('buy-history-pagination-controls');
+            if (controls) controls.style.display = 'none';
+            return;
+        }
+
+        items.forEach(item => item.style.display = 'none');
+        let start = (currentBuyPage - 1) * buyItemsPerPage;
+        let end = start + buyItemsPerPage;
+        for (let i = start; i < end; i++) { if (items[i]) items[i].style.display = 'block'; }
+
+        indicator.innerText = `PAGE ${currentBuyPage} / ${totalPages}`;
+        prevBtn.disabled = currentBuyPage === 1;
+        nextBtn.disabled = currentBuyPage === totalPages || totalPages === 0;
+    }
+
+    function changeBuyPage(step) {
+        currentBuyPage += step;
+        updateBuyPagination();
     }
 
     // --- LISTING PAGINATION ---
@@ -785,6 +902,34 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_account'])) {
         const alertBox = document.getElementById('alert-box');
         if (alertBox) { setTimeout(() => { alertBox.style.opacity = "0"; setTimeout(() => alertBox.remove(), 500); }, 4000); }
     });
+</script>
+
+<div id="confirmReceiptModal" class="modal-overlay">
+    <div class="modal-content" style="max-width: 400px; text-align: center;">
+        <span class="close-modal" onclick="closeModal('confirmReceiptModal')">&times;</span>
+        <h3 class="admin-table-h3" style="margin-top:0; font-size:2.5rem;">DID YOU <span class="header-span">RECEIVE</span> THE PRODUCT?</h3>
+        <div style="display:flex; gap:10px; margin-top:20px;">
+            <form action="client-profile.php" method="POST" style="flex:1;">
+                <input type="hidden" name="order_id" id="confirmReceiptOrderId">
+                <button type="submit" name="confirm_receipt" class="btn-primary-brutal btn-full" style="background:#2ecc71;">YES</button>
+            </form>
+            <button type="button" class="btn-primary-brutal btn-full" style="flex:1; background:#e74c3c;" onclick="showNotReceivedMsg()">NO</button>
+        </div>
+        <div id="notReceivedMsg" style="display:none; margin-top:15px; font-weight:bold; color:#e74c3c; border: 3px dashed var(--charcoal); padding: 15px; background: rgba(0,0,0,0.03);">
+            Contact us through our email: <br><a href="mailto:skateshopp2026@gmail.com" style="color:#3498db; text-decoration:underline;">skateshopp2026@gmail.com</a>
+        </div>
+    </div>
+</div>
+
+<script>
+function openConfirmReceiptModal(orderId) {
+    document.getElementById('confirmReceiptOrderId').value = orderId;
+    document.getElementById('notReceivedMsg').style.display = 'none';
+    openModal('confirmReceiptModal');
+}
+function showNotReceivedMsg() {
+    document.getElementById('notReceivedMsg').style.display = 'block';
+}
 </script>
 
 <?php include 'footer.php'; ?>

@@ -1,6 +1,7 @@
 <?php
 session_start();
 include '../db.php';
+require_once '../stripe-config.php';
 
 // -------------------------
 // Helpers
@@ -98,7 +99,6 @@ $total = $subtotal + $shipping_fee;
 // Handle form submission
 // -------------------------
 $errors = [];
-$success_message = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['proceed_to_payment'])) {
     $first_name      = trim($_POST['first_name'] ?? '');
@@ -181,7 +181,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['proceed_to_payment'])
     // -------------------------
     if (empty($errors)) {
         $shipping_name = $first_name . ' ' . $last_name;
-
+    
+        // Save latest customer details to users table
+        $secret_key = $_ENV['APP_DB_ENCRYPTION_KEY'] ?? 'change_this_to_a_real_secret_key';
+    
+        $update_user_stmt = $conn->prepare("
+            UPDATE users 
+            SET first_name = ?, 
+                last_name = ?, 
+                phone = AES_ENCRYPT(?, ?), 
+                address_line_1 = AES_ENCRYPT(?, ?), 
+                city = ?, 
+                postal_code = ?, 
+                country = ?
+            WHERE id = ?
+        ");
+    
+        if ($update_user_stmt) {
+            $update_user_stmt->bind_param(
+                "sssssssssi",
+                $first_name,
+                $last_name,
+                $phone,
+                $secret_key,
+                $address_line_1,
+                $secret_key,
+                $city,
+                $postal_code,
+                $country,
+                $buyer_id
+            );
+            $update_user_stmt->execute();
+            $update_user_stmt->close();
+        }
+    
         $shipping_payload = [
             'first_name'     => $first_name,
             'last_name'      => $last_name,
@@ -200,15 +233,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['proceed_to_payment'])
             'total'          => $total,
             'created_at'     => date('c')
         ];
-
+    
         $raw_shipping_json = json_encode($shipping_payload, JSON_UNESCAPED_UNICODE);
-
+    
         // IMPORTANT: replace this with a real secret from env/config
         $encryption_key = "YOUR_SUPER_SECRET_KEY_MAKE_IT_LONG";
         $cipher = 'aes-256-cbc';
         $iv_length = openssl_cipher_iv_length($cipher);
         $iv = openssl_random_pseudo_bytes($iv_length);
-
+    
         $encrypted_address = openssl_encrypt(
             $raw_shipping_json,
             $cipher,
@@ -216,12 +249,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['proceed_to_payment'])
             0,
             $iv
         );
-
+    
         $final_address = base64_encode($encrypted_address . '::' . $iv);
-
+    
         $seller_id = ((int)$product['is_marketplace'] === 1) ? (int)$product['seller_id'] : 0;
         $amount = $total;
-
+    
         $order_stmt = $conn->prepare("
             INSERT INTO orders (
                 buyer_id,
@@ -233,7 +266,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['proceed_to_payment'])
                 status
             ) VALUES (?, ?, ?, ?, ?, ?, 'PENDING_PAYMENT')
         ");
-
+    
         $order_stmt->bind_param(
             "iiidss",
             $buyer_id,
@@ -243,13 +276,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['proceed_to_payment'])
             $shipping_name,
             $final_address
         );
-
+    
         if ($order_stmt->execute()) {
             $order_id = $conn->insert_id;
-
-            // Stripe/session redirect would go here in production
-            header("Location: process_payment.php?order_id=" . $order_id);
-            exit();
+    
+            try {
+                $session = \Stripe\Checkout\Session::create([
+                    'mode' => 'payment',
+                    'success_url' => 'https://kristovskis.lv/4pt/jaunarajs/skate-shop/client_page/success.php?session_id={CHECKOUT_SESSION_ID}',
+                    'cancel_url' => 'https://kristovskis.lv/4pt/jaunarajs/skate-shop/client_page/checkout.php?id=' . $product_id,
+                    'line_items' => [[
+                        'price_data' => [
+                            'currency' => 'usd',
+                            'product_data' => [
+                                'name' => $product['title'],
+                            ],
+                            'unit_amount' => (int) round($amount * 100),
+                        ],
+                        'quantity' => 1,
+                    ]],
+                    'metadata' => [
+                        'order_id' => (string)$order_id
+                    ]
+                ]);
+    
+                $stripe_stmt = $conn->prepare("UPDATE orders SET stripe_session_id = ? WHERE id = ?");
+                $stripe_stmt->bind_param("si", $session->id, $order_id);
+                $stripe_stmt->execute();
+    
+                header("Location: " . $session->url);
+                exit();
+            } catch (Exception $e) {
+                $errors[] = "Payment gateway error. Please try again in a moment.";
+            }
         } else {
             $errors[] = "We could not create your order. Please try again.";
         }
