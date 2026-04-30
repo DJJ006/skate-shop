@@ -95,15 +95,64 @@ $buy_history_result = $buy_history_stmt->get_result();
 // --- POST: CONFIRM RECEIPT ---
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_receipt'])) {
     $order_id = (int)$_POST['order_id'];
-    $update_stmt = $conn->prepare("UPDATE orders SET status = 'RECEIVED' WHERE id = ? AND buyer_id = ? AND status = 'PAID'");
-    $update_stmt->bind_param("ii", $order_id, $user_id);
-    if ($update_stmt->execute() && $update_stmt->affected_rows > 0) {
+    
+    $conn->begin_transaction();
+    try {
+        $order_stmt = $conn->prepare("SELECT seller_id, amount, payout_status, status FROM orders WHERE id = ? AND buyer_id = ? FOR UPDATE");
+        $order_stmt->bind_param("ii", $order_id, $user_id);
+        $order_stmt->execute();
+        $order = $order_stmt->get_result()->fetch_assoc();
+
+        if (!$order) {
+            throw new Exception("Order not found.");
+        }
+
+        if ($order['status'] !== 'PAID') {
+            throw new Exception("Order is not in a valid state to be received.");
+        }
+
+        $update_stmt = $conn->prepare("UPDATE orders SET status = 'RECEIVED' WHERE id = ?");
+        $update_stmt->bind_param("i", $order_id);
+        $update_stmt->execute();
+
+        $seller_id = (int)$order['seller_id'];
+        $payout_status = strtoupper(trim((string)$order['payout_status']));
+
+        if ($seller_id > 0) {
+            // Marketplace Product
+            if ($payout_status === 'PENDING') {
+                $amount = (float)$order['amount'];
+                $seller_payout = round($amount * 0.95, 2);
+
+                $wallet_stmt = $conn->prepare("UPDATE users SET wallet_balance = wallet_balance + ? WHERE id = ?");
+                $wallet_stmt->bind_param("di", $seller_payout, $seller_id);
+                $wallet_stmt->execute();
+
+                $payout_stmt = $conn->prepare("UPDATE orders SET payout_status = 'RELEASED', payout_date = NOW() WHERE id = ?");
+                $payout_stmt->bind_param("i", $order_id);
+                $payout_stmt->execute();
+
+                $seller_msg = "Your funds have been released! $" . number_format($seller_payout, 2) . " has been added to your Wallet for a confirmed delivery.";
+                $seller_notif_stmt = $conn->prepare("INSERT INTO notifications (user_id, message) VALUES (?, ?)");
+                $seller_notif_stmt->bind_param("is", $seller_id, $seller_msg);
+                $seller_notif_stmt->execute();
+            }
+        } else {
+            // Official Shop Product - Update payout status so it doesn't stay PENDING
+            $payout_stmt = $conn->prepare("UPDATE orders SET payout_status = 'NOT_APPLICABLE', payout_date = NOW() WHERE id = ?");
+            $payout_stmt->bind_param("i", $order_id);
+            $payout_stmt->execute();
+        }
+
+        $conn->commit();
         $_SESSION['msg'] = "ORDER MARKED AS RECEIVED.";
         $_SESSION['msg_type'] = "success";
-    } else {
-        $_SESSION['msg'] = "COULD NOT UPDATE ORDER.";
+    } catch (Exception $e) {
+        $conn->rollback();
+        $_SESSION['msg'] = "COULD NOT UPDATE ORDER: " . strtoupper($e->getMessage());
         $_SESSION['msg_type'] = "error";
     }
+
     header("Location: client-profile.php");
     exit();
 }
@@ -388,6 +437,19 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_account'])) {
 .btn-pagination:disabled {
     opacity: 0.3;
     cursor: not-allowed;
+}
+
+.empty-placeholder-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;       
+    justify-content: center;
+    text-align: center;         
+}
+
+.empty-placeholder-box .btn-primary-brutal {
+    margin-top: 15px;
+    padding: 12px 20px;         /* ✅ better padding */
 }
     </style>
 </head>
@@ -719,8 +781,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_account'])) {
         <span class="close-modal" onclick="closeModal('myWallet')">&times;</span>
         <h3 class="admin-table-h3">MY <span class="header-span">WALLET</span></h3>
         
-        <div class="grainy-card" style="text-align: center; padding: 40px 20px; background: #111; border: 2px solid #333; margin-bottom: 20px;">
-            <p style="color: #888; font-family: 'Arial Black', sans-serif; margin: 0; letter-spacing: 2px;">AVAILABLE BALANCE</p>
+        <div class="grainy-card" style="text-align: center; padding: 40px 20px; background: #f7f7f7; border: 2px solid #333; margin-bottom: 20px;">
+            <p style="color: #1A1A1A; font-family: 'Arial Black', sans-serif; margin: 0; letter-spacing: 2px;">AVAILABLE BALANCE</p>
             <h1 style="color: #2ecc71; font-size: 4rem; margin: 10px 0;">$<?php echo number_format($user_data['wallet_balance'] ?? 0, 2); ?></h1>
         </div>
 
@@ -904,6 +966,34 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_account'])) {
     });
 </script>
 
+<style>
+#confirmReceiptModal .btn-receipt-no {
+    flex: 1;
+    background: var(--primary);
+    color: #fff !important;
+}
+#confirmReceiptModal .btn-receipt-no:hover {
+    background: var(--textwhite);
+    color: #1A1A1A !important;
+}
+#confirmReceiptModal .btn-receipt-yes {
+    background: #2ecc71;
+    color: #fff !important;
+}
+#confirmReceiptModal .btn-receipt-yes:hover {
+    background: #27ae60;
+    color: #fff !important;
+}
+#notReceivedMsg .contact-label {
+    color: var(--primary);
+    font-size: 1.1rem;
+    font-family: 'Staatliches', sans-serif;
+    letter-spacing: 1px;
+    display: block;
+    margin-bottom: 6px;
+}
+</style>
+
 <div id="confirmReceiptModal" class="modal-overlay">
     <div class="modal-content" style="max-width: 400px; text-align: center;">
         <span class="close-modal" onclick="closeModal('confirmReceiptModal')">&times;</span>
@@ -911,12 +1001,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_account'])) {
         <div style="display:flex; gap:10px; margin-top:20px;">
             <form action="client-profile.php" method="POST" style="flex:1;">
                 <input type="hidden" name="order_id" id="confirmReceiptOrderId">
-                <button type="submit" name="confirm_receipt" class="btn-primary-brutal btn-full" style="background:#2ecc71;">YES</button>
+                <button type="submit" name="confirm_receipt" class="btn-primary-brutal btn-full btn-receipt-yes">YES</button>
             </form>
-            <button type="button" class="btn-primary-brutal btn-full" style="flex:1; background:#e74c3c;" onclick="showNotReceivedMsg()">NO</button>
+            <button type="button" class="btn-primary-brutal btn-full btn-receipt-no" onclick="showNotReceivedMsg()">NO</button>
         </div>
-        <div id="notReceivedMsg" style="display:none; margin-top:15px; font-weight:bold; color:#e74c3c; border: 3px dashed var(--charcoal); padding: 15px; background: rgba(0,0,0,0.03);">
-            Contact us through our email: <br><a href="mailto:skateshopp2026@gmail.com" style="color:#3498db; text-decoration:underline;">skateshopp2026@gmail.com</a>
+        <div id="notReceivedMsg" style="display:none; margin-top:15px; border: 3px dashed var(--charcoal); padding: 15px; background: rgba(0,0,0,0.03);">
+            <span class="contact-label">Contact us through our email:</span>
+            <a href="mailto:skateshopp2026@gmail.com" style="color:#3498db; text-decoration:underline; font-weight:bold;">skateshopp2026@gmail.com</a>
         </div>
     </div>
 </div>

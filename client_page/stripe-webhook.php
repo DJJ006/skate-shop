@@ -122,16 +122,12 @@ if ($event->type === 'checkout.session.completed') {
         if ($seller_id > 0) {
             $seller_payout = round($amount * 0.95, 2);
 
-            $wallet_stmt = $conn->prepare("UPDATE users SET wallet_balance = wallet_balance + ? WHERE id = ?");
-            $wallet_stmt->bind_param("di", $seller_payout, $seller_id);
-            $wallet_stmt->execute();
-
-            $seller_msg = "Cha-ching! Your gear sold for $" . number_format($amount, 2) . ". $" . number_format($seller_payout, 2) . " has been added to your Wallet.";
+            $seller_msg = "Cha-ching! Your gear sold for $" . number_format($amount, 2) . "! The payout of $" . number_format($seller_payout, 2) . " is currently held in escrow and will be released to your wallet once the buyer confirms delivery, or automatically after 10 days.";
             $seller_notif_stmt = $conn->prepare("INSERT INTO notifications (user_id, message) VALUES (?, ?)");
             $seller_notif_stmt->bind_param("is", $seller_id, $seller_msg);
             $seller_notif_stmt->execute();
 
-            webhook_log("Seller wallet and notification updated");
+            webhook_log("Seller notification updated for pending escrow payout");
         }
 
         $purchase_code = "ORD-" . str_pad($order_id, 6, "0", STR_PAD_LEFT);

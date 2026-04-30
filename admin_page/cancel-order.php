@@ -91,7 +91,7 @@ try {
     ]);
 
     // --- Update Order Status ---
-    $update_stmt = $conn->prepare("UPDATE orders SET status = 'CANCELLED' WHERE id = ? AND status = 'PAID'");
+    $update_stmt = $conn->prepare("UPDATE orders SET status = 'CANCELLED', payout_status = 'REFUNDED' WHERE id = ? AND status = 'PAID'");
     $update_stmt->bind_param("i", $order_id);
     $update_stmt->execute();
 
@@ -123,7 +123,7 @@ try {
     if (strpos($err, 'already been refunded') !== false || strpos($err, 'charge_already_refunded') !== false) {
         // Stripe already refunded — still update the DB and notify
         try {
-            $update_stmt2 = $conn->prepare("UPDATE orders SET status = 'CANCELLED' WHERE id = ? AND status = 'PAID'");
+            $update_stmt2 = $conn->prepare("UPDATE orders SET status = 'CANCELLED', payout_status = 'REFUNDED' WHERE id = ? AND status = 'PAID'");
             $update_stmt2->bind_param("i", $order_id);
             $update_stmt2->execute();
 

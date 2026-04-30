@@ -244,32 +244,33 @@ $orders_stmt = $conn->query($sql);
 </section>
 
 <!-- ===== CANCEL ORDER MODAL ===== -->
-<div id="cancelOrderModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.75); z-index:9999; align-items:center; justify-content:center;">
-    <div style="background:#fff; border:4px solid #000; box-shadow:8px 8px 0 #000; padding:35px; max-width:520px; width:90%; position:relative;">
-        <span onclick="closeCancelModal()" style="position:absolute; top:12px; right:18px; font-size:1.6rem; cursor:pointer; line-height:1; font-weight:900;">&times;</span>
-        <h3 style="font-family:'Arial Black',sans-serif; font-size:1.4rem; margin:0 0 4px 0; text-transform:uppercase;">CANCEL <span style="color:#e74c3c;">ORDER</span></h3>
-        <p id="cancelOrderCode" style="font-family:monospace; font-weight:bold; font-size:0.95rem; margin:0 0 20px 0; opacity:0.7;"></p>
+<div id="cancelOrderModal" class="modal-overlay">
+    <div class="modal-content" style="max-width: 520px;">
+        <span class="close-modal" onclick="closeCancelModal()">&times;</span>
+        <h3 class="admin-table-h3" style="margin-top:0;">CANCEL <span class="header-span">ORDER</span></h3>
+        <p id="cancelOrderCode" style="font-family: 'Staatliches', sans-serif; font-size:1.2rem; margin:0 0 20px 0; opacity:0.7; letter-spacing: 1px;"></p>
 
-        <form id="cancelOrderForm" action="cancel-order.php" method="POST">
+        <form id="cancelOrderForm" action="cancel-order.php" method="POST" class="admin-form">
             <input type="hidden" name="order_id" id="cancelOrderId">
 
-            <label style="display:block; font-family:'Arial Black',sans-serif; font-size:0.85rem; letter-spacing:1px; margin-bottom:8px;">CANCELLATION REASON <span style="color:#e74c3c;">*</span></label>
+            <label class="admin-form-label">CANCELLATION REASON <span style="color:var(--primary);">*</span></label>
             <textarea 
                 name="cancel_reason" 
                 id="cancelReasonInput"
+                class="admin-input-dark"
                 rows="4" 
                 placeholder="Provide a clear reason for the cancellation that will be sent to the client..." 
                 required
                 maxlength="1000"
-                style="width:100%; box-sizing:border-box; padding:12px; border:3px solid #000; font-family:'Staatliches',sans-serif; font-size:1rem; letter-spacing:0.5px; resize:vertical; margin-bottom:6px;"
+                style="resize:vertical; margin-bottom:6px;"
             ></textarea>
             <small id="cancelCharCount" style="display:block; text-align:right; color:#888; font-size:0.75rem; margin-bottom:20px;">0 / 1000</small>
 
-            <div style="display:flex; gap:12px;">
-                <button type="submit" id="cancelSubmitBtn" style="flex:1; background:#e74c3c; color:#fff; border:3px solid #000; padding:14px; font-family:'Arial Black',sans-serif; font-size:0.9rem; letter-spacing:1px; cursor:pointer; box-shadow:4px 4px 0 #000; transition:all 0.15s;">
-                    <i class="fa-solid fa-ban"></i> CONFIRM CANCELLATION
+            <div style="display:flex; gap:12px; margin-top: 1.5rem;">
+                <button type="submit" id="cancelSubmitBtn" class="btn-primary-brutal" style="flex:1; margin-top:0; padding: 0 15px;">
+                    CONFIRM CANCELLATION
                 </button>
-                <button type="button" onclick="closeCancelModal()" style="background:#fff; color:#000; border:3px solid #000; padding:14px 20px; font-family:'Arial Black',sans-serif; font-size:0.9rem; cursor:pointer; box-shadow:4px 4px 0 #000;">
+                <button type="button" onclick="closeCancelModal()" class="btn-filter" style="flex:1; margin-top:0; padding: 0 15px;">
                     BACK
                 </button>
             </div>
