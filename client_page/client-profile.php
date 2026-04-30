@@ -81,7 +81,13 @@ $notif_stmt->execute();
 $notifications = $notif_stmt->get_result();
 
 // Fetch Listings
-$list_stmt = $conn->prepare("SELECT id, title, price, image_url, is_approved FROM products WHERE seller_id = ? AND is_marketplace = 1 ORDER BY id DESC");
+$list_stmt = $conn->prepare("
+    SELECT p.id, p.title, p.price, p.image_url, p.is_approved,
+           (SELECT COUNT(*) FROM orders o WHERE o.product_id = p.id AND o.status IN ('PAID', 'RECEIVED')) as sold_count
+    FROM products p 
+    WHERE p.seller_id = ? AND p.is_marketplace = 1 
+    ORDER BY p.id DESC
+");
 $list_stmt->bind_param("i", $user_id);
 $list_stmt->execute();
 $user_listings = $list_stmt->get_result();
@@ -404,6 +410,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_account'])) {
     color: #000;
 }
 
+.status-sold {
+    background: #e74c3c;
+    color: #fff;
+}
+
 /* Pagination Styling */
 .listing-pagination {
     margin-top: 30px;
@@ -572,9 +583,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_account'])) {
         <?php if($user_listings->num_rows > 0): ?>
             <div class="listings-grid" id="listings-wrapper">
                 <?php while($row = $user_listings->fetch_assoc()): ?>
-                    <div class="mini-listing listing-page-item" onclick="openEditListing(<?php echo $row['id']; ?>)">
+                    <?php if($row['sold_count'] > 0): ?>
+                        <div class="mini-listing listing-page-item" style="cursor: default; opacity: 0.8;">
+                    <?php else: ?>
+                        <div class="mini-listing listing-page-item" onclick="openEditListing(<?php echo $row['id']; ?>)">
+                    <?php endif; ?>
                         
-                        <?php if($row['is_approved'] == 0): ?>
+                        <?php if($row['sold_count'] > 0): ?>
+                            <span class="listing-status-badge status-sold">SOLD</span>
+                        <?php elseif($row['is_approved'] == 0): ?>
                             <span class="listing-status-badge status-pending">PENDING</span>
                         <?php else: ?>
                             <span class="listing-status-badge status-active">ACTIVE</span>

@@ -72,23 +72,35 @@ try {
     $stripe_session_id = $order['stripe_session_id'] ?? '';
     $purchase_code    = 'ORD-' . str_pad($order_id, 6, '0', STR_PAD_LEFT);
 
+    $amount_paid_stripe = isset($order['amount_paid_stripe']) ? (float)$order['amount_paid_stripe'] : $order['amount']; // Fallback for old orders
+    $amount_paid_wallet = isset($order['amount_paid_wallet']) ? (float)$order['amount_paid_wallet'] : 0;
+
     // --- Stripe Refund ---
-    if (empty($stripe_session_id)) {
-        throw new Exception('NO STRIPE SESSION ID FOUND FOR THIS ORDER. CANNOT PROCESS REFUND.');
+    if ($amount_paid_stripe > 0) {
+        if (empty($stripe_session_id)) {
+            throw new Exception('NO STRIPE SESSION ID FOUND FOR THIS ORDER. CANNOT PROCESS REFUND.');
+        }
+
+        // Retrieve the Stripe Checkout Session to get the Payment Intent
+        $stripe_session = \Stripe\Checkout\Session::retrieve($stripe_session_id);
+        $payment_intent_id = $stripe_session->payment_intent ?? null;
+
+        if (empty($payment_intent_id)) {
+            throw new Exception('COULD NOT RETRIEVE PAYMENT INTENT FROM STRIPE SESSION.');
+        }
+
+        // Issue a full refund
+        \Stripe\Refund::create([
+            'payment_intent' => $payment_intent_id,
+        ]);
     }
 
-    // Retrieve the Stripe Checkout Session to get the Payment Intent
-    $stripe_session = \Stripe\Checkout\Session::retrieve($stripe_session_id);
-    $payment_intent_id = $stripe_session->payment_intent ?? null;
-
-    if (empty($payment_intent_id)) {
-        throw new Exception('COULD NOT RETRIEVE PAYMENT INTENT FROM STRIPE SESSION.');
+    // --- Wallet Refund ---
+    if ($amount_paid_wallet > 0) {
+        $refund_wallet_stmt = $conn->prepare("UPDATE users SET wallet_balance = wallet_balance + ? WHERE id = ?");
+        $refund_wallet_stmt->bind_param("di", $amount_paid_wallet, $buyer_id);
+        $refund_wallet_stmt->execute();
     }
-
-    // Issue a full refund
-    \Stripe\Refund::create([
-        'payment_intent' => $payment_intent_id,
-    ]);
 
     // --- Update Order Status ---
     $update_stmt = $conn->prepare("UPDATE orders SET status = 'CANCELLED', payout_status = 'REFUNDED' WHERE id = ? AND status = 'PAID'");
@@ -99,8 +111,24 @@ try {
         throw new Exception('ORDER STATUS UPDATE FAILED OR ORDER WAS ALREADY PROCESSED.');
     }
 
+    // --- Update Product Inventory ---
+    $product_id = (int)$order['product_id'];
+    $seller_id = (int)$order['seller_id'];
+
+    if ($seller_id > 0) {
+        // Marketplace product - revert is_sold to 0
+        $restore_prod = $conn->prepare("UPDATE products SET is_sold = 0 WHERE id = ?");
+        $restore_prod->bind_param("i", $product_id);
+        $restore_prod->execute();
+    } else {
+        // Official product - increment quantity by 1 (assuming 1 item per order)
+        $restore_prod = $conn->prepare("UPDATE products SET quantity = quantity + 1 WHERE id = ?");
+        $restore_prod->bind_param("i", $product_id);
+        $restore_prod->execute();
+    }
+
     // --- Create Client Notification ---
-    $notif_message = "⚠️ ORDER CANCELLED — Your order {$purchase_code} has been cancelled by the admin.\n\n"
+    $notif_message = "ORDER CANCELLED — Your order {$purchase_code} has been cancelled by the admin.\n\n"
                    . "REASON: {$cancel_reason}\n\n"
                    . "A full refund has been issued to your original payment method. "
                    . "Please allow 5–10 business days for the refund to appear on your statement.";
@@ -108,6 +136,15 @@ try {
     $notif_stmt = $conn->prepare("INSERT INTO notifications (user_id, message) VALUES (?, ?)");
     $notif_stmt->bind_param("is", $buyer_id, $notif_message);
     $notif_stmt->execute();
+
+    if ($seller_id > 0) {
+        $seller_notif_message = "ORDER CANCELLED — The order {$purchase_code} for your marketplace item has been cancelled by the admin.\n\n"
+                              . "REASON: {$cancel_reason}\n\n"
+                              . "Your item has been placed back into the marketplace and is available for purchase again.";
+        $seller_notif_stmt = $conn->prepare("INSERT INTO notifications (user_id, message) VALUES (?, ?)");
+        $seller_notif_stmt->bind_param("is", $seller_id, $seller_notif_message);
+        $seller_notif_stmt->execute();
+    }
 
     $conn->commit();
 
@@ -127,6 +164,21 @@ try {
             $update_stmt2->bind_param("i", $order_id);
             $update_stmt2->execute();
 
+            if ($update_stmt2->affected_rows > 0) {
+                $product_id = (int)$order['product_id'];
+                $seller_id = (int)$order['seller_id'];
+                
+                if ($seller_id > 0) {
+                    $restore_prod = $conn->prepare("UPDATE products SET is_sold = 0 WHERE id = ?");
+                    $restore_prod->bind_param("i", $product_id);
+                    $restore_prod->execute();
+                } else {
+                    $restore_prod = $conn->prepare("UPDATE products SET quantity = quantity + 1 WHERE id = ?");
+                    $restore_prod->bind_param("i", $product_id);
+                    $restore_prod->execute();
+                }
+            }
+
             if (isset($buyer_id) && isset($purchase_code)) {
                 $notif_msg2 = "Order cancelled. Your order {$purchase_code} has been cancelled by the admin.\n\n"
                             . "REASON: {$cancel_reason}\n\n"
@@ -134,6 +186,15 @@ try {
                 $notif_stmt2 = $conn->prepare("INSERT INTO notifications (user_id, message) VALUES (?, ?)");
                 $notif_stmt2->bind_param("is", $buyer_id, $notif_msg2);
                 $notif_stmt2->execute();
+
+                if (isset($seller_id) && $seller_id > 0) {
+                    $seller_notif_msg2 = "Order cancelled. The order {$purchase_code} for your marketplace item has been cancelled by the admin.\n\n"
+                                       . "REASON: {$cancel_reason}\n\n"
+                                       . "Your item has been placed back into the marketplace.";
+                    $seller_notif_stmt2 = $conn->prepare("INSERT INTO notifications (user_id, message) VALUES (?, ?)");
+                    $seller_notif_stmt2->bind_param("is", $seller_id, $seller_notif_msg2);
+                    $seller_notif_stmt2->execute();
+                }
             }
         } catch (Exception $inner) {
             // Best effort

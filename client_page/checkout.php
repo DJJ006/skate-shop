@@ -31,14 +31,48 @@ $product_id = (int)$_GET['id'];
 $buyer_id = (int)$_SESSION['user_id'];
 
 // -------------------------
+// Check for Cancellation Return
+// -------------------------
+if (isset($_GET['cancel_order'])) {
+    $cancel_order_id = (int)$_GET['cancel_order'];
+    $conn->begin_transaction();
+    try {
+        $cancel_stmt = $conn->prepare("SELECT id, status, amount_paid_wallet FROM orders WHERE id = ? AND buyer_id = ? FOR UPDATE");
+        $cancel_stmt->bind_param("ii", $cancel_order_id, $buyer_id);
+        $cancel_stmt->execute();
+        $cancel_order = $cancel_stmt->get_result()->fetch_assoc();
+
+        if ($cancel_order && $cancel_order['status'] === 'PENDING_PAYMENT') {
+            $wallet_refund = (float)$cancel_order['amount_paid_wallet'];
+            if ($wallet_refund > 0) {
+                $refund_wallet_stmt = $conn->prepare("UPDATE users SET wallet_balance = wallet_balance + ? WHERE id = ?");
+                $refund_wallet_stmt->bind_param("di", $wallet_refund, $buyer_id);
+                $refund_wallet_stmt->execute();
+            }
+            
+            $update_cancel = $conn->prepare("UPDATE orders SET status = 'CANCELLED' WHERE id = ?");
+            $update_cancel->bind_param("i", $cancel_order_id);
+            $update_cancel->execute();
+            $conn->commit();
+            $checkout_msg = "Checkout abandoned. Your wallet funds of $" . number_format($wallet_refund, 2) . " have been safely returned.";
+        } else {
+            $conn->rollback();
+        }
+    } catch (Exception $e) {
+        $conn->rollback();
+    }
+}
+
+// -------------------------
 // Fetch buyer info for prefilling
 // -------------------------
-$user_stmt = $conn->prepare("SELECT email FROM users WHERE id = ?");
+$user_stmt = $conn->prepare("SELECT email, wallet_balance FROM users WHERE id = ?");
 $user_stmt->bind_param("i", $buyer_id);
 $user_stmt->execute();
 $user_result = $user_stmt->get_result();
 $user_data = $user_result->fetch_assoc();
 $buyer_email = $user_data['email'] ?? '';
+$wallet_balance = (float)($user_data['wallet_balance'] ?? 0);
 
 // -------------------------
 // Fetch product
@@ -112,6 +146,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['proceed_to_payment'])
     $postal_code     = trim($_POST['postal_code'] ?? '');
     $country         = trim($_POST['country'] ?? '');
     $delivery_notes  = trim($_POST['delivery_notes'] ?? '');
+    $wallet_amount_to_use = isset($_POST['wallet_amount_to_use']) ? (float)$_POST['wallet_amount_to_use'] : 0.00;
     $agree_terms     = isset($_POST['agree_terms']) ? 1 : 0;
 
     // -------------------------
@@ -155,6 +190,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['proceed_to_payment'])
 
     if (!$agree_terms) {
         $errors[] = "You must agree to the Terms and Conditions before continuing.";
+    }
+
+    if ($wallet_amount_to_use < 0) {
+        $errors[] = "Wallet amount cannot be negative.";
+    }
+    if ($wallet_amount_to_use > $wallet_balance) {
+        $errors[] = "You cannot use more wallet funds than you have available.";
+    }
+    if ($wallet_amount_to_use > $total) {
+        $wallet_amount_to_use = $total; // Cap it securely
     }
 
     // Re-check availability before creating order
@@ -254,44 +299,107 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['proceed_to_payment'])
     
         $seller_id = ((int)$product['is_marketplace'] === 1) ? (int)$product['seller_id'] : 0;
         $amount = $total;
+        $amount_paid_wallet = $wallet_amount_to_use;
+        $amount_paid_stripe = $total - $wallet_amount_to_use;
     
-        $order_stmt = $conn->prepare("
-            INSERT INTO orders (
-                buyer_id,
-                product_id,
-                seller_id,
-                amount,
-                shipping_name,
-                shipping_address,
-                status
-            ) VALUES (?, ?, ?, ?, ?, ?, 'PENDING_PAYMENT')
-        ");
-    
-        $order_stmt->bind_param(
-            "iiidss",
-            $buyer_id,
-            $product_id,
-            $seller_id,
-            $amount,
-            $shipping_name,
-            $final_address
-        );
-    
-        if ($order_stmt->execute()) {
+        $conn->begin_transaction();
+        try {
+            // Deduct wallet balance immediately if using wallet funds
+            if ($amount_paid_wallet > 0) {
+                $deduct_stmt = $conn->prepare("UPDATE users SET wallet_balance = wallet_balance - ? WHERE id = ? AND wallet_balance >= ?");
+                $deduct_stmt->bind_param("did", $amount_paid_wallet, $buyer_id, $amount_paid_wallet);
+                $deduct_stmt->execute();
+                
+                if ($deduct_stmt->affected_rows === 0) {
+                    throw new Exception("Insufficient wallet balance. Please refresh and try again.");
+                }
+            }
+
+            $order_stmt = $conn->prepare("
+                INSERT INTO orders (
+                    buyer_id,
+                    product_id,
+                    seller_id,
+                    amount,
+                    amount_paid_wallet,
+                    amount_paid_stripe,
+                    shipping_name,
+                    shipping_address,
+                    status
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING_PAYMENT')
+            ");
+        
+            $order_stmt->bind_param(
+                "iiidddss",
+                $buyer_id,
+                $product_id,
+                $seller_id,
+                $amount,
+                $amount_paid_wallet,
+                $amount_paid_stripe,
+                $shipping_name,
+                $final_address
+            );
+        
+            if (!$order_stmt->execute()) {
+                throw new Exception("Could not create order in database.");
+            }
+            
             $order_id = $conn->insert_id;
-    
+            
+            // If fully paid by wallet, complete the order immediately
+            if ($amount_paid_stripe <= 0) {
+                $update_order = $conn->prepare("UPDATE orders SET status = 'PAID' WHERE id = ?");
+                $update_order->bind_param("i", $order_id);
+                $update_order->execute();
+
+                if ($seller_id > 0) {
+                    $update_prod = $conn->prepare("UPDATE products SET is_sold = 1 WHERE id = ?");
+                    $update_prod->bind_param("i", $product_id);
+                    $update_prod->execute();
+                    
+                    $seller_notif_msg = "Your marketplace item '{$product['title']}' has been purchased! Funds are held in escrow pending buyer confirmation.";
+                    $seller_notif = $conn->prepare("INSERT INTO notifications (user_id, message) VALUES (?, ?)");
+                    $seller_notif->bind_param("is", $seller_id, $seller_notif_msg);
+                    $seller_notif->execute();
+                } else {
+                    $update_prod = $conn->prepare("UPDATE products SET quantity = quantity - 1 WHERE id = ?");
+                    $update_prod->bind_param("i", $product_id);
+                    $update_prod->execute();
+                }
+
+                $buyer_msg = "Your order for '{$product['title']}' was successful (Paid via Wallet).";
+                $buyer_notif = $conn->prepare("INSERT INTO notifications (user_id, message) VALUES (?, ?)");
+                $buyer_notif->bind_param("is", $buyer_id, $buyer_msg);
+                $buyer_notif->execute();
+
+                $conn->commit();
+                
+                // Redirect directly to success
+                header("Location: success.php?session_id=WALLET_PAID_" . $order_id);
+                exit();
+            }
+
+            $conn->commit();
+        } catch (Exception $e) {
+            $conn->rollback();
+            $errors[] = $e->getMessage();
+            $order_id = null; // Prevent stripe session
+        }
+
+        if (isset($order_id) && $amount_paid_stripe > 0) {
             try {
                 $session = \Stripe\Checkout\Session::create([
                     'mode' => 'payment',
                     'success_url' => 'https://kristovskis.lv/4pt/jaunarajs/skate-shop/client_page/success.php?session_id={CHECKOUT_SESSION_ID}',
-                    'cancel_url' => 'https://kristovskis.lv/4pt/jaunarajs/skate-shop/client_page/checkout.php?id=' . $product_id,
+                    'cancel_url' => 'https://kristovskis.lv/4pt/jaunarajs/skate-shop/client_page/checkout.php?id=' . $product_id . '&cancel_order=' . $order_id,
                     'line_items' => [[
                         'price_data' => [
                             'currency' => 'usd',
                             'product_data' => [
                                 'name' => $product['title'],
                             ],
-                            'unit_amount' => (int) round($amount * 100),
+                            'unit_amount' => (int) round($amount_paid_stripe * 100),
                         ],
                         'quantity' => 1,
                     ]],
@@ -309,8 +417,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['proceed_to_payment'])
             } catch (Exception $e) {
                 $errors[] = "Payment gateway error. Please try again in a moment.";
             }
-        } else {
-            $errors[] = "We could not create your order. Please try again.";
         }
     }
 }
@@ -793,6 +899,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['proceed_to_payment'])
                             </span>
                         </label>
                     </div>
+
+                    <?php if ($wallet_balance > 0): ?>
+                    <div class="checkout-field checkout-field-full" style="background: #fdfdfd; padding: 1.25rem; border: 3px solid var(--charcoal); border-top: 6px solid var(--charcoal); margin-top: 1rem;">
+                        <label for="wallet_amount_to_use" style="font-size: 1.2rem;">
+                            <i class="fa-solid fa-wallet"></i> USE WALLET BALANCE
+                        </label>
+                        <p style="margin: 0 0 1rem 0; font-size: 0.95rem; color: #555; font-family: 'Staatliches', sans-serif; letter-spacing: 0.5px;">
+                            AVAILABLE BALANCE: <strong style="color: var(--primary);">$<?php echo number_format($wallet_balance, 2); ?></strong>
+                        </p>
+                        <div style="display: flex; align-items: center; gap: 0.5rem;">
+                            <span style="font-family: 'Staatliches', sans-serif; font-size: 1.2rem;">$</span>
+                            <input
+                                type="number"
+                                id="wallet_amount_to_use"
+                                name="wallet_amount_to_use"
+                                class="checkout-input"
+                                value="<?php echo e(old('wallet_amount_to_use', '0.00')); ?>"
+                                min="0"
+                                max="<?php echo min($wallet_balance, $total); ?>"
+                                step="0.01"
+                                style="max-width: 150px; padding: 0.5rem 1rem;"
+                                oninput="updateCheckoutTotal()"
+                            >
+                            <button type="button" class="btn btn-outline" style="padding: 0.5rem 1rem;" onclick="document.getElementById('wallet_amount_to_use').value = '<?php echo min($wallet_balance, $total); ?>'; updateCheckoutTotal();">USE MAX</button>
+                        </div>
+                    </div>
+                    <?php endif; ?>
                 </div>
 
                 <button type="submit" name="proceed_to_payment" class="btn btn-primary checkout-submit">
@@ -832,8 +965,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['proceed_to_payment'])
             </div>
 
             <div class="checkout-summary-row checkout-summary-total">
-                <span>TOTAL</span>
-                <span>$<?php echo number_format($total, 2); ?></span>
+                <span>REMAINING</span>
+                <span id="summary_total">$<?php echo number_format($total, 2); ?></span>
             </div>
 
             <div class="checkout-security-box">
@@ -847,5 +980,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['proceed_to_payment'])
 </main>
 
 <?php include 'footer.php'; ?>
+
+<script>
+    function updateCheckoutTotal() {
+        const orderTotal = <?php echo $total; ?>;
+        const walletInput = document.getElementById('wallet_amount_to_use');
+        const summaryTotal = document.getElementById('summary_total');
+        
+        if (!walletInput || !summaryTotal) return;
+        
+        let walletUsed = parseFloat(walletInput.value);
+        if (isNaN(walletUsed) || walletUsed < 0) walletUsed = 0;
+        
+        // Cap at order total visually
+        if (walletUsed > orderTotal) walletUsed = orderTotal;
+        
+        const remaining = orderTotal - walletUsed;
+        summaryTotal.innerText = '$' + remaining.toFixed(2);
+    }
+    
+    // Initialize on load
+    document.addEventListener('DOMContentLoaded', updateCheckoutTotal);
+</script>
+
 </body>
 </html>
