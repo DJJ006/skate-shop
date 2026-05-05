@@ -4,6 +4,29 @@ include '../db.php';
 
 $log_file = __DIR__ . '/stripe-webhook-log.txt';
 
+function decryptShippingAddress($base64_payload) {
+    if (empty($base64_payload)) return null;
+    $decoded = base64_decode($base64_payload);
+    if (!$decoded || strpos($decoded, '::') === false) return null;
+    
+    list($encrypted_data, $iv) = explode('::', $decoded, 2);
+    $encryption_key = "YOUR_SUPER_SECRET_KEY_MAKE_IT_LONG";
+    $cipher = 'aes-256-cbc';
+    
+    $decrypted = openssl_decrypt(
+        $encrypted_data,
+        $cipher,
+        $encryption_key,
+        0,
+        $iv
+    );
+    
+    if ($decrypted) {
+        return json_decode($decrypted, true);
+    }
+    return null;
+}
+
 function webhook_log($message) {
     global $log_file;
     file_put_contents($log_file, "[" . date('Y-m-d H:i:s') . "] " . $message . PHP_EOL, FILE_APPEND);
@@ -121,13 +144,26 @@ if ($event->type === 'checkout.session.completed') {
 
         if ($seller_id > 0) {
             $seller_payout = round($amount * 0.95, 2);
-
-            $seller_msg = "Cha-ching! Your gear sold for $" . number_format($amount, 2) . "! The payout of $" . number_format($seller_payout, 2) . " is currently held in escrow and will be released to your wallet once the buyer confirms delivery, or automatically after 10 days.";
+            $purchase_code = "ORD-" . str_pad($order_id, 6, "0", STR_PAD_LEFT);
+            $shipping_info = "N/A";
+            $del_notes = "None";
+            
+            $shipping_payload = decryptShippingAddress($order['shipping_address']);
+            if ($shipping_payload) {
+                $ship_addr = "{$shipping_payload['full_name']}, {$shipping_payload['address_line_1']}";
+                if (!empty($shipping_payload['address_line_2'])) $ship_addr .= ", {$shipping_payload['address_line_2']}";
+                $ship_addr .= ", {$shipping_payload['city']}, {$shipping_payload['state_region']} {$shipping_payload['postal_code']}, {$shipping_payload['country']}";
+                $shipping_info = $ship_addr;
+                $del_notes = !empty($shipping_payload['delivery_notes']) ? $shipping_payload['delivery_notes'] : "None";
+            }
+            
+            $seller_msg = "Cha-ching! Your gear '{$product['title']}' sold for $" . number_format($amount, 2) . "!\nOrder Code: {$purchase_code}\nShip to: {$shipping_info}\nDelivery Notes: {$del_notes}\nThe payout of $" . number_format($seller_payout, 2) . " is currently held in escrow and will be released to your wallet once the buyer confirms delivery, or automatically after 10 days.";
+            
             $seller_notif_stmt = $conn->prepare("INSERT INTO notifications (user_id, message) VALUES (?, ?)");
             $seller_notif_stmt->bind_param("is", $seller_id, $seller_msg);
             $seller_notif_stmt->execute();
 
-            webhook_log("Seller notification updated for pending escrow payout");
+            webhook_log("Seller notification updated for pending escrow payout with shipping address");
         }
 
         $purchase_code = "ORD-" . str_pad($order_id, 6, "0", STR_PAD_LEFT);

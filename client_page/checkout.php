@@ -358,7 +358,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['proceed_to_payment'])
                     $update_prod->bind_param("i", $product_id);
                     $update_prod->execute();
                     
-                    $seller_notif_msg = "Your marketplace item '{$product['title']}' has been purchased! Funds are held in escrow pending buyer confirmation.";
+                    $purchase_code = "ORD-" . str_pad($order_id, 6, "0", STR_PAD_LEFT);
+                    $ship_addr = "{$shipping_payload['full_name']}, {$shipping_payload['address_line_1']}";
+                    if (!empty($shipping_payload['address_line_2'])) $ship_addr .= ", {$shipping_payload['address_line_2']}";
+                    $ship_addr .= ", {$shipping_payload['city']}, {$shipping_payload['state_region']} {$shipping_payload['postal_code']}, {$shipping_payload['country']}";
+                    $del_notes = !empty($shipping_payload['delivery_notes']) ? $shipping_payload['delivery_notes'] : "None";
+                    
+                    $seller_notif_msg = "Your marketplace item '{$product['title']}' has been purchased!\nOrder Code: {$purchase_code}\nShip to: {$ship_addr}\nDelivery Notes: {$del_notes}\nFunds are held in escrow pending buyer confirmation.";
+                    
                     $seller_notif = $conn->prepare("INSERT INTO notifications (user_id, message) VALUES (?, ?)");
                     $seller_notif->bind_param("is", $seller_id, $seller_notif_msg);
                     $seller_notif->execute();

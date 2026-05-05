@@ -381,40 +381,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_account'])) {
     letter-spacing: 1px;
 }
 
-/* Status Badges */
-.listing-status-badge {
-    position: absolute;
-    top: 10px;
-    right: 10px;
-    padding: 4px 8px;
-    font-size: 0.65rem;
-    font-weight: 900;
-    z-index: 5;
-    letter-spacing: 1px;
-    border: 1px solid #000; /* Added border to badges */
-    box-shadow: 2px 2px 0px #000;
-}
-
-.status-cancelled {
-    background: #e74c3c;
-    color: #fff;
-}
-
-.status-active {
-    background: #00ff88;
-    color: #000;
-}
-
-.status-pending {
-    background: #ffcc00;
-    color: #000;
-}
-
-.status-sold {
-    background: #e74c3c;
-    color: #fff;
-}
-
 /* Pagination Styling */
 .listing-pagination {
     margin-top: 30px;
@@ -744,7 +710,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_account'])) {
                         <?php if ($purchase['status'] === 'CANCELLED'): ?>
                             <span class="listing-status-badge status-cancelled">CANCELLED</span>
                         <?php elseif ($purchase['status'] === 'RECEIVED'): ?>
-                            <span class="listing-status-badge" style="background:#3498db; color:#fff;">RECEIVED</span>
+                            <span class="listing-status-badge status-received">RECEIVED</span>
                         <?php else: ?>
                             <span class="listing-status-badge status-active">PAID</span>
                         <?php endif; ?>

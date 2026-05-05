@@ -2,6 +2,29 @@
 session_start();
 include '../db.php';
 
+function decryptShippingAddress($base64_payload) {
+    if (empty($base64_payload)) return null;
+    $decoded = base64_decode($base64_payload);
+    if (!$decoded || strpos($decoded, '::') === false) return null;
+    
+    list($encrypted_data, $iv) = explode('::', $decoded, 2);
+    $encryption_key = "YOUR_SUPER_SECRET_KEY_MAKE_IT_LONG";
+    $cipher = 'aes-256-cbc';
+    
+    $decrypted = openssl_decrypt(
+        $encrypted_data,
+        $cipher,
+        $encryption_key,
+        0,
+        $iv
+    );
+    
+    if ($decrypted) {
+        return json_decode($decrypted, true);
+    }
+    return null;
+}
+
 // Fetch pending count for the sidebar notification badge
 $count_sql = "SELECT COUNT(*) as pending_count FROM products WHERE is_marketplace = 1 AND is_approved = 0";
 $count_result = $conn->query($count_sql);
@@ -24,6 +47,12 @@ if (isset($_GET['status_filter'])) {
     $status_filter = $_GET['status_filter'];
 }
 
+// Handle type filter
+$type_filter = "ALL";
+if (isset($_GET['type_filter'])) {
+    $type_filter = $_GET['type_filter'];
+}
+
 // Build the order query
 $sql = "
     SELECT 
@@ -33,8 +62,10 @@ $sql = "
         o.created_at, 
         o.status,
         o.stripe_session_id,
+        o.shipping_address,
         p.title, 
         p.image_url, 
+        p.is_marketplace,
         u.username, 
         u.email 
     FROM orders o 
@@ -51,6 +82,12 @@ if ($status_filter === 'PAID') {
     $sql .= " AND o.status = 'RECEIVED' ";
 } else {
     $sql .= " AND o.status IN ('PAID', 'CANCELLED', 'RECEIVED') ";
+}
+
+if ($type_filter === 'MARKETPLACE') {
+    $sql .= " AND p.is_marketplace = 1 ";
+} elseif ($type_filter === 'SHOP') {
+    $sql .= " AND p.is_marketplace = 0 ";
 }
 
 if ($search_query !== "") {
@@ -166,9 +203,18 @@ $orders_stmt = $conn->query($sql);
                     </select>
                 </div>
 
+                <div class="filter-group" style="flex: 1;">
+                    <label>ORDER TYPE</label>
+                    <select name="type_filter" onchange="this.form.submit()">
+                        <option value="ALL" <?php echo ($type_filter === 'ALL') ? 'selected' : ''; ?>>ALL TYPES</option>
+                        <option value="MARKETPLACE" <?php echo ($type_filter === 'MARKETPLACE') ? 'selected' : ''; ?>>MARKETPLACE</option>
+                        <option value="SHOP" <?php echo ($type_filter === 'SHOP') ? 'selected' : ''; ?>>SHOP</option>
+                    </select>
+                </div>
+
                 <div class="filter-actions" style="margin-top:22px;">
                     <button type="submit" class="btn-filter">SEARCH</button>
-                    <?php if (!empty($search_query) || $status_filter !== 'ALL'): ?>
+                    <?php if (!empty($search_query) || $status_filter !== 'ALL' || $type_filter !== 'ALL'): ?>
                         <a href="client-orders.php" class="btn-reset">RESET</a>
                     <?php endif; ?>
                 </div>
@@ -190,14 +236,28 @@ $orders_stmt = $conn->query($sql);
                     <tbody>
                         <?php if ($orders_stmt && $orders_stmt->num_rows > 0): ?>
                             <?php while($order = $orders_stmt->fetch_assoc()): ?>
-                                <?php $purchase_code = "ORD-" . str_pad($order['order_id'], 6, "0", STR_PAD_LEFT); ?>
-                                <tr>
+                                <?php 
+                                    $purchase_code = "ORD-" . str_pad($order['order_id'], 6, "0", STR_PAD_LEFT); 
+                                    $shipping_data = decryptShippingAddress($order['shipping_address']);
+                                    $shipping_json = htmlspecialchars(json_encode([
+                                        'purchase_code' => $purchase_code,
+                                        'title' => $order['title'],
+                                        'image_url' => $order['image_url'],
+                                        'amount' => $order['amount'],
+                                        'created_at' => $order['created_at'],
+                                        'status' => $order['status'],
+                                        'shipping' => $shipping_data
+                                    ]), ENT_QUOTES, 'UTF-8');
+                                ?>
+                                <tr onclick="openOrderDetailsModal(this)" data-order-info="<?php echo $shipping_json; ?>" style="cursor: pointer;" class="order-row-hover">
                                     <td class="td-id">
-                                        <span style="font-family: monospace; font-weight: bold;"><?php echo $purchase_code; ?></span>
+                                        <span style="display:block; font-family: monospace; font-weight: bold; margin-bottom: 5px;"><?php echo $purchase_code; ?></span>
                                         <?php if ($order['status'] === 'CANCELLED'): ?>
-                                            <span style="display:block; margin-top:4px; font-size:0.7rem; font-weight:900; color:#e74c3c; letter-spacing:1px;">CANCELLED</span>
+                                            <span class="listing-status-badge status-cancelled">CANCELLED</span>
                                         <?php elseif ($order['status'] === 'RECEIVED'): ?>
-                                            <span style="display:block; margin-top:4px; font-size:0.7rem; font-weight:900; color:#3498db; letter-spacing:1px;">RECEIVED</span>
+                                            <span class="listing-status-badge status-received">RECEIVED</span>
+                                        <?php else: ?>
+                                            <span class="listing-status-badge status-active">PAID</span>
                                         <?php endif; ?>
                                     </td>
                                     <td>
@@ -207,7 +267,14 @@ $orders_stmt = $conn->query($sql);
                                     <td>
                                         <div style="display: flex; align-items: center; gap: 10px;">
                                             <img src="<?php echo htmlspecialchars($order['image_url']); ?>" alt="Product" style="width: 35px; height: 35px; object-fit: cover; border: 1px solid var(--charcoal);">
-                                            <span><?php echo htmlspecialchars($order['title']); ?></span>
+                                            <div>
+                                                <span style="display:block;"><?php echo htmlspecialchars($order['title']); ?></span>
+                                                <?php if ($order['is_marketplace'] == 1): ?>
+                                                    <span class="badge-market" style="display:inline-block; margin-top:4px; font-size: 0.65rem; padding: 2px 6px;">MARKETPLACE</span>
+                                                <?php else: ?>
+                                                    <span class="badge-shop" style="display:inline-block; margin-top:4px; font-size: 0.65rem; padding: 2px 6px;">SHOP</span>
+                                                <?php endif; ?>
+                                            </div>
                                         </div>
                                     </td>
                                     <td>
@@ -221,7 +288,7 @@ $orders_stmt = $conn->query($sql);
                                         <?php if ($order['status'] === 'PAID'): ?>
                                             <button 
                                                 class="btn-cancel-order" 
-                                                onclick="openCancelModal(<?php echo $order['order_id']; ?>, '<?php echo htmlspecialchars(addslashes($purchase_code)); ?>')"
+                                                onclick="event.stopPropagation(); openCancelModal(<?php echo $order['order_id']; ?>, '<?php echo htmlspecialchars(addslashes($purchase_code)); ?>')"
                                             >
                                                 <i class="fa-solid fa-ban"></i> CANCEL
                                             </button>
@@ -278,7 +345,42 @@ $orders_stmt = $conn->query($sql);
     </div>
 </div>
 
+<!-- ===== ORDER DETAILS MODAL ===== -->
+<div id="orderDetailsModal" class="modal-overlay">
+    <div class="modal-content" style="max-width: 600px;">
+        <span class="close-modal" onclick="closeOrderDetailsModal()">&times;</span>
+        <h3 class="admin-table-h3" style="margin-top:0;">ORDER <span class="header-span">DETAILS</span></h3>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px;">
+            <p id="detailsOrderCode" style="font-family: 'Staatliches', sans-serif; font-size:1.6rem; margin:0; opacity:0.9; letter-spacing: 1px; color: var(--primary);"></p>
+            <span id="detailsOrderStatus" class="listing-status-badge" style="font-size: 1rem; padding: 5px 12px;"></span>
+        </div>
+
+        <div class="grainy-card" style="padding: 15px; margin-bottom: 15px; display: flex; gap: 15px; align-items: center; background: #fafafa; border: 3px solid var(--charcoal);">
+            <img id="detailsImage" src="" alt="Product" style="width: 80px; height: 80px; object-fit: cover; border: 3px solid var(--charcoal);">
+            <div>
+                <h4 id="detailsTitle" style="margin: 0 0 5px 0; font-family: 'Staatliches', sans-serif; font-size: 1.4rem; letter-spacing: 1px; color: var(--charcoal);"></h4>
+                <p style="margin: 0; font-size: 1.05rem; color: #666;"><strong style="color: var(--charcoal);">AMOUNT:</strong> $<span id="detailsAmount"></span></p>
+                <p style="margin: 3px 0 0 0; font-size: 1rem; color: #888;"><strong style="color: var(--charcoal);">DATE:</strong> <span id="detailsDate"></span></p>
+            </div>
+        </div>
+
+        <div class="grainy-card" style="padding: 15px; margin-bottom: 15px; background: #fafafa; border: 3px solid var(--charcoal);">
+            <h4 style="margin: 0 0 10px 0; font-family: 'Staatliches', sans-serif; font-size: 1.3rem; letter-spacing: 1px; color: var(--charcoal); border-bottom: 3px solid var(--charcoal); padding-bottom: 5px;">SHIPPING INFORMATION</h4>
+            <div id="detailsShippingInfo" style="font-size: 1.1rem; line-height: 1.5; color: #444;">
+            </div>
+        </div>
+
+        <div class="grainy-card" style="padding: 15px; background: #fafafa; border: 3px solid var(--charcoal); border-left: 6px solid var(--primary);">
+            <h4 style="margin: 0 0 8px 0; font-family: 'Staatliches', sans-serif; font-size: 1.3rem; letter-spacing: 1px; color: var(--charcoal);">DELIVERY NOTES</h4>
+            <p id="detailsNotes" style="margin: 0; font-size: 1.1rem; color: #555; font-style: italic; white-space: pre-wrap;"></p>
+        </div>
+    </div>
+</div>
+
 <style>
+.order-row-hover:hover {
+    background-color: rgba(0,0,0,0.03);
+}
 .btn-cancel-order {
     background: #fff;
     color: #e74c3c;
@@ -336,6 +438,65 @@ document.getElementById('cancelOrderForm').addEventListener('submit', function(e
 // Close modal when clicking backdrop
 document.getElementById('cancelOrderModal').addEventListener('click', function(e) {
     if (e.target === this) closeCancelModal();
+});
+
+// Order Details Modal Logic
+function openOrderDetailsModal(rowElem) {
+    const dataStr = rowElem.getAttribute('data-order-info');
+    if (!dataStr) return;
+    
+    const data = JSON.parse(dataStr);
+    
+    document.getElementById('detailsOrderCode').textContent = data.purchase_code;
+    
+    const statusElem = document.getElementById('detailsOrderStatus');
+    statusElem.textContent = data.status;
+    statusElem.className = 'listing-status-badge'; // Reset classes
+    if (data.status === 'PAID') {
+        statusElem.classList.add('status-active');
+    } else if (data.status === 'CANCELLED') {
+        statusElem.classList.add('status-cancelled');
+    } else if (data.status === 'RECEIVED') {
+        statusElem.classList.add('status-received');
+    }
+    
+    document.getElementById('detailsImage').src = data.image_url;
+    document.getElementById('detailsTitle').textContent = data.title;
+    document.getElementById('detailsAmount').textContent = parseFloat(data.amount).toFixed(2);
+    
+    const dateObj = new Date(data.created_at);
+    document.getElementById('detailsDate').textContent = dateObj.toLocaleString();
+    
+    const shipContainer = document.getElementById('detailsShippingInfo');
+    const notesContainer = document.getElementById('detailsNotes');
+    
+    if (data.shipping) {
+        const s = data.shipping;
+        const name = s.full_name || (s.first_name + ' ' + s.last_name);
+        const addr2 = s.address_line_2 ? s.address_line_2 + '<br>' : '';
+        shipContainer.innerHTML = `
+            <strong>${name}</strong><br>
+            <a href="mailto:${s.email}" style="color:var(--primary); text-decoration:none;">${s.email}</a> | ${s.phone}<br>
+            ${s.address_line_1}<br>
+            ${addr2}
+            ${s.city}, ${s.state_region} ${s.postal_code}<br>
+            ${s.country}
+        `;
+        notesContainer.textContent = s.delivery_notes ? s.delivery_notes : 'No delivery notes provided.';
+    } else {
+        shipContainer.innerHTML = '<em>Shipping information unavailable.</em>';
+        notesContainer.textContent = 'N/A';
+    }
+    
+    document.getElementById('orderDetailsModal').style.display = 'flex';
+}
+
+function closeOrderDetailsModal() {
+    document.getElementById('orderDetailsModal').style.display = 'none';
+}
+
+document.getElementById('orderDetailsModal').addEventListener('click', function(e) {
+    if (e.target === this) closeOrderDetailsModal();
 });
 </script>
 
