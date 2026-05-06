@@ -29,7 +29,22 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             } else {
                 $_SESSION['user_id'] = $row['id'];
                 $_SESSION['username'] = $row['username'];
-                header("Location: index.php"); // Redirect to profile
+
+                // Restore cart from database
+                $cart_stmt = $conn->prepare("SELECT cart_data FROM users WHERE id = ?");
+                $cart_stmt->bind_param("i", $row['id']);
+                $cart_stmt->execute();
+                $cart_result = $cart_stmt->get_result()->fetch_assoc();
+                if (!empty($cart_result['cart_data'])) {
+                    $restored_cart = json_decode($cart_result['cart_data'], true);
+                    if (is_array($restored_cart)) {
+                        $_SESSION['cart'] = $restored_cart;
+                    }
+                } else {
+                    $_SESSION['cart'] = [];
+                }
+
+                header("Location: index.php");
                 exit();
             }
             

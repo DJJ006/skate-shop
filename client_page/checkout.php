@@ -3,9 +3,7 @@ session_start();
 include '../db.php';
 require_once '../stripe-config.php';
 
-// -------------------------
-// Helpers
-// -------------------------
+
 function e($value) {
     return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
 }
@@ -14,50 +12,52 @@ function old($key, $default = '') {
     return isset($_POST[$key]) ? trim((string)$_POST[$key]) : $default;
 }
 
-// -------------------------
-// Security: must be logged in
-// -------------------------
+
 if (!isset($_SESSION['user_id'])) {
     header("Location: login.php");
     exit();
 }
 
-if (!isset($_GET['id']) || empty($_GET['id'])) {
+if (empty($_SESSION['cart'])) {
     header("Location: shop.php");
     exit();
 }
 
-$product_id = (int)$_GET['id'];
+// Lock the cart while user is on the checkout page
+$_SESSION['cart_locked'] = true;
+
 $buyer_id = (int)$_SESSION['user_id'];
 
 // -------------------------
 // Check for Cancellation Return
 // -------------------------
-if (isset($_GET['cancel_order'])) {
-    $cancel_order_id = (int)$_GET['cancel_order'];
+if (isset($_GET['cancel_orders'])) {
+    $cancel_ids = explode(',', $_GET['cancel_orders']);
     $conn->begin_transaction();
     try {
-        $cancel_stmt = $conn->prepare("SELECT id, status, amount_paid_wallet FROM orders WHERE id = ? AND buyer_id = ? FOR UPDATE");
-        $cancel_stmt->bind_param("ii", $cancel_order_id, $buyer_id);
-        $cancel_stmt->execute();
-        $cancel_order = $cancel_stmt->get_result()->fetch_assoc();
+        $wallet_refund = 0;
+        foreach ($cancel_ids as $cid) {
+            $cid = (int)$cid;
+            $cancel_stmt = $conn->prepare("SELECT id, status, amount_paid_wallet FROM orders WHERE id = ? AND buyer_id = ? FOR UPDATE");
+            $cancel_stmt->bind_param("ii", $cid, $buyer_id);
+            $cancel_stmt->execute();
+            $cancel_order = $cancel_stmt->get_result()->fetch_assoc();
 
-        if ($cancel_order && $cancel_order['status'] === 'PENDING_PAYMENT') {
-            $wallet_refund = (float)$cancel_order['amount_paid_wallet'];
-            if ($wallet_refund > 0) {
-                $refund_wallet_stmt = $conn->prepare("UPDATE users SET wallet_balance = wallet_balance + ? WHERE id = ?");
-                $refund_wallet_stmt->bind_param("di", $wallet_refund, $buyer_id);
-                $refund_wallet_stmt->execute();
+            if ($cancel_order && $cancel_order['status'] === 'PENDING_PAYMENT') {
+                $wallet_refund += (float)$cancel_order['amount_paid_wallet'];
+                $update_cancel = $conn->prepare("UPDATE orders SET status = 'CANCELLED' WHERE id = ?");
+                $update_cancel->bind_param("i", $cid);
+                $update_cancel->execute();
             }
-            
-            $update_cancel = $conn->prepare("UPDATE orders SET status = 'CANCELLED' WHERE id = ?");
-            $update_cancel->bind_param("i", $cancel_order_id);
-            $update_cancel->execute();
-            $conn->commit();
-            $checkout_msg = "Checkout abandoned. Your wallet funds of $" . number_format($wallet_refund, 2) . " have been safely returned.";
-        } else {
-            $conn->rollback();
         }
+        
+        if ($wallet_refund > 0) {
+            $refund_wallet_stmt = $conn->prepare("UPDATE users SET wallet_balance = wallet_balance + ? WHERE id = ?");
+            $refund_wallet_stmt->bind_param("di", $wallet_refund, $buyer_id);
+            $refund_wallet_stmt->execute();
+        }
+        $conn->commit();
+        $checkout_msg = "Checkout abandoned. Your wallet funds of $" . number_format($wallet_refund, 2) . " have been safely returned.";
     } catch (Exception $e) {
         $conn->rollback();
     }
@@ -75,58 +75,50 @@ $buyer_email = $user_data['email'] ?? '';
 $wallet_balance = (float)($user_data['wallet_balance'] ?? 0);
 
 // -------------------------
-// Fetch product
+// Fetch cart items & check availability
 // -------------------------
-$stmt = $conn->prepare("SELECT * FROM products WHERE id = ?");
-$stmt->bind_param("i", $product_id);
-$stmt->execute();
-$product_result = $stmt->get_result();
-$product = $product_result->fetch_assoc();
-
-if (!$product) {
-    die("
-        <div class='container checkout-status-wrap'>
-            <div class='checkout-status-box'>
-                <h1 class='glitch-text'>PRODUCT <span class='text-primary'>NOT FOUND</span></h1>
-                <p>The item you tried to access does not exist.</p>
-                <a href='shop.php' class='btn btn-primary checkout-status-btn'>RETURN TO SHOP</a>
-            </div>
-        </div>
-    ");
-}
-
-// -------------------------
-// Check availability
-// -------------------------
-$isAvailable = false;
-
-if ((int)$product['is_marketplace'] === 1) {
-    if ((int)$product['is_sold'] === 0) {
-        $isAvailable = true;
-    }
-} else {
-    if ((int)$product['quantity'] > 0) {
-        $isAvailable = true;
-    }
-}
-
-if (!$isAvailable) {
-    die("
-        <div class='container checkout-status-wrap'>
-            <div class='checkout-status-box'>
-                <h1 class='glitch-text'>ITEM <span class='text-primary'>OUT OF STOCK</span></h1>
-                <p>This item has already been snatched up.</p>
-                <a href='shop.php' class='btn btn-primary checkout-status-btn'>RETURN TO SHOP</a>
-            </div>
-        </div>
-    ");
-}
-
-// -------------------------
-// Pricing
-// -------------------------
-$subtotal = (float)$product['price'];
+$subtotal = 0;
 $shipping_fee = 5.00;
+$cart_items = [];
+
+foreach ($_SESSION['cart'] as $id => $item) {
+    $stmt = $conn->prepare("SELECT id, title, price, is_marketplace, is_sold, quantity, image_url, brand, seller_id FROM products WHERE id = ?");
+    $stmt->bind_param("i", $id);
+    $stmt->execute();
+    $db_prod = $stmt->get_result()->fetch_assoc();
+    
+    if (!$db_prod) {
+        unset($_SESSION['cart'][$id]);
+        continue;
+    }
+
+    $isMarketplace = (int)$db_prod['is_marketplace'] === 1;
+    $available = $isMarketplace ? ((int)$db_prod['is_sold'] === 0) : ((int)$db_prod['quantity'] >= $item['qty']);
+    
+    if (!$available) {
+        die("
+        <div class='container checkout-status-wrap'>
+            <div class='checkout-status-box'>
+                <h1 class='glitch-text'>ITEM <span class='text-primary'>UNAVAILABLE</span></h1>
+                <p>One or more items in your cart are out of stock. Please return to the shop.</p>
+                <a href='shop.php' class='btn btn-primary checkout-status-btn'>RETURN TO SHOP</a>
+            </div>
+        </div>
+        ");
+    }
+    
+    $item_total = (float)$db_prod['price'] * $item['qty'];
+    $subtotal += $item_total;
+    
+    $db_prod['cart_qty'] = $item['qty'];
+    $cart_items[] = $db_prod;
+}
+
+if (empty($cart_items)) {
+    header("Location: shop.php");
+    exit();
+}
+
 $total = $subtotal + $shipping_fee;
 
 // -------------------------
@@ -203,22 +195,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['proceed_to_payment'])
     }
 
     // Re-check availability before creating order
-    $stock_stmt = $conn->prepare("SELECT is_marketplace, is_sold, quantity FROM products WHERE id = ?");
-    $stock_stmt->bind_param("i", $product_id);
-    $stock_stmt->execute();
-    $latest_product = $stock_stmt->get_result()->fetch_assoc();
+    foreach ($cart_items as $p) {
+        $stock_stmt = $conn->prepare("SELECT is_marketplace, is_sold, quantity FROM products WHERE id = ?");
+        $stock_stmt->bind_param("i", $p['id']);
+        $stock_stmt->execute();
+        $latest_product = $stock_stmt->get_result()->fetch_assoc();
 
-    $still_available = false;
-    if ($latest_product) {
-        if ((int)$latest_product['is_marketplace'] === 1) {
-            $still_available = ((int)$latest_product['is_sold'] === 0);
-        } else {
-            $still_available = ((int)$latest_product['quantity'] > 0);
+        $still_available = false;
+        if ($latest_product) {
+            if ((int)$latest_product['is_marketplace'] === 1) {
+                $still_available = ((int)$latest_product['is_sold'] === 0);
+            } else {
+                $still_available = ((int)$latest_product['quantity'] >= $p['cart_qty']);
+            }
         }
-    }
 
-    if (!$still_available) {
-        $errors[] = "Sorry, this item is no longer available.";
+        if (!$still_available) {
+            $errors[] = "Sorry, " . $p['title'] . " is no longer available in the requested quantity.";
+        }
     }
 
     // -------------------------
@@ -297,128 +291,126 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['proceed_to_payment'])
     
         $final_address = base64_encode($encrypted_address . '::' . $iv);
     
-        $seller_id = ((int)$product['is_marketplace'] === 1) ? (int)$product['seller_id'] : 0;
-        $amount = $total;
         $amount_paid_wallet = $wallet_amount_to_use;
-        $amount_paid_stripe = $total - $wallet_amount_to_use;
+        $remaining_wallet = $wallet_amount_to_use;
     
         $conn->begin_transaction();
         try {
-            // Deduct wallet balance immediately if using wallet funds
             if ($amount_paid_wallet > 0) {
                 $deduct_stmt = $conn->prepare("UPDATE users SET wallet_balance = wallet_balance - ? WHERE id = ? AND wallet_balance >= ?");
                 $deduct_stmt->bind_param("did", $amount_paid_wallet, $buyer_id, $amount_paid_wallet);
                 $deduct_stmt->execute();
                 
                 if ($deduct_stmt->affected_rows === 0) {
-                    throw new Exception("Insufficient wallet balance. Please refresh and try again.");
+                    throw new Exception("Insufficient wallet balance.");
                 }
             }
 
-            $order_stmt = $conn->prepare("
-                INSERT INTO orders (
-                    buyer_id,
-                    product_id,
-                    seller_id,
-                    amount,
-                    amount_paid_wallet,
-                    amount_paid_stripe,
-                    shipping_name,
-                    shipping_address,
-                    status
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING_PAYMENT')
-            ");
-        
-            $order_stmt->bind_param(
-                "iiidddss",
-                $buyer_id,
-                $product_id,
-                $seller_id,
-                $amount,
-                $amount_paid_wallet,
-                $amount_paid_stripe,
-                $shipping_name,
-                $final_address
-            );
-        
-            if (!$order_stmt->execute()) {
-                throw new Exception("Could not create order in database.");
-            }
+            $order_ids = [];
+            $total_stripe_paid = 0;
             
-            $order_id = $conn->insert_id;
-            
-            // If fully paid by wallet, complete the order immediately
-            if ($amount_paid_stripe <= 0) {
-                $update_order = $conn->prepare("UPDATE orders SET status = 'PAID' WHERE id = ?");
-                $update_order->bind_param("i", $order_id);
-                $update_order->execute();
+            foreach ($cart_items as $index => $p) {
+                for ($i = 0; $i < $p['cart_qty']; $i++) {
+                    $seller_id = ((int)$p['is_marketplace'] === 1) ? (int)$p['seller_id'] : 0;
+                    $unit_price = (float)$p['price'];
+                    
+                    if ($index === 0 && $i === 0) {
+                        $unit_price += $shipping_fee; // Add shipping to first item order
+                    }
+                    
+                    $applied_wallet = min($unit_price, $remaining_wallet);
+                    $remaining_wallet -= $applied_wallet;
+                    $applied_stripe = $unit_price - $applied_wallet;
+                    $total_stripe_paid += $applied_stripe;
+                    
+                    $order_stmt = $conn->prepare("
+                        INSERT INTO orders (buyer_id, product_id, seller_id, amount, amount_paid_wallet, amount_paid_stripe, shipping_name, shipping_address, status) 
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING_PAYMENT')
+                    ");
+                    $order_stmt->bind_param("iiidddss", $buyer_id, $p['id'], $seller_id, $unit_price, $applied_wallet, $applied_stripe, $shipping_name, $final_address);
+                    
+                    if (!$order_stmt->execute()) {
+                        throw new Exception("Could not create order in database.");
+                    }
+                    
+                    $order_id = $conn->insert_id;
+                    $order_ids[] = $order_id;
+                    
+                    if ($applied_stripe <= 0) {
+                        $update_order = $conn->prepare("UPDATE orders SET status = 'PAID' WHERE id = ?");
+                        $update_order->bind_param("i", $order_id);
+                        $update_order->execute();
 
-                if ($seller_id > 0) {
-                    $update_prod = $conn->prepare("UPDATE products SET is_sold = 1 WHERE id = ?");
-                    $update_prod->bind_param("i", $product_id);
-                    $update_prod->execute();
-                    
-                    $purchase_code = "ORD-" . str_pad($order_id, 6, "0", STR_PAD_LEFT);
-                    $ship_addr = "{$shipping_payload['full_name']}, {$shipping_payload['address_line_1']}";
-                    if (!empty($shipping_payload['address_line_2'])) $ship_addr .= ", {$shipping_payload['address_line_2']}";
-                    $ship_addr .= ", {$shipping_payload['city']}, {$shipping_payload['state_region']} {$shipping_payload['postal_code']}, {$shipping_payload['country']}";
-                    $del_notes = !empty($shipping_payload['delivery_notes']) ? $shipping_payload['delivery_notes'] : "None";
-                    
-                    $seller_notif_msg = "Your marketplace item '{$product['title']}' has been purchased!\nOrder Code: {$purchase_code}\nShip to: {$ship_addr}\nDelivery Notes: {$del_notes}\nFunds are held in escrow pending buyer confirmation.";
-                    
-                    $seller_notif = $conn->prepare("INSERT INTO notifications (user_id, message) VALUES (?, ?)");
-                    $seller_notif->bind_param("is", $seller_id, $seller_notif_msg);
-                    $seller_notif->execute();
-                } else {
-                    $update_prod = $conn->prepare("UPDATE products SET quantity = quantity - 1 WHERE id = ?");
-                    $update_prod->bind_param("i", $product_id);
-                    $update_prod->execute();
+                        if ($seller_id > 0) {
+                            $update_prod = $conn->prepare("UPDATE products SET is_sold = 1 WHERE id = ?");
+                            $update_prod->bind_param("i", $p['id']);
+                            $update_prod->execute();
+                            
+                            $purchase_code = "ORD-" . str_pad($order_id, 6, "0", STR_PAD_LEFT);
+                            $ship_addr = "{$shipping_payload['full_name']}, {$shipping_payload['address_line_1']}, {$shipping_payload['city']}, {$shipping_payload['country']}";
+                            $seller_notif_msg = "Your marketplace item '{$p['title']}' has been purchased!\nOrder Code: {$purchase_code}\nShip to: {$ship_addr}";
+                            $seller_notif = $conn->prepare("INSERT INTO notifications (user_id, message) VALUES (?, ?)");
+                            $seller_notif->bind_param("is", $seller_id, $seller_notif_msg);
+                            $seller_notif->execute();
+                        } else {
+                            $update_prod = $conn->prepare("UPDATE products SET quantity = quantity - 1 WHERE id = ?");
+                            $update_prod->bind_param("i", $p['id']);
+                            $update_prod->execute();
+                        }
+
+                        $buyer_msg = "Your order for '{$p['title']}' was successful (Paid via Wallet).";
+                        $buyer_notif = $conn->prepare("INSERT INTO notifications (user_id, message) VALUES (?, ?)");
+                        $buyer_notif->bind_param("is", $buyer_id, $buyer_msg);
+                        $buyer_notif->execute();
+                    }
                 }
-
-                $buyer_msg = "Your order for '{$product['title']}' was successful (Paid via Wallet).";
-                $buyer_notif = $conn->prepare("INSERT INTO notifications (user_id, message) VALUES (?, ?)");
-                $buyer_notif->bind_param("is", $buyer_id, $buyer_msg);
-                $buyer_notif->execute();
-
-                $conn->commit();
-                
-                // Redirect directly to success
-                header("Location: success.php?session_id=WALLET_PAID_" . $order_id);
-                exit();
             }
 
             $conn->commit();
+            
+            $_SESSION['cart'] = []; // Clear cart on success
+            unset($_SESSION['cart_locked']); // Release lock
+            
+            if ($total_stripe_paid <= 0) {
+                header("Location: success.php?session_id=WALLET_PAID_" . implode('_', $order_ids));
+                exit();
+            }
+
         } catch (Exception $e) {
             $conn->rollback();
             $errors[] = $e->getMessage();
-            $order_id = null; // Prevent stripe session
+            $order_ids = []; 
         }
 
-        if (isset($order_id) && $amount_paid_stripe > 0) {
+        if (!empty($order_ids) && $total_stripe_paid > 0) {
             try {
                 $session = \Stripe\Checkout\Session::create([
                     'mode' => 'payment',
                     'success_url' => 'https://kristovskis.lv/4pt/jaunarajs/skate-shop/client_page/success.php?session_id={CHECKOUT_SESSION_ID}',
-                    'cancel_url' => 'https://kristovskis.lv/4pt/jaunarajs/skate-shop/client_page/checkout.php?id=' . $product_id . '&cancel_order=' . $order_id,
+                    'cancel_url' => 'https://kristovskis.lv/4pt/jaunarajs/skate-shop/client_page/checkout.php?cancel_orders=' . implode(',', $order_ids),
                     'line_items' => [[
                         'price_data' => [
                             'currency' => 'usd',
                             'product_data' => [
-                                'name' => $product['title'],
+                                'name' => 'SkateShop Order Bundle',
+                                'description' => count($cart_items) . ' item(s) including shipping' . ($wallet_amount_to_use > 0 ? ' (Wallet Balance Applied)' : ''),
                             ],
-                            'unit_amount' => (int) round($amount_paid_stripe * 100),
+                            'unit_amount' => (int) round($total_stripe_paid * 100),
                         ],
                         'quantity' => 1,
                     ]],
                     'metadata' => [
-                        'order_id' => (string)$order_id
+                        'order_ids' => implode(',', $order_ids)
                     ]
                 ]);
     
-                $stripe_stmt = $conn->prepare("UPDATE orders SET stripe_session_id = ? WHERE id = ?");
-                $stripe_stmt->bind_param("si", $session->id, $order_id);
-                $stripe_stmt->execute();
+                foreach($order_ids as $oid) {
+                    $stripe_stmt = $conn->prepare("UPDATE orders SET stripe_session_id = ? WHERE id = ?");
+                    $stripe_stmt->bind_param("si", $session->id, $oid);
+                    $stripe_stmt->execute();
+                }
     
+                unset($_SESSION['cart_locked']); // Release lock before Stripe redirect
                 header("Location: " . $session->url);
                 exit();
             } catch (Exception $e) {
@@ -679,6 +671,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['proceed_to_payment'])
             line-height: 1.5;
         }
 
+        .checkout-wallet-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px dashed #ddd;
+            padding-bottom: 0.75rem;
+            margin-bottom: 1rem;
+        }
+
+        .checkout-wallet-inputs {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+
         .checkout-status-wrap {
             padding: 100px 0;
             min-height: 70vh;
@@ -731,6 +739,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['proceed_to_payment'])
                 width: 100%;
                 height: auto;
                 max-height: 260px;
+            }
+
+            .checkout-wallet-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 0.5rem;
+            }
+
+            .checkout-wallet-inputs {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .checkout-wallet-inputs .checkout-input, 
+            .checkout-wallet-inputs .btn {
+                max-width: 100% !important;
+                width: 100%;
             }
         }
     </style>
@@ -908,15 +933,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['proceed_to_payment'])
                     </div>
 
                     <?php if ($wallet_balance > 0): ?>
-                    <div class="checkout-field checkout-field-full" style="background: #fdfdfd; padding: 1.25rem; border: 3px solid var(--charcoal); border-top: 6px solid var(--charcoal); margin-top: 1rem;">
-                        <label for="wallet_amount_to_use" style="font-size: 1.2rem;">
-                            <i class="fa-solid fa-wallet"></i> USE WALLET BALANCE
-                        </label>
-                        <p style="margin: 0 0 1rem 0; font-size: 0.95rem; color: #555; font-family: 'Staatliches', sans-serif; letter-spacing: 0.5px;">
-                            AVAILABLE BALANCE: <strong style="color: var(--primary);">$<?php echo number_format($wallet_balance, 2); ?></strong>
-                        </p>
-                        <div style="display: flex; align-items: center; gap: 0.5rem;">
-                            <span style="font-family: 'Staatliches', sans-serif; font-size: 1.2rem;">$</span>
+                    <div class="checkout-field checkout-field-full checkout-security-box" style="margin-top: 0.5rem; background: #fff;">
+                        <h4 class="checkout-wallet-header" style="font-size: 1.4rem;">
+                            <span><i class="fa-solid fa-wallet text-primary"></i> WALLET BALANCE</span>
+                            <span style="font-size: 1.1rem; color: #555;">AVAILABLE: <strong class="text-primary" style="font-size: 1.3rem;">$<?php echo number_format($wallet_balance, 2); ?></strong></span>
+                        </h4>
+                        
+                        <div class="checkout-wallet-inputs">
+                            <label for="wallet_amount_to_use" style="margin: 0;">AMOUNT TO USE ($):</label>
                             <input
                                 type="number"
                                 id="wallet_amount_to_use"
@@ -926,10 +950,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['proceed_to_payment'])
                                 min="0"
                                 max="<?php echo min($wallet_balance, $total); ?>"
                                 step="0.01"
-                                style="max-width: 150px; padding: 0.5rem 1rem;"
+                                style="max-width: 160px; font-size: 1.2rem; color: var(--primary); font-weight: bold; text-align: center; padding: 0.8rem 1rem;"
                                 oninput="updateCheckoutTotal()"
                             >
-                            <button type="button" class="btn btn-outline" style="padding: 0.5rem 1rem;" onclick="document.getElementById('wallet_amount_to_use').value = '<?php echo min($wallet_balance, $total); ?>'; updateCheckoutTotal();">USE MAX</button>
+                            <button type="button" class="btn btn-outline" style="padding: 0.8rem 1.5rem; font-size: 1.1rem; display: flex; align-items: center; justify-content: center;" onclick="document.getElementById('wallet_amount_to_use').value = '<?php echo min($wallet_balance, $total); ?>'; updateCheckoutTotal();">USE MAX</button>
                         </div>
                     </div>
                     <?php endif; ?>
@@ -945,21 +969,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['proceed_to_payment'])
         <aside class="checkout-panel">
             <h3 class="checkout-panel-title">ORDER SUMMARY</h3>
 
-            <div class="checkout-summary-card">
+            <?php foreach ($cart_items as $p): ?>
+            <div class="checkout-summary-card" style="margin-bottom: 10px;">
                 <img
-                    src="<?php echo e($product['image_url']); ?>"
-                    alt="<?php echo e($product['title']); ?>"
+                    src="<?php echo e($p['image_url']); ?>"
+                    alt="<?php echo e($p['title']); ?>"
                     class="checkout-summary-img"
+                    style="width: 60px; height: 60px;"
                 >
 
-                <div>
-                    <h4 class="checkout-summary-title"><?php echo e($product['title']); ?></h4>
-                    <p class="checkout-summary-brand"><?php echo e($product['brand']); ?></p>
-                    <span class="condition-badge <?php echo ((int)$product['is_marketplace'] === 1) ? 'marketplace-badge' : 'new-drop'; ?>" style="font-size:0.7rem;">
-                        <?php echo ((int)$product['is_marketplace'] === 1) ? 'MARKETPLACE' : 'OFFICIAL'; ?>
+                <div style="flex: 1;">
+                    <h4 class="checkout-summary-title" style="font-size: 1rem;"><?php echo e($p['title']); ?></h4>
+                    <p class="checkout-summary-brand" style="margin-bottom: 5px;"><?php echo e($p['brand']); ?> <span style="color:var(--primary); font-weight:bold;">x<?php echo $p['cart_qty']; ?></span></p>
+                    <span class="condition-badge <?php echo ((int)$p['is_marketplace'] === 1) ? 'marketplace-badge' : 'new-drop'; ?>" style="font-size:0.6rem; padding: 2px 4px;">
+                        <?php echo ((int)$p['is_marketplace'] === 1) ? 'MARKETPLACE' : 'OFFICIAL'; ?>
                     </span>
                 </div>
+                <div style="font-weight: bold; color: var(--primary);">
+                    $<?php echo number_format($p['price'] * $p['cart_qty'], 2); ?>
+                </div>
             </div>
+            <?php endforeach; ?>
 
             <div class="checkout-summary-row">
                 <span>SUBTOTAL</span>

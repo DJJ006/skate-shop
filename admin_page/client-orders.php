@@ -2,6 +2,24 @@
 session_start();
 include '../db.php';
 
+// Ensure the column exists for data safety
+try {
+    $conn->query("ALTER TABLE orders ADD COLUMN is_hidden_admin TINYINT(1) DEFAULT 0");
+} catch (Exception $e) {}
+
+// Handle POST request to remove order
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['remove_order'])) {
+    $remove_id = (int)$_POST['remove_order_id'];
+    // Only allow hiding if status is RECEIVED or CANCELLED
+    $hide_stmt = $conn->prepare("UPDATE orders SET is_hidden_admin = 1 WHERE id = ? AND status IN ('RECEIVED', 'CANCELLED')");
+    $hide_stmt->bind_param("i", $remove_id);
+    $hide_stmt->execute();
+    
+    $_SESSION['admin_msg'] = "ORDER REMOVED FROM LIST.";
+    header("Location: client-orders.php");
+    exit();
+}
+
 function decryptShippingAddress($base64_payload) {
     if (empty($base64_payload)) return null;
     $decoded = base64_decode($base64_payload);
@@ -71,7 +89,7 @@ $sql = "
     FROM orders o 
     JOIN products p ON o.product_id = p.id 
     JOIN users u ON o.buyer_id = u.id 
-    WHERE 1=1
+    WHERE o.is_hidden_admin = 0
 ";
 
 if ($status_filter === 'PAID') {
@@ -139,15 +157,15 @@ $orders_stmt = $conn->query($sql);
 
 <section class="admin-layout container">
     <aside class="admin-sidebar grainy-card">
-        <h3 class="admin-sidebar-title">SYSTEM <span class="header-span">MENU</span></h3>
+        <h3 class="admin-sidebar-title">SYSTEM <span class="header-span">MENU<span></h3>
         <ul class="admin-nav-list">
             <li><a href="index.php"><span class="material-icons">dashboard</span> DASHBOARD</a></li>
             <li><a href="shop-products.php"><span class="material-icons">inventory_2</span> THE VAULT (SHOP)</a></li>
             <li><a href="marketplace-products.php"><span class="material-icons">storefront</span> STREET MARKET</a></li>
             <li><a href="registered-users.php"><span class="material-icons">manage_accounts</span> REGISTERED USERS</a></li>
-            <li><a href="client-orders.php" class="nav-relative active"><span class="material-icons">receipt_long</span> CLIENT ORDERS</a></li>
+            <li><a href="client-orders.php"  class="nav-relative active"><span class="material-icons">receipt_long</span> CLIENT ORDERS</a></li>
             <li>
-                <a href="accept-product.php" class="nav-relative">
+                <a href="accept-product.php" class="<?php echo (basename($_SERVER['PHP_SELF']) == 'accept-product.php') ? '' : ''; ?>" style="position: relative;">
                     <span class="material-icons">gavel</span> PENDING GEAR
                     <?php if ($pending_count > 0): ?>
                         <span class="notification-badge"><?php echo $pending_count; ?></span>
@@ -293,7 +311,12 @@ $orders_stmt = $conn->query($sql);
                                                 <i class="fa-solid fa-ban"></i> CANCEL
                                             </button>
                                         <?php else: ?>
-                                            <span style="font-size:0.75rem; color:#888; font-weight:700;">—</span>
+                                            <form method="POST" style="margin:0;" onsubmit="event.stopPropagation(); return confirm('Are you sure you want to remove this order from the list?');">
+                                                <input type="hidden" name="remove_order_id" value="<?php echo $order['order_id']; ?>">
+                                                <button type="submit" name="remove_order" class="btn-mini btn-danger" onclick="event.stopPropagation();" title="Remove order from list">
+                                                    <i class="fas fa-trash"></i>
+                                                </button>
+                                            </form>
                                         <?php endif; ?>
                                     </td>
                                 </tr>

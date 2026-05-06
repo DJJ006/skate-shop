@@ -192,12 +192,19 @@ $baseLabel = $isMarketplace ? "MARKETPLACE" : "SHOP";
         </div>
 
         <?php if ($canBuy): ?>
-            <a href="checkout.php?id=<?php echo $product_id; ?>" class="btn btn-primary add-to-cart-mega" style="text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 10px;">
-                <?php echo $isMarketplace ? "BUY FROM SELLER" : "PROCEED TO CHECKOUT"; ?>
-                <span class="material-icons">payments</span>
-            </a>
+            <?php if (isset($_SESSION['user_id'])): ?>
+                <button onclick="addToCart(<?php echo $product_id; ?>, 1, <?php echo $isMarketplace ? 'true' : 'false'; ?>, this)" class="btn btn-primary add-to-cart-mega" style="text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%;">
+                    <?php echo $isMarketplace ? "BUY FROM SELLER" : "ADD TO CART"; ?>
+                    <span class="material-icons"><?php echo $isMarketplace ? "payments" : "shopping_cart"; ?></span>
+                </button>
+            <?php else: ?>
+                <a href="login.php?redirect=<?php echo urlencode('product.php?id=' . $product_id); ?>" class="btn btn-primary add-to-cart-mega" style="text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%;">
+                    LOGIN TO PURCHASE
+                    <span class="material-icons">lock</span>
+                </a>
+            <?php endif; ?>
         <?php else: ?>
-            <button class="btn btn-primary add-to-cart-mega" disabled style="opacity: 0.3; cursor: not-allowed; background: #333; border-color: #222; color: #888;">
+            <button class="btn btn-primary add-to-cart-mega" disabled style="opacity: 0.3; cursor: not-allowed; background: #333; border-color: #222; color: #888; width: 100%;">
                 SOLD OUT
                 <span class="material-icons">block</span>
             </button>
