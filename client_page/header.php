@@ -22,7 +22,7 @@ if (basename($_SERVER['PHP_SELF']) !== 'checkout.php') {
             <ul class="nav-links">
                 <li><a href="shop.php" class="nav-item">SHOP</a></li>
                 <li><a href="marketplace.php" class="nav-item">MARKET</a></li>
-                <li><a href="#" class="nav-item">COMMUNITY</a></li>
+                <li><a href="community.php" class="nav-item">COMMUNITY</a></li>
                 <?php if (isset($_SESSION['user_id'])): ?>
                 <li>
                     <a href="#" class="nav-item" id="cartIcon" style="position: relative;">
