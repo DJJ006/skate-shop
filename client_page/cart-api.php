@@ -73,7 +73,7 @@ switch ($action) {
             exit;
         }
 
-        $stmt = $conn->prepare("SELECT id, title, price, quantity, is_marketplace, is_sold, image_url, brand FROM products WHERE id = ?");
+        $stmt = $conn->prepare("SELECT id, title, price, discount_price, quantity, is_marketplace, is_sold, image_url, brand FROM products WHERE id = ?");
         $stmt->bind_param("i", $product_id);
         $stmt->execute();
         $res = $stmt->get_result();
@@ -111,11 +111,12 @@ switch ($action) {
             }
             $_SESSION['cart'][$product_id]['qty'] = $new_qty;
         } else {
+            $effective_price = (!empty($product['discount_price']) && (float)$product['discount_price'] > 0) ? (float)$product['discount_price'] : (float)$product['price'];
             $_SESSION['cart'][$product_id] = [
                 'id' => $product['id'],
                 'title' => $product['title'],
                 'brand' => $product['brand'],
-                'price' => (float)$product['price'],
+                'price' => $effective_price,
                 'image_url' => $product['image_url'],
                 'is_marketplace' => $isMarket,
                 'max_qty' => $isMarket ? 1 : (int)$product['quantity'],

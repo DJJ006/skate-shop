@@ -82,7 +82,7 @@ $shipping_fee = 5.00;
 $cart_items = [];
 
 foreach ($_SESSION['cart'] as $id => $item) {
-    $stmt = $conn->prepare("SELECT id, title, price, is_marketplace, is_sold, quantity, image_url, brand, seller_id FROM products WHERE id = ?");
+    $stmt = $conn->prepare("SELECT id, title, price, discount_price, is_marketplace, is_sold, quantity, image_url, brand, seller_id FROM products WHERE id = ?");
     $stmt->bind_param("i", $id);
     $stmt->execute();
     $db_prod = $stmt->get_result()->fetch_assoc();
@@ -96,20 +96,74 @@ foreach ($_SESSION['cart'] as $id => $item) {
     $available = $isMarketplace ? ((int)$db_prod['is_sold'] === 0) : ((int)$db_prod['quantity'] >= $item['qty']);
     
     if (!$available) {
-        die("
-        <div class='container checkout-status-wrap'>
-            <div class='checkout-status-box'>
-                <h1 class='glitch-text'>ITEM <span class='text-primary'>UNAVAILABLE</span></h1>
-                <p>One or more items in your cart are out of stock. Please return to the shop.</p>
-                <a href='shop.php' class='btn btn-primary checkout-status-btn'>RETURN TO SHOP</a>
-            </div>
-        </div>
-        ");
+        ?>
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>SkateShop | CHECKOUT ERROR</title>
+            <link rel="stylesheet" href="../assets/style.css">
+            <link rel="stylesheet" href="../assets/shop.css">
+            <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+            <style>
+                .checkout-error-page {
+                    min-height: 60vh;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    padding: 120px 20px 80px;
+                }
+                .error-box {
+                    max-width: 600px;
+                    width: 100%;
+                    text-align: center;
+                    background: var(--textwhite);
+                    border: 4px solid var(--primary);
+                    box-shadow: 8px 8px 0px var(--charcoal);
+                    padding: 3rem 2rem;
+                }
+                .error-icon {
+                    font-size: 4rem;
+                    color: var(--primary);
+                    margin-bottom: 1rem;
+                }
+                .error-title {
+                    margin: 0 0 1rem 0;
+                    font-size: clamp(2rem, 5vw, 3rem);
+                }
+                .error-desc {
+                    color: #555;
+                    font-size: 1.15rem;
+                    margin-bottom: 2rem;
+                    line-height: 1.5;
+                }
+            </style>
+        </head>
+        <body>
+            <?php include 'header.php'; ?>
+            
+            <main class="container checkout-error-page">
+                <div class="error-box">
+                    <i class="fa-solid fa-triangle-exclamation error-icon"></i>
+                    <h1 class="error-title glitch-text">ITEM <span class="text-primary">UNAVAILABLE</span></h1>
+                    <p class="error-desc">One or more items in your cart are currently out of stock or have been sold. Please return to the shop to update your cart.</p>
+                    <a href="shop.php" class="btn btn-primary" style="font-size: 1.2rem; padding: 10px 30px;">RETURN TO SHOP</a>
+                </div>
+            </main>
+
+            <?php include 'footer.php'; ?>
+        </body>
+        </html>
+        <?php
+        exit();
     }
     
-    $item_total = (float)$db_prod['price'] * $item['qty'];
+    $effective_price = (!empty($db_prod['discount_price']) && (float)$db_prod['discount_price'] > 0) ? (float)$db_prod['discount_price'] : (float)$db_prod['price'];
+    $item_total = $effective_price * $item['qty'];
     $subtotal += $item_total;
     
+    $db_prod['effective_price'] = $effective_price;
     $db_prod['cart_qty'] = $item['qty'];
     $cart_items[] = $db_prod;
 }
@@ -368,10 +422,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['proceed_to_payment'])
 
             $conn->commit();
             
-            $_SESSION['cart'] = []; // Clear cart on success
-            unset($_SESSION['cart_locked']); // Release lock
-            
             if ($total_stripe_paid <= 0) {
+                // Fully paid via Wallet. Clear cart now.
+                $_SESSION['cart'] = [];
+                unset($_SESSION['cart_locked']);
+                $clear_stmt = $conn->prepare("UPDATE users SET cart_data = '[]' WHERE id = ?");
+                $clear_stmt->bind_param("i", $buyer_id);
+                $clear_stmt->execute();
+
                 header("Location: success.php?session_id=WALLET_PAID_" . implode('_', $order_ids));
                 exit();
             }
@@ -784,7 +842,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['proceed_to_payment'])
                 </div>
             <?php endif; ?>
 
-            <form method="POST" action="checkout.php?id=<?php echo $product_id; ?>" novalidate>
+            <form method="POST" action="checkout.php" novalidate onsubmit="
+                const btn = this.querySelector('button[type=submit]');
+                if(btn.dataset.submitted) return false;
+                btn.dataset.submitted = 'true';
+                btn.innerHTML = 'PROCESSING... <i class=\'fa-solid fa-spinner fa-spin\'></i>';
+                btn.style.opacity = '0.7';
+                btn.style.cursor = 'not-allowed';
+                return true;
+            ">
                 <div class="checkout-form-grid">
                     <div class="checkout-field">
                         <label for="first_name">FIRST NAME</label>
@@ -986,7 +1052,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['proceed_to_payment'])
                     </span>
                 </div>
                 <div style="font-weight: bold; color: var(--primary);">
-                    $<?php echo number_format($p['price'] * $p['cart_qty'], 2); ?>
+                    $<?php echo number_format($p['effective_price'] * $p['cart_qty'], 2); ?>
                 </div>
             </div>
             <?php endforeach; ?>

@@ -175,7 +175,11 @@ if ($event->type === 'checkout.session.completed') {
             $buyer_notif_stmt->bind_param("is", $buyer_id, $buyer_msg);
             $buyer_notif_stmt->execute();
 
-            webhook_log("Buyer notification inserted for order " . $order_id);
+            $clear_cart_stmt = $conn->prepare("UPDATE users SET cart_data = '[]' WHERE id = ?");
+            $clear_cart_stmt->bind_param("i", $buyer_id);
+            $clear_cart_stmt->execute();
+
+            webhook_log("Buyer notification inserted and cart cleared for order " . $order_id);
         }
 
         $conn->commit();

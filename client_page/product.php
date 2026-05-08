@@ -158,7 +158,15 @@ $baseLabel = $isMarketplace ? "MARKETPLACE" : "SHOP";
             <h1 class="product-title glitch-text"><?php echo htmlspecialchars($product['title']); ?></h1>
             
             <div class="price-wrap">
-            <span class="product-price">$<?php echo number_format($product['price'], 2); ?></span>
+                <?php if (!empty($product['discount_price']) && (float)$product['discount_price'] > 0): ?>
+                    <div style="display: flex; gap: 15px; align-items: center; flex-wrap: wrap;">
+                        <span class="product-price" style="text-decoration: line-through; color: #aaa; font-size: 1.5rem;">$<?php echo number_format($product['price'], 2); ?></span>
+                        <span class="product-price" style="color: var(--primary);">$<?php echo number_format($product['discount_price'], 2); ?></span>
+                        <span class="condition-badge new-drop" style="position: relative; top: 0; left: 0; margin-left: 10px;">DISCOUNTED PRODUCT</span>
+                    </div>
+                <?php else: ?>
+                    <span class="product-price">$<?php echo number_format($product['price'], 2); ?></span>
+                <?php endif; ?>
             
                 <?php if ($isMarketplace): ?>
                     <div class="marketplace-seller-info">
@@ -205,7 +213,7 @@ $baseLabel = $isMarketplace ? "MARKETPLACE" : "SHOP";
             <?php endif; ?>
         <?php else: ?>
             <button class="btn btn-primary add-to-cart-mega" disabled style="opacity: 0.3; cursor: not-allowed; background: #333; border-color: #222; color: #888; width: 100%;">
-                SOLD OUT
+                OUT OF STOCK
                 <span class="material-icons">block</span>
             </button>
         <?php endif; ?>

@@ -16,22 +16,34 @@ const closeModal = (modalId) => {
 
 /**
  * Populates and opens the edit modal with product data
- * UPDATED to include condition parameter
+ * UPDATED to include condition/quantity parameter and discountPrice
  */
-const openEditModal = (id, title, brand, price, category, description, condition) => {
+const openEditModal = (id, title, brand, price, category, description, extraParam, discountPrice) => {
     document.getElementById('edit_id').value = id;
     document.getElementById('edit_title').value = title;
     document.getElementById('edit_brand').value = brand; // <--- BRAND ADDED HERE
     document.getElementById('edit_price').value = price;
     document.getElementById('edit_category').value = category;
     document.getElementById('edit_description').value = description;
-    
+
     // Target the condition dropdown (mainly for marketplace-products.php)
     const conditionField = document.getElementById('edit_condition');
     if (conditionField) {
-        conditionField.value = condition || ''; 
+        conditionField.value = extraParam || '';
     }
-    
+
+    // Target the quantity field (mainly for shop-products.php)
+    const quantityField = document.getElementById('edit_quantity');
+    if (quantityField) {
+        quantityField.value = extraParam || 0;
+    }
+
+    // Target the discount price field
+    const discountField = document.getElementById('edit_discount_price');
+    if (discountField) {
+        discountField.value = discountPrice || '';
+    }
+
     openModal('editModal');
 };
 
@@ -55,17 +67,17 @@ const toggleDropdown = () => {
 
 // --- INITIALIZATION ---
 document.addEventListener('DOMContentLoaded', () => {
-    
+
     // 1. Auto-hide Admin Alerts
     const alert = document.querySelector('.admin-alert');
     if (alert) {
         setTimeout(() => {
             alert.style.opacity = '0';
             alert.style.transform = 'translateY(-10px)';
-            
+
             // Remove from DOM after transition finishes
-            setTimeout(() => { 
-                alert.style.display = 'none'; 
+            setTimeout(() => {
+                alert.style.display = 'none';
             }, 600);
         }, 5000);
     }
@@ -80,10 +92,10 @@ document.addEventListener('DOMContentLoaded', () => {
         // Handle Custom Dropdown Outside Clicks
         const wrapper = document.getElementById("categoryDropdown");
         const dropdown = document.getElementById("dropdownOptions");
-        
+
         if (wrapper && !wrapper.contains(e.target)) {
-            if(dropdown) dropdown.classList.remove("show");
-            if(wrapper) wrapper.classList.remove("active");
+            if (dropdown) dropdown.classList.remove("show");
+            if (wrapper) wrapper.classList.remove("active");
         }
     });
 });

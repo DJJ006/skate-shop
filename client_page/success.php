@@ -1,6 +1,19 @@
 <?php
 session_start();
 $session_id = isset($_GET['session_id']) ? $_GET['session_id'] : 'unknown_session';
+
+// Safely clear the cart on successful return
+if (isset($_SESSION['user_id'])) {
+    $_SESSION['cart'] = [];
+    unset($_SESSION['cart_locked']);
+    
+    include_once '../db.php';
+    if (isset($conn)) {
+        $clear_stmt = $conn->prepare("UPDATE users SET cart_data = '[]' WHERE id = ?");
+        $clear_stmt->bind_param("i", $_SESSION['user_id']);
+        $clear_stmt->execute();
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">

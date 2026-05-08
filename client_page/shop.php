@@ -30,19 +30,21 @@ if (!empty($selected_categories)) {
 }
 
 if ($price_range === 'under_50') {
-    $whereClause .= " AND price < 50";
+    $whereClause .= " AND (IF(discount_price IS NOT NULL AND discount_price > 0, discount_price, price) < 50)";
 } elseif ($price_range === '50_100') {
-    $whereClause .= " AND price BETWEEN 50 AND 100";
+    $whereClause .= " AND (IF(discount_price IS NOT NULL AND discount_price > 0, discount_price, price) BETWEEN 50 AND 100)";
 } elseif ($price_range === 'over_100') {
-    $whereClause .= " AND price > 100";
+    $whereClause .= " AND (IF(discount_price IS NOT NULL AND discount_price > 0, discount_price, price) > 100)";
+} elseif ($price_range === 'discounted') {
+    $whereClause .= " AND discount_price IS NOT NULL AND discount_price > 0";
 }
 
 // 3. Build the ORDER BY Clause
 $orderClause = "ORDER BY created_at DESC"; // Default
 if ($sort === 'price_asc') {
-    $orderClause = "ORDER BY price ASC";
+    $orderClause = "ORDER BY IF(discount_price IS NOT NULL AND discount_price > 0, discount_price, price) ASC";
 } elseif ($sort === 'price_desc') {
-    $orderClause = "ORDER BY price DESC";
+    $orderClause = "ORDER BY IF(discount_price IS NOT NULL AND discount_price > 0, discount_price, price) DESC";
 }
 
 // 4. Execution
@@ -148,6 +150,7 @@ function get_filter_url($params) {
                         <li><label><input type="radio" name="price" value="under_50" <?php echo $price_range == 'under_50' ? 'checked' : ''; ?> onchange="this.form.submit()"> UNDER $50</label></li>
                         <li><label><input type="radio" name="price" value="50_100" <?php echo $price_range == '50_100' ? 'checked' : ''; ?> onchange="this.form.submit()"> $50 - $100</label></li>
                         <li><label><input type="radio" name="price" value="over_100" <?php echo $price_range == 'over_100' ? 'checked' : ''; ?> onchange="this.form.submit()"> OVER $100</label></li>
+                        <li><label><input type="radio" name="price" value="discounted" <?php echo $price_range == 'discounted' ? 'checked' : ''; ?> onchange="this.form.submit()"> DISCOUNTED</label></li>
                     </ul>
                 </div>
                 
@@ -197,8 +200,8 @@ function get_filter_url($params) {
                     
                     <?php if((int)$row['quantity'] <= 0): ?>
                         <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 10; pointer-events: none;">
-                            <span style="background: #ff4b2b; color: #fff; padding: 8px 20px; font-family: 'Arial Black', sans-serif; font-size: 1.1rem; transform: rotate(-12deg); border: 3px solid #000; box-shadow: 5px 5px 0 #000; text-transform: uppercase; letter-spacing: 1px;">
-                                SOLD OUT
+                            <span style="background: #E11D48; color: #fff; padding: 8px 20px; font-family: 'Arial Black', sans-serif; font-size: 1.1rem; transform: rotate(-12deg); border: 3px solid #000; box-shadow: 5px 5px 0 #000; text-transform: uppercase; letter-spacing: 1px;">
+                                OUT OF STOCK
                             </span>
                         </div>
                     <?php endif; ?>
@@ -213,9 +216,20 @@ function get_filter_url($params) {
                         <h4><?php echo htmlspecialchars($row['title']); ?></h4>
                         <p><?php echo htmlspecialchars($row['brand']); ?></p>
                     </div>
-                    <span class="price" style="<?php echo ((int)$row['quantity'] <= 0) ? 'text-decoration: line-through; color: #888;' : ''; ?>">
-                        $<?php echo number_format($row['price'], 2); ?>
-                    </span>
+                    <div style="display: flex; gap: 10px; align-items: center; margin-top: 5px;">
+                        <?php if (!empty($row['discount_price']) && (float)$row['discount_price'] > 0): ?>
+                            <span class="price" style="text-decoration: line-through; color: #999; font-size: 1.1em;">
+                                $<?php echo number_format($row['price'], 2); ?>
+                            </span>
+                            <span class="price" style="color: var(--primary); font-weight: bold;">
+                                $<?php echo number_format($row['discount_price'], 2); ?>
+                            </span>
+                        <?php else: ?>
+                            <span class="price" style="<?php echo ((int)$row['quantity'] <= 0) ? 'text-decoration: line-through; color: #888;' : ''; ?>">
+                                $<?php echo number_format($row['price'], 2); ?>
+                            </span>
+                        <?php endif; ?>
+                    </div>
                 </div>
             </div>
         </a>

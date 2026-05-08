@@ -16,6 +16,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_product'])){
     $title = $conn->real_escape_string($_POST['title']);
     $brand = $conn->real_escape_string($_POST['brand']); // <--- BRAND ADDED HERE
     $price = (float)$_POST['price'];
+    $discount_price = !empty($_POST['discount_price']) ? (float)$_POST['discount_price'] : 'NULL';
+    $quantity = (int)$_POST['quantity'];
     $category = $conn->real_escape_string($_POST['category']);
     $description = $conn->real_escape_string($_POST['description']);
     $is_marketplace = 0;
@@ -36,9 +38,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_product'])){
     }
 
     if ($image_url != '') {
-        // UPDATED INSERT QUERY TO INCLUDE BRAND
-        $sql = "INSERT INTO products (title, brand, price, category, description, image_url, is_marketplace) 
-                VALUES ('$title', '$brand', '$price', '$category', '$description', '$image_url', '$is_marketplace')"; // <--- BRAND ADDED HERE
+        // UPDATED INSERT QUERY TO INCLUDE BRAND, QUANTITY AND DISCOUNT
+        $sql = "INSERT INTO products (title, brand, price, discount_price, quantity, category, description, image_url, is_marketplace) 
+                VALUES ('$title', '$brand', '$price', $discount_price, '$quantity', '$category', '$description', '$image_url', '$is_marketplace')";
         if ($conn->query($sql) === TRUE) {
             $_SESSION['msg'] = "GEAR ADDED TO THE VAULT!";
             $_SESSION['msg_type'] = "success";
@@ -61,6 +63,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_product'])) {
     $title = $conn->real_escape_string($_POST['title']);
     $brand = $conn->real_escape_string($_POST['brand']); // <--- BRAND ADDED HERE
     $price = (float)$_POST['price'];
+    $discount_price = !empty($_POST['discount_price']) ? (float)$_POST['discount_price'] : 'NULL';
+    $quantity = (int)$_POST['quantity'];
     $category = $conn->real_escape_string($_POST['category']);
     $description = $conn->real_escape_string($_POST['description']);
 
@@ -80,8 +84,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_product'])) {
         }
     }
 
-    // UPDATED UPDATE QUERY TO INCLUDE BRAND
-    $sql = "UPDATE products SET title='$title', brand='$brand', price='$price', category='$category', description='$description' $image_query_part WHERE id=$id"; // <--- BRAND ADDED HERE
+    // UPDATED UPDATE QUERY TO INCLUDE BRAND, QUANTITY AND DISCOUNT
+    $sql = "UPDATE products SET title='$title', brand='$brand', price='$price', discount_price=$discount_price, quantity='$quantity', category='$category', description='$description' $image_query_part WHERE id=$id";
     if ($conn->query($sql) === TRUE) {
         $_SESSION['msg'] = "GEAR UPDATED SUCCESSFULLY!";
         $_SESSION['msg_type'] = "success";
@@ -134,11 +138,16 @@ if (!empty($cat_filter) && is_array($cat_filter)) {
 $where_sql = implode(' AND ', $where_clauses);
 
 $allowed_sorts = ['id', 'title', 'price', 'created_at'];
-if (!in_array($sort_by, $allowed_sorts)) { $sort_by = 'created_at'; }
+if ($sort_by === 'discounted') {
+    $where_sql .= " AND discount_price IS NOT NULL AND discount_price > 0";
+    $sort_by_column = 'created_at';
+} else {
+    $sort_by_column = in_array($sort_by, $allowed_sorts) ? $sort_by : 'created_at';
+}
 
-// UPDATED SELECT QUERY TO INCLUDE BRAND
-$products_sql = "SELECT id, title, brand, price, category, description, created_at 
-                 FROM products WHERE $where_sql ORDER BY $sort_by $order"; // <--- BRAND ADDED HERE
+// UPDATED SELECT QUERY TO INCLUDE BRAND AND QUANTITY AND DISCOUNT
+$products_sql = "SELECT id, title, brand, price, discount_price, quantity, category, description, created_at 
+                 FROM products WHERE $where_sql ORDER BY $sort_by_column $order";
 $products_result = $conn->query($products_sql);
 ?>
 
@@ -256,6 +265,7 @@ $products_result = $conn->query($products_sql);
                 <option value="id" <?php if($sort_by == 'id') echo 'selected'; ?>>ID NUMBER</option>
                 <option value="title" <?php if($sort_by == 'title') echo 'selected'; ?>>PRODUCT NAME</option>
                 <option value="price" <?php if($sort_by == 'price') echo 'selected'; ?>>PRICE</option>
+                <option value="discounted" <?php if($sort_by == 'discounted') echo 'selected'; ?>>DISCOUNTED</option>
             </select>
         </div>
 
@@ -280,7 +290,7 @@ $products_result = $conn->query($products_sql);
                         <th>ID</th>
                         <th>ITEM NAME</th>
                         <th>CATEGORY</th>
-                        <th>PRICE</th>
+                        <th>PRICE / QTY</th>
                         <th>EDIT</th>
                     </tr>
                 </thead>
@@ -293,7 +303,9 @@ $products_result = $conn->query($products_sql);
                                 '<?php echo addslashes(htmlspecialchars($row['brand'])); ?>', 
                                 <?php echo $row['price']; ?>, 
                                 '<?php echo addslashes(htmlspecialchars($row['category'])); ?>', 
-                                '<?php echo addslashes(htmlspecialchars($row['description'])); ?>'
+                                '<?php echo addslashes(htmlspecialchars($row['description'])); ?>',
+                                <?php echo (int)$row['quantity']; ?>,
+                                <?php echo !empty($row['discount_price']) ? $row['discount_price'] : 'null'; ?>
                             )">
                                 <td class="td-id">#<?php echo $row['id']; ?></td>
                                 <td>
@@ -301,7 +313,15 @@ $products_result = $conn->query($products_sql);
                                     <small style="opacity: 0.7;"><?php echo htmlspecialchars($row['brand']); ?></small>
                                 </td>
                                 <td><span class="badge-shop"><?php echo htmlspecialchars($row['category']); ?></span></td>
-                                <td>$<?php echo number_format($row['price'], 2); ?></td>
+                                <td>
+                                    <?php if (!empty($row['discount_price'])): ?>
+                                        <span style="text-decoration: line-through; color: #888; font-size: 0.9em;">$<?php echo number_format($row['price'], 2); ?></span>
+                                        <br><span style="color: var(--primary); font-weight: bold;">$<?php echo number_format($row['discount_price'], 2); ?></span>
+                                    <?php else: ?>
+                                        $<?php echo number_format($row['price'], 2); ?>
+                                    <?php endif; ?>
+                                    <br><small style="opacity:0.7;">QTY: <?php echo $row['quantity']; ?></small>
+                                </td>
                                 <td class="edit-button"><span class="material-icons edit-icon">edit</span></td>
                             </tr>
                         <?php endwhile; ?>
@@ -330,20 +350,22 @@ $products_result = $conn->query($products_sql);
                 </div>
             </div>
 
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px;">
                 <div><label>PRICE ($)</label><input type="number" name="price" step="0.01" required></div>
-                <div>
-                    <label>CATEGORY</label>
-                    <select name="category" required>
-                        <option value="Decks">DECKS</option>
-                        <option value="Trucks">TRUCKS</option>
-                        <option value="Wheels">WHEELS</option>
-                        <option value="Bearings">BEARINGS</option>
-                        <option value="Apparel">APPAREL</option>
-                        <option value="Accesories">ACCESORIES</option>
-                        <option value="Other">OTHER</option>
-                    </select>
-                </div>
+                <div><label>DISCOUNT ($)</label><input type="number" name="discount_price" step="0.01" placeholder="Optional"></div>
+                <div><label>QUANTITY</label><input type="number" name="quantity" min="0" required></div>
+            </div>
+            <div style="margin-top: 20px;">
+                <label>CATEGORY</label>
+                <select name="category" required>
+                    <option value="Decks">DECKS</option>
+                    <option value="Trucks">TRUCKS</option>
+                    <option value="Wheels">WHEELS</option>
+                    <option value="Bearings">BEARINGS</option>
+                    <option value="Apparel">APPAREL</option>
+                    <option value="Accesories">ACCESORIES</option>
+                    <option value="Other">OTHER</option>
+                </select>
             </div>
             <label>DESCRIPTION</label>
             <textarea name="description" rows="3" required></textarea>
@@ -372,20 +394,22 @@ $products_result = $conn->query($products_sql);
                 </div>
             </div>
 
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px;">
                 <div><label>PRICE ($)</label><input type="number" id="edit_price" name="price" step="0.01" required></div>
-                <div>
-                    <label>CATEGORY</label>
-                    <select id="edit_category" name="category" required>
-                        <option value="Decks">DECKS</option>
-                        <option value="Trucks">TRUCKS</option>
-                        <option value="Wheels">WHEELS</option>
-                        <option value="Bearings">BEARINGS</option>
-                        <option value="Apparel">APPAREL</option>
-                        <option value="Accesories">ACCESORIES</option>
-                        <option value="Other">OTHER</option>
-                    </select>
-                </div>
+                <div><label>DISCOUNT ($)</label><input type="number" id="edit_discount_price" name="discount_price" step="0.01" placeholder="Optional"></div>
+                <div><label>QUANTITY</label><input type="number" id="edit_quantity" name="quantity" min="0" required></div>
+            </div>
+            <div style="margin-top: 20px;">
+                <label>CATEGORY</label>
+                <select id="edit_category" name="category" required>
+                    <option value="Decks">DECKS</option>
+                    <option value="Trucks">TRUCKS</option>
+                    <option value="Wheels">WHEELS</option>
+                    <option value="Bearings">BEARINGS</option>
+                    <option value="Apparel">APPAREL</option>
+                    <option value="Accesories">ACCESORIES</option>
+                    <option value="Other">OTHER</option>
+                </select>
             </div>
             <label>DESCRIPTION</label>
             <textarea id="edit_description" name="description" rows="3" required></textarea>
