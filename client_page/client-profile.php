@@ -98,6 +98,20 @@ $buy_history_stmt->bind_param("i", $user_id);
 $buy_history_stmt->execute();
 $buy_history_result = $buy_history_stmt->get_result();
 
+// Fetch My Reels
+$my_reels_stmt = $conn->prepare("
+    SELECT r.id, r.title, r.description, r.embed_url, r.platform, r.is_approved, r.created_at,
+           (SELECT COUNT(*) FROM reel_likes WHERE reel_id = r.id) AS like_count,
+           (SELECT COUNT(*) FROM reel_comments WHERE reel_id = r.id) AS comment_count,
+           (SELECT COUNT(*) FROM reel_edit_requests WHERE reel_id = r.id AND status = 'pending') AS has_pending_edit
+    FROM reels r
+    WHERE r.user_id = ?
+    ORDER BY r.created_at DESC
+");
+$my_reels_stmt->bind_param("i", $user_id);
+$my_reels_stmt->execute();
+$my_reels_result = $my_reels_stmt->get_result();
+
 // --- POST: CONFIRM RECEIPT ---
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_receipt'])) {
     $order_id = (int)$_POST['order_id'];
@@ -284,6 +298,70 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_listing'])) {
     exit();
 }
 
+// --- POST: DELETE MY REEL ---
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_my_reel'])) {
+    $reel_id = (int)$_POST['reel_id'];
+    // Verify ownership
+    $own_check = $conn->prepare("SELECT id FROM reels WHERE id = ? AND user_id = ?");
+    $own_check->bind_param("ii", $reel_id, $user_id);
+    $own_check->execute();
+    if ($own_check->get_result()->num_rows > 0) {
+        $conn->query("DELETE FROM reel_edit_requests WHERE reel_id = $reel_id");
+        $conn->query("DELETE FROM reel_likes WHERE reel_id = $reel_id");
+        $conn->query("DELETE FROM reel_comments WHERE reel_id = $reel_id");
+        $conn->query("DELETE FROM reels WHERE id = $reel_id AND user_id = $user_id");
+        $_SESSION['msg'] = "REEL DELETED.";
+        $_SESSION['msg_type'] = "success";
+    } else {
+        $_SESSION['msg'] = "REEL NOT FOUND OR ACCESS DENIED.";
+        $_SESSION['msg_type'] = "error";
+    }
+    header("Location: client-profile.php");
+    exit();
+}
+
+// --- POST: SUBMIT REEL EDIT ---
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['submit_reel_edit'])) {
+    $reel_id = (int)$_POST['reel_id'];
+    $new_title = trim($_POST['new_title']);
+    $new_desc = trim($_POST['new_description']);
+
+    // Ownership check
+    $own_check = $conn->prepare("SELECT id FROM reels WHERE id = ? AND user_id = ?");
+    $own_check->bind_param("ii", $reel_id, $user_id);
+    $own_check->execute();
+    if ($own_check->get_result()->num_rows === 0) {
+        $_SESSION['msg'] = "ACCESS DENIED.";
+        $_SESSION['msg_type'] = "error";
+        header("Location: client-profile.php");
+        exit();
+    }
+
+    if (empty($new_title)) {
+        $_SESSION['msg'] = "TITLE IS REQUIRED.";
+        $_SESSION['msg_type'] = "error";
+    } elseif (mb_strlen($new_title) > 35) {
+        $_SESSION['msg'] = "TITLE IS TOO LONG (MAX 35).";
+        $_SESSION['msg_type'] = "error";
+    } elseif (mb_strlen($new_desc) > 100) {
+        $_SESSION['msg'] = "DESCRIPTION IS TOO LONG (MAX 100).";
+        $_SESSION['msg_type'] = "error";
+    } else {
+        // Cancel any existing pending edit for this reel
+        $cancel_edit = $conn->prepare("DELETE FROM reel_edit_requests WHERE reel_id = ? AND user_id = ? AND status = 'pending'");
+        $cancel_edit->bind_param("ii", $reel_id, $user_id);
+        $cancel_edit->execute();
+
+        $ins = $conn->prepare("INSERT INTO reel_edit_requests (reel_id, user_id, new_title, new_description) VALUES (?, ?, ?, ?)");
+        $ins->bind_param("iiss", $reel_id, $user_id, $new_title, $new_desc);
+        $ins->execute();
+        $_SESSION['msg'] = "EDIT SUBMITTED FOR ADMIN REVIEW.";
+        $_SESSION['msg_type'] = "success";
+    }
+    header("Location: client-profile.php");
+    exit();
+}
+
 // --- POST: DELETE ACCOUNT ---
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_account'])) {
     $del_listings = $conn->prepare("DELETE FROM products WHERE seller_id = ?");
@@ -453,6 +531,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_account'])) {
             <i class="fas fa-money-bill-alt"></i>
             <h3>SELL GEAR</h3>
         </div>
+        <div class="option-card" onclick="openModal('myReels')">
+            <i class="fa-solid fa-film"></i>
+            <h3>MY REELS</h3>
+        </div>
         <div class="option-card" onclick="openModal('myListings')">
             <i class="fa-solid fa-list-ul"></i>
             <h3>MY LISTINGS</h3>
@@ -591,6 +673,129 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_account'])) {
                 <button class="btn-primary-brutal" onclick="closeModal('myListings'); openModal('sellGear');">START SELLING</button>
             </div>
         <?php endif; ?>
+    </div>
+</div>
+
+<!-- === MY REELS MODAL === -->
+<div id="myReels" class="modal-overlay">
+    <div class="modal-content" style="max-width: 860px;">
+        <span class="close-modal" onclick="closeModal('myReels')">&times;</span>
+        <h3 class="admin-table-h3">MY <span class="header-span">REELS</span></h3>
+
+        <style>
+            .my-reel-card { border: 4px solid #000; padding: 1.5rem; margin-bottom: 1.5rem; background: #fff; display: flex; gap: 1.5rem; align-items: flex-start; box-shadow: 6px 6px 0 #000; transition: transform 0.2s; }
+            .my-reel-card:hover { transform: translateY(-2px); box-shadow: 8px 8px 0 #000; }
+            .my-reel-thumb { width: 320px; max-width: 100%; flex-shrink: 0; background: #000; aspect-ratio: 16/9; border: 3px solid #000; }
+            .my-reel-thumb iframe { width: 100%; height: 100%; border: none; display: block; }
+            .my-reel-info { flex: 1; min-width: 0; }
+            .my-reel-title { font-family: 'Staatliches', sans-serif; font-size: 1.6rem; letter-spacing: 1px; margin: 0 0 8px; color: #000; text-transform: uppercase; word-break: break-word; line-height: 1.1; }
+            .my-reel-desc { font-family: 'Inter', sans-serif; font-size: 0.95rem; color: #444; margin: 0 0 12px; word-break: break-word; line-height: 1.4; }
+            .my-reel-meta { display: flex; gap: 15px; font-family: 'Staatliches', sans-serif; font-size: 1rem; color: #555; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
+            .my-reel-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+            .my-reel-status { display: inline-block; font-family: 'Staatliches', sans-serif; font-size: 0.85rem; padding: 4px 10px; border: 2px solid #000; letter-spacing: 1px; margin-bottom: 10px; font-weight: bold; }
+            @media (max-width: 768px) { .my-reel-card { flex-direction: column; } .my-reel-thumb { width: 100%; } }
+            .reel-status-approved { background: #4ADE80; color: #000; }
+            .reel-status-pending-new { background: #ffcc00; border-color: #000; color: #000; }
+            .reel-status-rejected { background: var(--primary); border-color: #000; color: #fff; }
+            .reel-status-pending-edit { background: #a78bfa; border-color: #000; color: #fff; }
+            .my-reel-comments-container { margin-top: 10px; border-top: 1px dashed #ccc; padding-top: 10px; display: none; max-height: 150px; overflow-y: auto; }
+            .my-reel-comments-container::-webkit-scrollbar { width: 6px; }
+            .my-reel-comments-container::-webkit-scrollbar-track { background: #f1f1f1; border: 1px solid #ccc; }
+            .my-reel-comments-container::-webkit-scrollbar-thumb { background: #000; }
+            .my-reel-comments-container::-webkit-scrollbar-thumb:hover { background: var(--primary); }
+            .my-reel-comment { font-family: 'Inter', sans-serif; font-size: 0.85rem; color: #333; margin-bottom: 8px; border-bottom: 1px solid #eee; padding-bottom: 6px; }
+            .my-reel-comment strong { font-family: 'Staatliches', sans-serif; font-size: 0.95rem; letter-spacing: 0.5px; }
+            .my-reel-comment-date { font-size: 0.7rem; color: #888; margin-left: 6px; }
+            .btn-toggle-comments { background: none; border: none; font-family: 'Staatliches', sans-serif; color: #555; cursor: pointer; padding: 0; text-decoration: underline; font-size: 0.85rem; margin-left: 8px; }
+            .btn-toggle-comments:hover { color: var(--primary); }
+        </style>
+
+        <?php if ($my_reels_result && $my_reels_result->num_rows > 0): ?>
+            <?php while ($reel = $my_reels_result->fetch_assoc()): ?>
+                <div class="my-reel-card my-reel-page-item">
+                    <div class="my-reel-thumb">
+                        <iframe src="<?php echo htmlspecialchars($reel['embed_url']); ?>" allowfullscreen loading="lazy"></iframe>
+                    </div>
+                    <div class="my-reel-info">
+                        <?php if ($reel['is_approved'] == 1): ?>
+                            <span class="my-reel-status reel-status-approved">LIVE</span>
+                        <?php elseif ($reel['is_approved'] == 0): ?>
+                            <span class="my-reel-status reel-status-pending-new">PENDING APPROVAL</span>
+                        <?php elseif ($reel['is_approved'] == -1): ?>
+                            <span class="my-reel-status reel-status-rejected">REJECTED</span>
+                        <?php endif; ?>
+                        <?php if ($reel['has_pending_edit'] > 0): ?>
+                            <span class="my-reel-status reel-status-pending-edit">EDIT PENDING</span>
+                        <?php endif; ?>
+
+                        <p class="my-reel-title"><?php echo htmlspecialchars($reel['title']); ?></p>
+                        <?php if (!empty($reel['description'])): ?>
+                            <p class="my-reel-desc"><?php echo htmlspecialchars($reel['description']); ?></p>
+                        <?php endif; ?>
+                        <div class="my-reel-meta">
+                            <span><i class="fas fa-heart" style="color:var(--primary)"></i> <?php echo (int)$reel['like_count']; ?></span>
+                            <span>
+                                <i class="fas fa-comment" style="color:#555"></i> <?php echo (int)$reel['comment_count']; ?>
+                                <?php if ($reel['comment_count'] > 0): ?>
+                                    <button type="button" class="btn-toggle-comments" onclick="toggleReelComments(<?php echo $reel['id']; ?>)">VIEW</button>
+                                <?php endif; ?>
+                            </span>
+                            <span><?php echo date('M j, Y', strtotime($reel['created_at'])); ?></span>
+                        </div>
+                        <div class="my-reel-actions">
+                            <?php if ($reel['has_pending_edit'] == 0): ?>
+                                <button class="btn-mini btn-view" onclick="openEditReel(<?php echo $reel['id']; ?>, <?php echo htmlspecialchars(json_encode($reel['title'])); ?>, <?php echo htmlspecialchars(json_encode($reel['description'] ?? '')); ?>)">EDIT</button>
+                            <?php else: ?>
+                                <button class="btn-mini" style="background:#ccc; cursor:not-allowed;" disabled title="Edit already pending review">EDIT PENDING</button>
+                            <?php endif; ?>
+                            <form method="POST" action="client-profile.php" style="display:inline;" onsubmit="return confirm('DELETE THIS REEL PERMANENTLY? This cannot be undone.');">
+                                <input type="hidden" name="reel_id" value="<?php echo $reel['id']; ?>">
+                                <button type="submit" name="delete_my_reel" class="btn-mini btn-danger"><i class="fas fa-trash"></i> DELETE</button>
+                            </form>
+                        </div>
+                        <div id="reel-comments-<?php echo $reel['id']; ?>" class="my-reel-comments-container"></div>
+                    </div>
+                </div>
+            <?php endwhile; ?>
+
+            <div id="my-reels-pagination-controls" class="listing-pagination">
+                <button class="btn-pagination" onclick="changeMyReelsPage(-1)" id="prevReelBtn">
+                    <i class="fa-solid fa-chevron-left"></i>
+                </button>
+                <span id="myReelsPageIndicator" class="page-number">PAGE 1</span>
+                <button class="btn-pagination" onclick="changeMyReelsPage(1)" id="nextReelBtn">
+                    <i class="fa-solid fa-chevron-right"></i>
+                </button>
+            </div>
+            
+        <?php else: ?>
+            <div class="empty-placeholder-box">
+                <p class="empty-placeholder-title">YOU HAVEN'T POSTED ANY REELS YET.</p>
+                <p style="font-family:'Staatliches',sans-serif; color:#666; margin-bottom:20px;">Share your clips with the community.</p>
+                <button class="btn-primary-brutal" onclick="closeModal('myReels'); window.location.href='reels.php';">GO TO REELS</button>
+            </div>
+        <?php endif; ?>
+    </div>
+</div>
+
+<!-- === EDIT REEL SUB-MODAL === -->
+<div id="editReelModal" class="modal-overlay">
+    <div class="modal-content" style="max-width: 520px;">
+        <span class="close-modal" onclick="closeModal('editReelModal'); openModal('myReels');">&times;</span>
+        <h3 class="admin-table-h3">EDIT <span class="header-span">REEL</span></h3>
+        <p style="font-family:'Staatliches',sans-serif; color:#777; letter-spacing:1px; margin-bottom:1.2rem; font-size:0.95rem;">
+            YOUR EDIT WILL BE SENT FOR ADMIN REVIEW BEFORE GOING LIVE.
+        </p>
+        <form action="client-profile.php" method="POST" class="admin-form" id="edit-reel-form">
+            <input type="hidden" name="reel_id" id="edit-reel-id">
+            <label>TITLE <span style="font-family:'Inter',sans-serif; font-size:0.75rem; color:#999;">(MAX 35 CHARS)</span></label>
+            <input type="text" name="new_title" id="edit-reel-title" maxlength="35" required>
+            <div id="edit-reel-title-counter" style="font-family:'Staatliches',sans-serif; font-size:0.85rem; color:#777; text-align:right; margin-top:-0.8rem; margin-bottom:0.8rem; letter-spacing:1px;">35 characters remaining</div>
+            <label>DESCRIPTION <span style="font-family:'Inter',sans-serif; font-size:0.75rem; color:#999;">(MAX 100 CHARS, OPTIONAL)</span></label>
+            <textarea name="new_description" id="edit-reel-desc" rows="3" maxlength="100" style="resize:vertical;"></textarea>
+            <div id="edit-reel-desc-counter" style="font-family:'Staatliches',sans-serif; font-size:0.85rem; color:#777; text-align:right; margin-top:-0.8rem; margin-bottom:0.8rem; letter-spacing:1px;">100 characters remaining</div>
+            <button type="submit" name="submit_reel_edit" class="btn-primary-brutal btn-full">SUBMIT EDIT FOR REVIEW</button>
+        </form>
     </div>
 </div>
 
@@ -790,7 +995,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_account'])) {
 
 <script>
     function openModal(id) { 
-        document.getElementById(id).style.display = 'flex'; 
+        document.getElementById(id).classList.add('active'); 
         if (id === 'notificationsModal') {
             currentNotifPage = 1;
             updatePagination();
@@ -803,8 +1008,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_account'])) {
             currentBuyPage = 1;
             updateBuyPagination();
         }
+        if (id === 'myReels') {
+            currentMyReelsPage = 1;
+            updateMyReelsPagination();
+        }
     }
-    function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+    function closeModal(id) { document.getElementById(id).classList.remove('active'); }
 
     // --- LISTING EDIT LOGIC ---
     function openEditListing(id) {
@@ -828,6 +1037,78 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_account'])) {
         closeModal('editListingModal');
         openModal('myListings');
     }
+
+    // --- MY REELS EDIT LOGIC ---
+    function toggleReelComments(reelId) {
+        const container = document.getElementById('reel-comments-' + reelId);
+        if (container.style.display === 'block') {
+            container.style.display = 'none';
+            return;
+        }
+        
+        container.style.display = 'block';
+        container.innerHTML = '<div style="font-size:0.8rem; color:#666; font-family:\'Inter\',sans-serif;">LOADING COMMENTS...</div>';
+        
+        fetch(`reels-api.php?action=get_comments&reel_id=${reelId}`)
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    if (data.comments.length === 0) {
+                        container.innerHTML = '<div style="font-size:0.85rem; color:#666; font-family:\'Inter\',sans-serif;">No comments yet.</div>';
+                        return;
+                    }
+                    let html = '';
+                    data.comments.forEach(c => {
+                        html += `
+                            <div class="my-reel-comment">
+                                <strong>@${c.username}</strong>
+                                <span class="my-reel-comment-date">${c.created_at}</span>
+                                <div style="margin-top:2px;">${c.comment}</div>
+                            </div>
+                        `;
+                    });
+                    container.innerHTML = html;
+                } else {
+                    container.innerHTML = '<div style="font-size:0.85rem; color:red;">Error loading comments.</div>';
+                }
+            })
+            .catch(err => {
+                container.innerHTML = '<div style="font-size:0.85rem; color:red;">Network error.</div>';
+            });
+    }
+
+    function openEditReel(id, title, desc) {
+        document.getElementById('edit-reel-id').value = id;
+        document.getElementById('edit-reel-title').value = title;
+        document.getElementById('edit-reel-desc').value = desc;
+        updateReelEditCounter('edit-reel-title', 'edit-reel-title-counter', 35);
+        updateReelEditCounter('edit-reel-desc', 'edit-reel-desc-counter', 100);
+        closeModal('myReels');
+        openModal('editReelModal');
+    }
+
+    function updateReelEditCounter(inputId, counterId, max) {
+        const input = document.getElementById(inputId);
+        const counter = document.getElementById(counterId);
+        if (!input || !counter) return;
+        function refresh() {
+            const remaining = max - input.value.length;
+            counter.textContent = remaining + ' characters remaining';
+            counter.style.color = remaining <= 5 ? 'var(--primary)' : remaining <= 15 ? '#ffcc00' : '#777';
+        }
+        input.removeEventListener('input', input._reelCounterFn);
+        input._reelCounterFn = refresh;
+        input.addEventListener('input', refresh);
+        refresh();
+    }
+
+    // Initialise counters when edit reel modal opens
+    document.addEventListener('DOMContentLoaded', () => {
+        const titleInput = document.getElementById('edit-reel-title');
+        const descInput  = document.getElementById('edit-reel-desc');
+        if (titleInput) titleInput.addEventListener('input', () => updateReelEditCounter('edit-reel-title', 'edit-reel-title-counter', 35));
+        if (descInput)  descInput.addEventListener('input',  () => updateReelEditCounter('edit-reel-desc',  'edit-reel-desc-counter',  100));
+    });
 
     // --- BUY HISTORY PAGINATION ---
     let currentBuyPage = 1;
@@ -892,6 +1173,38 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_account'])) {
         updateListingPagination();
     }
 
+    // --- MY REELS PAGINATION ---
+    let currentMyReelsPage = 1;
+    const myReelsPerPage = 4;
+
+    function updateMyReelsPagination() {
+        const items = document.querySelectorAll('.my-reel-page-item');
+        const totalPages = Math.ceil(items.length / myReelsPerPage);
+        const prevBtn = document.getElementById('prevReelBtn');
+        const nextBtn = document.getElementById('nextReelBtn');
+        const indicator = document.getElementById('myReelsPageIndicator');
+
+        if (items.length === 0) {
+            const controls = document.getElementById('my-reels-pagination-controls');
+            if (controls) controls.style.display = 'none';
+            return;
+        }
+
+        items.forEach(item => item.style.display = 'none');
+        let start = (currentMyReelsPage - 1) * myReelsPerPage;
+        let end = start + myReelsPerPage;
+        for (let i = start; i < end; i++) { if (items[i]) items[i].style.display = 'flex'; }
+
+        if (indicator) indicator.innerText = `PAGE ${currentMyReelsPage} / ${totalPages}`;
+        if (prevBtn) prevBtn.disabled = currentMyReelsPage === 1;
+        if (nextBtn) nextBtn.disabled = currentMyReelsPage === totalPages || totalPages === 0;
+    }
+
+    function changeMyReelsPage(step) {
+        currentMyReelsPage += step;
+        updateMyReelsPagination();
+    }
+
     // --- NOTIFICATION LOGIC (Existing) ---
     let currentNotifPage = 1;
     const itemsPerPage = 5;
@@ -941,7 +1254,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_account'])) {
 
     function backToNotifications() { closeModal('fullMessageModal'); openModal('notificationsModal'); }
 
-    window.onclick = function(event) { if (event.target.className === 'modal-overlay') { event.target.style.display = 'none'; } }
+    window.onclick = function(event) { if (event.target.classList.contains('modal-overlay')) { event.target.classList.remove('active'); } }
 
     document.addEventListener("DOMContentLoaded", () => {
         const alertBox = document.getElementById('alert-box');

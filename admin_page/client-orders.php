@@ -156,35 +156,14 @@ $orders_stmt = $conn->query($sql);
 </header>
 
 <section class="admin-layout container">
-    <aside class="admin-sidebar grainy-card">
-        <h3 class="admin-sidebar-title">SYSTEM <span class="header-span">MENU<span></h3>
-        <ul class="admin-nav-list">
-            <li><a href="index.php"><span class="material-icons">dashboard</span> DASHBOARD</a></li>
-            <li><a href="shop-products.php"><span class="material-icons">inventory_2</span> THE VAULT (SHOP)</a></li>
-            <li><a href="marketplace-products.php"><span class="material-icons">storefront</span> STREET MARKET</a></li>
-            <li><a href="registered-users.php"><span class="material-icons">manage_accounts</span> REGISTERED USERS</a></li>
-            <li><a href="client-orders.php"  class="nav-relative active"><span class="material-icons">receipt_long</span> CLIENT ORDERS</a></li>
-            <li>
-                <a href="accept-product.php" class="<?php echo (basename($_SERVER['PHP_SELF']) == 'accept-product.php') ? '' : ''; ?>" style="position: relative;">
-                    <span class="material-icons">gavel</span> PENDING GEAR
-                    <?php if ($pending_count > 0): ?>
-                        <span class="notification-badge"><?php echo $pending_count; ?></span>
-                    <?php endif; ?>
-                </a>
-            </li>
-            <li>
-                <a href="verify-seller.php" class="nav-relative">
-                    <span class="material-icons">verified_user</span> TRUST & SAFETY
-                </a>
-            </li>
-            <li><a href="../index.php"><span class="material-icons">public</span> VIEW LIVE SITE</a></li>
-        </ul>
-    </aside>
+    <?php include 'admin_sidebar.php'; ?>
 
     <main class="admin-main">
-        <div class="shop-header-title">
-            <h2 class="glitch-text-admin">CLIENT <span class="text-primary">ORDERS</span></h2>
-            <p class="admin-text">VIEW AND SEARCH ALL CLIENT PURCHASES</p>
+        <div class="top-action-bar">
+            <div>
+                <h2 class="glitch-text-admin">CLIENT <span class="text-primary">ORDERS</span></h2>
+                <p class="admin-text-shop">VIEW AND SEARCH ALL CLIENT PURCHASES</p>
+            </div>
         </div>
 
         <?php if(isset($_SESSION['admin_msg'])): ?>

@@ -119,7 +119,7 @@ session_start();
     <div class="community-grid">
         
         <!-- THE REELS -->
-        <a href="#" class="community-card">
+        <a href="reels.php" class="community-card">
             <span class="material-icons community-icon">movie_filter</span>
             <h2>THE REELS</h2>
             <p>Watch clips, skate edits, and community videos.</p>

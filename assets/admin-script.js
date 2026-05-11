@@ -6,12 +6,12 @@
 // --- MODAL MANAGEMENT ---
 const openModal = (modalId) => {
     const modal = document.getElementById(modalId);
-    if (modal) modal.style.display = 'flex';
+    if (modal) modal.classList.add('active');
 };
 
 const closeModal = (modalId) => {
     const modal = document.getElementById(modalId);
-    if (modal) modal.style.display = 'none';
+    if (modal) modal.classList.remove('active');
 };
 
 /**
@@ -86,7 +86,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.addEventListener('click', (e) => {
         // Handle Modal Overlay Clicks
         if (e.target.classList.contains('modal-overlay')) {
-            e.target.style.display = 'none';
+            e.target.classList.remove('active');
         }
 
         // Handle Custom Dropdown Outside Clicks

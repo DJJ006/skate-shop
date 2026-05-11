@@ -54,6 +54,12 @@ $active_stmt->bind_param("i", $seller_id);
 $active_stmt->execute();
 $active_count = $active_stmt->get_result()->fetch_assoc()['active'] ?? 0;
 
+// Reels Count
+$reels_stmt = $conn->prepare("SELECT COUNT(*) as total_reels FROM reels WHERE user_id = ? AND is_approved = 1");
+$reels_stmt->bind_param("i", $seller_id);
+$reels_stmt->execute();
+$reels_count = $reels_stmt->get_result()->fetch_assoc()['total_reels'] ?? 0;
+
 // Ratings Data
 $rating_stmt = $conn->prepare("SELECT AVG(rating) as avg_rating, COUNT(*) as total_ratings FROM seller_ratings WHERE seller_id = ?");
 $rating_stmt->bind_param("i", $seller_id);
@@ -105,6 +111,13 @@ $profile_pic = !empty($seller['profile_pic']) ? $seller['profile_pic'] : '../ass
                     ACTIVE GEAR:
                     <span class="user-profile-meta-value user-profile-meta-value-primary">
                         <?php echo (int)$active_count; ?>
+                    </span>
+                </span>
+
+                <span class="user-profile-meta-chip">
+                    REELS:
+                    <span class="user-profile-meta-value user-profile-meta-value-primary">
+                        <?php echo (int)$reels_count; ?>
                     </span>
                 </span>
             </div>

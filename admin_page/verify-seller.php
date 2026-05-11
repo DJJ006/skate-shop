@@ -79,30 +79,10 @@ $sellers_stmt = $conn->query("SELECT id, username, is_verified FROM users ORDER 
 </header>
 
 <section class="admin-layout container">
-    <aside class="admin-sidebar grainy-card sidebar-accept" style="margin-top: 2.9rem;">
-        <h3 class="admin-sidebar-title">SYSTEM <span class="header-span">MENU<span></h3>
-        <ul class="admin-nav-list">
-            <li><a href="index.php"><span class="material-icons">dashboard</span> DASHBOARD</a></li>
-            <li><a href="shop-products.php"><span class="material-icons">inventory_2</span> THE VAULT (SHOP)</a></li>
-            <li><a href="marketplace-products.php"><span class="material-icons">storefront</span> STREET MARKET</a></li>
-            <li><a href="registered-users.php"><span class="material-icons">manage_accounts</span> REGISTERED USERS</a></li>
-            <li><a href="client-orders.php"><span class="material-icons">receipt_long</span> CLIENT ORDERS</a></li>
-            <li>
-                <a href="accept-product.php" class="<?php echo (basename($_SERVER['PHP_SELF']) == 'accept-product.php') ? '' : ''; ?>" style="position: relative;">
-                    <span class="material-icons">gavel</span> PENDING GEAR
-                    <?php if ($pending_count > 0): ?>
-                        <span class="notification-badge"><?php echo $pending_count; ?></span>
-                    <?php endif; ?>
-                </a>
-            </li>
-            <li>
-                <a href="verify-seller.php" class="nav-relative active">
-                    <span class="material-icons">verified_user</span> TRUST & SAFETY
-                </a>
-            </li>
-            <li><a href="../index.php"><span class="material-icons">public</span> VIEW LIVE SITE</a></li>
-        </ul>
-    </aside>
+    
+<div style="margin-top: 47px;">
+    <?php include 'admin_sidebar.php'; ?>
+</div>
 
     <main class="admin-main">
         <div class="top-action-bar">

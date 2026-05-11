@@ -2,15 +2,6 @@
 // Adjust the path to your db.php since this is inside an 'admin' folder
 include '../db.php';
 
-$count_sql = "SELECT COUNT(*) as pending_count FROM products WHERE is_marketplace = 1 AND is_approved = 0";
-$count_result = $conn->query($count_sql);
-$pending_count = 0;
-
-if ($count_result) {
-    $count_row = $count_result->fetch_assoc();
-    $pending_count = (int)$count_row['pending_count'];
-}
-
 
 // Fetch basic statistics from the database
 $shop_count_res = $conn->query("SELECT COUNT(*) as count FROM products WHERE is_marketplace = 0");
@@ -56,35 +47,16 @@ $recent_result = $conn->query($recent_sql);
 
 <section class="admin-layout container">
     
-    <aside class="admin-sidebar grainy-card">
-        <h3 class="admin-sidebar-title">SYSTEM <span class="header-span">MENU<span></h3>
-        <ul class="admin-nav-list">
-            <li><a href="index.php" class="active"><span class="material-icons">dashboard</span> DASHBOARD</a></li>
-            <li><a href="shop-products.php"><span class="material-icons">inventory_2</span> THE VAULT (SHOP)</a></li>
-            <li><a href="marketplace-products.php"><span class="material-icons">storefront</span> STREET MARKET</a></li>
-            <li><a href="registered-users.php"><span class="material-icons">manage_accounts</span> REGISTERED USERS</a></li>
-            <li><a href="client-orders.php"><span class="material-icons">receipt_long</span> CLIENT ORDERS</a></li>
-            <li>
-                <a href="accept-product.php" class="<?php echo (basename($_SERVER['PHP_SELF']) == 'accept-product.php') ? '' : ''; ?>" style="position: relative;">
-                    <span class="material-icons">gavel</span> PENDING GEAR
-                    <?php if ($pending_count > 0): ?>
-                        <span class="notification-badge"><?php echo $pending_count; ?></span>
-                    <?php endif; ?>
-                </a>
-            </li>
-            <li>
-                <a href="verify-seller.php" class="nav-relative">
-                    <span class="material-icons">verified_user</span> TRUST & SAFETY
-                </a>
-            </li>
-            <li><a href="../index.php"><span class="material-icons">public</span> VIEW LIVE SITE</a></li>
-        </ul>
-    </aside>
+   <div style="margin-top: 47px;">
+    <?php include 'admin_sidebar.php'; ?>
+</div>
 
     <main class="admin-main">
-        <div class="shop-header-title">
-            <h2 class="glitch-text-admin">COMMAND <span class="text-primary">CENTER</span></h2>
-            <p class="admin-text">SYSTEM OVERVIEW & STATISTICS</p>
+        <div class="top-action-bar">
+            <div>
+                <h2 class="glitch-text-admin">COMMAND <span class="text-primary">CENTER</span></h2>
+                <p class="admin-text-shop">SYSTEM OVERVIEW & STATISTICS</p>
+            </div>
         </div>
 
         <div class="stats-grid">
