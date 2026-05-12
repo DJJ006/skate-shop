@@ -1,5 +1,5 @@
 document.addEventListener('DOMContentLoaded', () => {
-    
+
     // --- 1. MOBILE HAMBURGER NAVIGATION ---
     const menuBtn = document.getElementById('menu-btn');
     const navMenu = document.getElementById('nav-menu');
@@ -21,7 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- 2. VIDEO PLAYER (Only runs if video exists) ---
     const video = document.getElementById('video-display');
-    if (video) {
+    if (video && video.tagName === 'VIDEO') {
         const playIcon = document.getElementById('play-icon');
         const timer = document.getElementById('timer');
         const monitor = document.getElementById('monitor-container');
@@ -138,55 +138,55 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
 
-    
-        const qnaItems = document.querySelectorAll('.qna-item');
-    
-        qnaItems.forEach(item => {
-            item.addEventListener('click', () => {
-                // Optional: Close other open items (Single-dropdown mode)
-                qnaItems.forEach(otherItem => {
-                    if (otherItem !== item) otherItem.classList.remove('active');
-                });
-    
-                // Toggle current item
-                item.classList.toggle('active');
+
+    const qnaItems = document.querySelectorAll('.qna-item');
+
+    qnaItems.forEach(item => {
+        item.addEventListener('click', () => {
+            // Optional: Close other open items (Single-dropdown mode)
+            qnaItems.forEach(otherItem => {
+                if (otherItem !== item) otherItem.classList.remove('active');
             });
+
+            // Toggle current item
+            item.classList.toggle('active');
         });
-    
-
-
-        const filterToggle = document.getElementById('filterToggle');
-        const filterContent = document.getElementById('filterContent');
-        if (filterToggle && filterContent) {
-            filterToggle.addEventListener('click', function() {
-                // Toggle the 'active' class on both button and content
-                this.classList.toggle('active');
-                filterContent.classList.toggle('active');
-    
-                // Optional: Rotate the icon when open
-                const icon = this.querySelector('.material-icons');
-                if (this.classList.contains('active')) {
-                    icon.textContent = 'expand_less';
-                } else {
-                    icon.textContent = 'expand_more';
-                }
-            });
-        }
+    });
 
 
 
-            // Image Swapper for Product Page
+    const filterToggle = document.getElementById('filterToggle');
+    const filterContent = document.getElementById('filterContent');
+    if (filterToggle && filterContent) {
+        filterToggle.addEventListener('click', function () {
+            // Toggle the 'active' class on both button and content
+            this.classList.toggle('active');
+            filterContent.classList.toggle('active');
+
+            // Optional: Rotate the icon when open
+            const icon = this.querySelector('.material-icons');
+            if (this.classList.contains('active')) {
+                icon.textContent = 'expand_less';
+            } else {
+                icon.textContent = 'expand_more';
+            }
+        });
+    }
+
+
+
+    // Image Swapper for Product Page
     function swapImage(thumbElement, newImageSrc) {
         // 1. Change the main image
         const mainImg = document.getElementById('main-product-img');
         mainImg.src = newImageSrc;
-        
+
         // 2. Remove 'active' class from all thumbs
         const thumbs = document.querySelectorAll('.thumb');
         thumbs.forEach(t => t.classList.remove('active-thumb'));
-        
+
         // 3. Add 'active' class to clicked thumb
         thumbElement.classList.add('active-thumb');
     }
-        
+
 });

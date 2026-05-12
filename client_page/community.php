@@ -126,7 +126,7 @@ session_start();
         </a>
 
         <!-- THE MAG -->
-        <a href="#" class="community-card">
+        <a href="the-mag.php" class="community-card">
             <span class="material-icons community-icon">auto_stories</span>
             <h2>THE MAG</h2>
             <p>Posts, stories, skate culture, and shop updates.</p>

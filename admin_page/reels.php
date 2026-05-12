@@ -30,13 +30,27 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['admin_delete_comment']
     exit();
 }
 
+// Handle search
+$search_query = isset($_GET['search']) ? trim($_GET['search']) : "";
+
 // Fetch all approved reels with counts
-$reels_sql = "SELECT r.*, 
+$reels_sql = "SELECT r.*, u.username,
     (SELECT COUNT(*) FROM reel_likes WHERE reel_id = r.id) as like_count,
     (SELECT COUNT(*) FROM reel_comments WHERE reel_id = r.id) as comment_count
     FROM reels r 
-    WHERE r.is_approved = 1 
-    ORDER BY r.created_at DESC";
+    JOIN users u ON r.user_id = u.id
+    WHERE r.is_approved = 1";
+
+if ($search_query !== "") {
+    $clean_search = $conn->real_escape_string($search_query);
+    $reels_sql .= " AND (
+        r.id = '" . (int)$clean_search . "'
+        OR r.title LIKE '%$clean_search%'
+        OR u.username LIKE '%$clean_search%'
+    )";
+}
+
+$reels_sql .= " ORDER BY r.created_at DESC";
 $reels_result = $conn->query($reels_sql);
 
 $modals_html = [];
@@ -64,6 +78,18 @@ $modals_html = [];
     .btn-delete-comment { background: var(--primary); color: white; border: 2px solid var(--charcoal); padding: 4px 10px; font-family: 'Staatliches', sans-serif; font-size: 0.85rem; cursor: pointer; transition: 0.2s; }
     .btn-delete-comment:hover { background: var(--charcoal); }
     .likes-comments-badge { display: inline-flex; align-items: center; gap: 4px; font-family: 'Staatliches', sans-serif; font-size: 1rem; }
+
+    /* --- SCROLLABLE COMMENTS CONTAINER --- */
+    .admin-modal-comments-container {
+        max-height: 250px;
+        overflow-y: auto;
+        padding-right: 10px;
+        margin-bottom: 1rem;
+    }
+    .admin-modal-comments-container::-webkit-scrollbar { width: 10px; }
+    .admin-modal-comments-container::-webkit-scrollbar-track { background: #e0e0e0; border: 2px solid var(--charcoal); }
+    .admin-modal-comments-container::-webkit-scrollbar-thumb { background: var(--charcoal); border: 1px solid #000; }
+    .admin-modal-comments-container::-webkit-scrollbar-thumb:hover { background: var(--primary); }
 
     /* --- FIXED ACTIONS COLUMN --- */
     .recent-activity-table td:last-child { 
@@ -121,6 +147,24 @@ $modals_html = [];
 
         <div class="grainy-card" style="padding: 20px;">
             <h3 class="admin-table-h3">PUBLISHED <span class="header-span">REELS</span></h3>
+
+            <!-- SEARCH BAR -->
+            <div class="grainy-card filter-bar" style="margin-bottom: 25px; padding: 20px; border: 3px solid var(--charcoal);">
+                <form method="GET" action="reels.php" class="search-filter-form">
+                    <div class="filter-group search-box" style="flex: 2;">
+                        <label>SEARCH REELS</label>
+                        <input type="text" name="search" placeholder="ID, Title, or Username..." value="<?php echo htmlspecialchars($search_query); ?>">
+                    </div>
+
+                    <div class="filter-actions" style="margin-top:22px;">
+                        <button type="submit" class="btn-filter">SEARCH</button>
+                        <?php if (!empty($search_query)): ?>
+                            <a href="reels.php" class="btn-reset">RESET</a>
+                        <?php endif; ?>
+                    </div>
+                </form>
+            </div>
+
             <table class="recent-activity-table">
                 <thead>
                     <tr>
@@ -134,7 +178,7 @@ $modals_html = [];
                     </tr>
                 </thead>
                 <tbody>
-                    <?php if ($reels_result->num_rows > 0): ?>
+                    <?php if ($reels_result && $reels_result->num_rows > 0): ?>
                         <?php while($item = $reels_result->fetch_assoc()):
                             $post_date = date("M j, Y", strtotime($item['created_at']));
                             // Fetch comments for this reel's modal
@@ -182,24 +226,26 @@ $modals_html = [];
                                     <?php endif; ?>
 
                                     <h4 style="font-family:'Staatliches',sans-serif; font-size:1.5rem; margin: 1.5rem 0 0.8rem; border-bottom:2px solid #ddd; padding-bottom:0.5rem;">COMMENTS (<?php echo $item['comment_count']; ?>)</h4>
-                                    <?php if ($comments_q && $comments_q->num_rows > 0): ?>
-                                        <?php while($c = $comments_q->fetch_assoc()): ?>
-                                            <div class="admin-comment-item">
-                                                <div class="comment-info">
-                                                    <strong>@<?php echo htmlspecialchars($c['username']); ?></strong>
-                                                    <small><?php echo date('M j, Y H:i', strtotime($c['created_at'])); ?></small>
-                                                    <p><?php echo htmlspecialchars($c['comment']); ?></p>
+                                    <div class="admin-modal-comments-container">
+                                        <?php if ($comments_q && $comments_q->num_rows > 0): ?>
+                                            <?php while($c = $comments_q->fetch_assoc()): ?>
+                                                <div class="admin-comment-item">
+                                                    <div class="comment-info">
+                                                        <strong>@<?php echo htmlspecialchars($c['username']); ?></strong>
+                                                        <small><?php echo date('M j, Y H:i', strtotime($c['created_at'])); ?></small>
+                                                        <p><?php echo htmlspecialchars($c['comment']); ?></p>
+                                                    </div>
+                                                    <form method="POST" onsubmit="return confirm('Delete this comment?');">
+                                                        <input type="hidden" name="comment_id" value="<?php echo $c['id']; ?>">
+                                                        <input type="hidden" name="return_reel_id" value="<?php echo $item['id']; ?>">
+                                                        <button type="submit" name="admin_delete_comment" class="btn-delete-comment"><i class="fas fa-trash"></i></button>
+                                                    </form>
                                                 </div>
-                                                <form method="POST" onsubmit="return confirm('Delete this comment?');">
-                                                    <input type="hidden" name="comment_id" value="<?php echo $c['id']; ?>">
-                                                    <input type="hidden" name="return_reel_id" value="<?php echo $item['id']; ?>">
-                                                    <button type="submit" name="admin_delete_comment" class="btn-delete-comment"><i class="fas fa-trash"></i></button>
-                                                </form>
-                                            </div>
-                                        <?php endwhile; ?>
-                                    <?php else: ?>
-                                        <p style="color:#999; font-style:italic; font-family:'Staatliches',sans-serif;">NO COMMENTS YET.</p>
-                                    <?php endif; ?>
+                                            <?php endwhile; ?>
+                                        <?php else: ?>
+                                            <p style="color:#999; font-style:italic; font-family:'Staatliches',sans-serif;">NO COMMENTS YET.</p>
+                                        <?php endif; ?>
+                                    </div>
                                 </div>
                             </div>
                             <?php $modals_html[] = ob_get_clean(); ?>

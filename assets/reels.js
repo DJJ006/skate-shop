@@ -17,7 +17,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Video switching
     const tapes = document.querySelectorAll('.tape-item');
-    const iframe = document.getElementById('video-display');
+    const iframe = document.getElementById('reel-video-display');
     const monitor = document.getElementById('monitor-container');
     const reelTitle = document.getElementById('reel-title');
     const reelMeta = document.getElementById('reel-meta');
@@ -60,7 +60,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 '<button class="comment-delete-btn" onclick="deleteComment(' + c.id + ')">DELETE</button>' +
                 '</div>';
         }
-        div.innerHTML = '<div class="comment-header"><strong>@' + c.username + '</strong><span class="comment-date">' + c.created_at + '</span></div>' +
+        div.innerHTML = '<div class="comment-header"><strong><a href="javascript:void(0)" onclick="openUserProfile(\'' + encodeURIComponent(c.username) + '\')" style="color:var(--primary); text-decoration:underline; font-weight:bold;">@' + c.username + '</a></strong><span class="comment-date">' + c.created_at + '</span></div>' +
             '<p class="comment-text" id="comment-text-' + c.id + '">' + c.comment + '</p>' + actions;
 
         if (prepend) {
@@ -182,9 +182,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     // Update reel ID, likes, comments
                     currentReelId = this.getAttribute('data-reel-id');
                     document.getElementById('current-reel-id').value = currentReelId;
-                    likeCount.textContent = this.getAttribute('data-likes');
-                    const userLiked = this.getAttribute('data-user-liked') === '1';
-                    likeBtn.classList.toggle('liked', userLiked);
+                    if (likeCount) likeCount.textContent = this.getAttribute('data-likes');
+                    if (likeBtn) {
+                        const userLiked = this.getAttribute('data-user-liked') === '1';
+                        likeBtn.classList.toggle('liked', userLiked);
+                    }
 
                     // Reload comments if open
                     if (commentsBox && commentsBox.classList.contains('open')) {

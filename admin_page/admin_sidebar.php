@@ -62,6 +62,11 @@ $current_page = basename($_SERVER['PHP_SELF']);
             </a>
         </li>
         <li>
+            <a href="mag.php" class="nav-relative <?php echo ($current_page == 'mag.php') ? 'active' : ''; ?>">
+                <span class="material-icons">auto_stories</span> THE MAG
+            </a>
+        </li>
+        <li>
             <a href="verify-seller.php" class="nav-relative <?php echo ($current_page == 'verify-seller.php') ? 'active' : ''; ?>">
                 <span class="material-icons">verified_user</span> TRUST & SAFETY
             </a>

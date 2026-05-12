@@ -410,11 +410,11 @@ function openCancelModal(orderId, purchaseCode) {
     document.getElementById('cancelOrderCode').textContent = purchaseCode;
     document.getElementById('cancelReasonInput').value = '';
     document.getElementById('cancelCharCount').textContent = '0 / 1000';
-    document.getElementById('cancelOrderModal').style.display = 'flex';
+    document.getElementById('cancelOrderModal').classList.add('active');
 }
 
 function closeCancelModal() {
-    document.getElementById('cancelOrderModal').style.display = 'none';
+    document.getElementById('cancelOrderModal').classList.remove('active');
 }
 
 // Character counter
@@ -490,11 +490,11 @@ function openOrderDetailsModal(rowElem) {
         notesContainer.textContent = 'N/A';
     }
     
-    document.getElementById('orderDetailsModal').style.display = 'flex';
+    document.getElementById('orderDetailsModal').classList.add('active');
 }
 
 function closeOrderDetailsModal() {
-    document.getElementById('orderDetailsModal').style.display = 'none';
+    document.getElementById('orderDetailsModal').classList.remove('active');
 }
 
 document.getElementById('orderDetailsModal').addEventListener('click', function(e) {

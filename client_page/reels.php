@@ -104,6 +104,50 @@ while ($row = $reels_result->fetch_assoc()) $reels[] = $row;
         .system-alert.error { background: var(--primary); color: white; border-color: #000; }
         .fade-out { opacity: 0; }
 
+
+        .mag-hero {
+            text-align: center;
+            padding: 4rem 1rem 2.5rem;
+            background-color: var(--charcoal);
+            background-image: radial-gradient(var(--textwhite) 1px, transparent 1px);
+            background-size: 20px 20px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .mag-hero h1 {
+            font-size: 5rem;
+            color: var(--textwhite);
+            text-shadow: 4px 4px 0px var(--primary);
+            margin-bottom: 0.5rem;
+        }
+
+        .mag-hero h1 span{
+            font-size: 5rem;
+            color: var(--textwhite);
+            text-shadow: 4px 4px 0px var(--primary);
+            margin-bottom: 0.5rem;
+        }
+
+        .mag-hero-sub {
+            font-family: 'Staatliches', sans-serif;
+            font-size: 1.4rem;
+            letter-spacing: 4px;
+            color: var(--textwhite);
+            opacity: 0.9;
+        }
+        .mag-issue-ribbon {
+            display: inline-block;
+            background: var(--primary);
+            color: #fff;
+            font-family: 'Staatliches', sans-serif;
+            font-size: 1rem;
+            letter-spacing: 3px;
+            padding: 4px 20px;
+            margin-top: 1rem;
+            transform: skewX(-6deg);
+        }
+
         /* Upload modal */
         .reel-modal-overlay { 
             display: flex; 
@@ -448,6 +492,13 @@ while ($row = $reels_result->fetch_assoc()) $reels[] = $row;
 
 <?php include 'header.php'; ?>
 
+<div class="mag-hero noise-bg">
+    <div class="container">
+        <h1 class="glitch-text">THE <span class="text-primary">REELS</span></h1>
+        <p class="mag-hero-sub">MOTION / STREETS / SPOTS / STYLE</p>
+    </div>
+</div>
+
 <section class="reels-section" style="min-height: 80vh; padding-top: 4rem;">
     <div class="container">
 
@@ -514,7 +565,7 @@ while ($row = $reels_result->fetch_assoc()) $reels[] = $row;
                             <div class="monitor-screen" id="play-trigger">
                                 <div class="scanlines"></div>
                                 <div class="glitch-overlay" id="glitch-layer"></div>
-                                <iframe id="video-display" src="<?php echo htmlspecialchars($reels[0]['embed_url']); ?>" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+                                <iframe id="reel-video-display" src="<?php echo htmlspecialchars($reels[0]['embed_url']); ?>" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
                             </div>
                             <div class="monitor-footer">
                                 <div class="footer-top-row" style="position: relative;">
@@ -537,7 +588,7 @@ while ($row = $reels_result->fetch_assoc()) $reels[] = $row;
                                         <i class="fas fa-heart"></i> <span id="like-count"><?php echo $reels[0]['like_count']; ?></span>
                                     </button>
                                 <?php else: ?>
-                                    <span style="color:#666; font-family:'Staatliches',sans-serif; font-size:1.1rem;"><i class="fas fa-heart"></i> <?php echo $reels[0]['like_count']; ?></span>
+                                    <span style="color:#666; font-family:'Staatliches',sans-serif; font-size:1.1rem; display: flex; align-items: center; gap: 8px;"><i class="fas fa-heart"></i> <span id="like-count"><?php echo $reels[0]['like_count']; ?></span></span>
                                 <?php endif; ?>
                                 <button class="toggle-comments-btn" id="toggle-comments">COMMENTS</button>
                             </div>
@@ -551,6 +602,10 @@ while ($row = $reels_result->fetch_assoc()) $reels[] = $row;
                                         </div>
                                         <div class="char-counter" style="margin-top: 7px;" id="comment-counter">75 characters remaining</div>
                                     </form>
+                                <?php else: ?>
+                                    <div style="text-align: center; margin-bottom: 1.5rem; padding: 1.5rem; background: var(--bg-light); border: 2px dashed var(--charcoal);">
+                                        <p style="font-family: 'Staatliches', sans-serif; font-size: 1.2rem; color: var(--charcoal); margin: 0; letter-spacing: 1px;">YOU MUST <a href="login.php" style="color: var(--primary); text-decoration: underline;">LOGIN</a> TO LEAVE A COMMENT.</p>
+                                    </div>
                                 <?php endif; ?>
 
                                 <div class="comment-sort-bar">
