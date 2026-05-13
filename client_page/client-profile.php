@@ -2,6 +2,16 @@
 session_start();
 include '../db.php'; 
 
+// --- MIGRATION: Ensure hidden columns exist for cleanup feature ---
+$check_p = $conn->query("SHOW COLUMNS FROM products LIKE 'hidden_from_seller'");
+if ($check_p->num_rows == 0) {
+    $conn->query("ALTER TABLE products ADD COLUMN hidden_from_seller TINYINT(1) DEFAULT 0");
+}
+$check_o = $conn->query("SHOW COLUMNS FROM orders LIKE 'hidden_from_buyer'");
+if ($check_o->num_rows == 0) {
+    $conn->query("ALTER TABLE orders ADD COLUMN hidden_from_buyer TINYINT(1) DEFAULT 0");
+}
+
 if (!isset($_SESSION['user_id'])) {
     header("Location: login.php");
     exit();
@@ -15,6 +25,16 @@ if (isset($_GET['get_listing_details'])) {
     $p_id = (int)$_GET['get_listing_details'];
     $stmt = $conn->prepare("SELECT * FROM products WHERE id = ? AND seller_id = ?");
     $stmt->bind_param("ii", $p_id, $user_id);
+    $stmt->execute();
+    echo json_encode($stmt->get_result()->fetch_assoc());
+    exit();
+}
+
+// --- AJAX: FETCH SINGLE QNA DETAILS ---
+if (isset($_GET['get_qna_details'])) {
+    $q_id = (int)$_GET['get_qna_details'];
+    $stmt = $conn->prepare("SELECT * FROM community_qna WHERE id = ? AND user_id = ?");
+    $stmt->bind_param("ii", $q_id, $user_id);
     $stmt->execute();
     echo json_encode($stmt->get_result()->fetch_assoc());
     exit();
@@ -85,7 +105,7 @@ $list_stmt = $conn->prepare("
     SELECT p.id, p.title, p.price, p.image_url, p.is_approved,
            (SELECT COUNT(*) FROM orders o WHERE o.product_id = p.id AND o.status IN ('PAID', 'RECEIVED')) as sold_count
     FROM products p 
-    WHERE p.seller_id = ? AND p.is_marketplace = 1 
+    WHERE p.seller_id = ? AND p.is_marketplace = 1 AND p.hidden_from_seller = 0
     ORDER BY p.id DESC
 ");
 $list_stmt->bind_param("i", $user_id);
@@ -93,7 +113,7 @@ $list_stmt->execute();
 $user_listings = $list_stmt->get_result();
 
 // Fetch Buy History
-$buy_history_stmt = $conn->prepare("SELECT o.id as order_id, o.amount, o.created_at, o.status, p.title, p.image_url FROM orders o JOIN products p ON o.product_id = p.id WHERE o.buyer_id = ? AND o.status IN ('PAID', 'CANCELLED', 'RECEIVED') ORDER BY o.created_at DESC");
+$buy_history_stmt = $conn->prepare("SELECT o.id as order_id, o.amount, o.created_at, o.status, p.title, p.image_url FROM orders o JOIN products p ON o.product_id = p.id WHERE o.buyer_id = ? AND o.status IN ('PAID', 'CANCELLED', 'RECEIVED') AND o.hidden_from_buyer = 0 ORDER BY o.created_at DESC");
 $buy_history_stmt->bind_param("i", $user_id);
 $buy_history_stmt->execute();
 $buy_history_result = $buy_history_stmt->get_result();
@@ -111,6 +131,12 @@ $my_reels_stmt = $conn->prepare("
 $my_reels_stmt->bind_param("i", $user_id);
 $my_reels_stmt->execute();
 $my_reels_result = $my_reels_stmt->get_result();
+
+// Fetch My QNAs
+$my_qna_stmt = $conn->prepare("SELECT * FROM community_qna WHERE user_id = ? AND status != 'rejected' ORDER BY created_at DESC");
+$my_qna_stmt->bind_param("i", $user_id);
+$my_qna_stmt->execute();
+$my_qna_result = $my_qna_stmt->get_result();
 
 // --- POST: CONFIRM RECEIPT ---
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_receipt'])) {
@@ -153,7 +179,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_receipt'])) {
                 $payout_stmt->execute();
 
                 $seller_msg = "Your funds have been released! $" . number_format($seller_payout, 2) . " has been added to your Wallet for a confirmed delivery.";
-                $seller_notif_stmt = $conn->prepare("INSERT INTO notifications (user_id, message) VALUES (?, ?)");
+                $seller_notif_stmt = $conn->prepare("INSERT INTO notifications (user_id, message, is_read) VALUES (?, ?, 0)");
                 $seller_notif_stmt->bind_param("is", $seller_id, $seller_msg);
                 $seller_notif_stmt->execute();
             }
@@ -177,6 +203,41 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_receipt'])) {
     exit();
 }
 
+// --- POST: HIDE INVENTORY ITEM (SOLD) ---
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['hide_inventory_item'])) {
+    $product_id = (int)$_POST['product_id'];
+    // Verify ownership
+    $check = $conn->prepare("SELECT id FROM products WHERE id = ? AND seller_id = ?");
+    $check->bind_param("ii", $product_id, $user_id);
+    $check->execute();
+    if ($check->get_result()->num_rows > 0) {
+        $upd = $conn->prepare("UPDATE products SET hidden_from_seller = 1 WHERE id = ?");
+        $upd->bind_param("i", $product_id);
+        $upd->execute();
+        $_SESSION['msg'] = "ITEM REMOVED FROM VIEW.";
+        $_SESSION['msg_type'] = "success";
+    }
+    header("Location: client-profile.php");
+    exit();
+}
+
+// --- POST: HIDE BUY HISTORY ITEM (CANCELLED/RECEIVED) ---
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['hide_buy_history_item'])) {
+    $order_id = (int)$_POST['order_id'];
+    // Verify ownership and status
+    $check = $conn->prepare("SELECT id FROM orders WHERE id = ? AND buyer_id = ? AND status IN ('CANCELLED', 'RECEIVED')");
+    $check->bind_param("ii", $order_id, $user_id);
+    $check->execute();
+    if ($check->get_result()->num_rows > 0) {
+        $upd = $conn->prepare("UPDATE orders SET hidden_from_buyer = 1 WHERE id = ?");
+        $upd->bind_param("i", $order_id);
+        $upd->execute();
+        $_SESSION['msg'] = "ORDER REMOVED FROM VIEW.";
+        $_SESSION['msg_type'] = "success";
+    }
+    header("Location: client-profile.php");
+    exit();
+}
 
 // --- POST: UPDATE PROFILE ---
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_profile'])) {
@@ -302,19 +363,29 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_listing'])) {
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_my_reel'])) {
     $reel_id = (int)$_POST['reel_id'];
     // Verify ownership
-    $own_check = $conn->prepare("SELECT id FROM reels WHERE id = ? AND user_id = ?");
-    $own_check->bind_param("ii", $reel_id, $user_id);
-    $own_check->execute();
-    if ($own_check->get_result()->num_rows > 0) {
-        $conn->query("DELETE FROM reel_edit_requests WHERE reel_id = $reel_id");
-        $conn->query("DELETE FROM reel_likes WHERE reel_id = $reel_id");
-        $conn->query("DELETE FROM reel_comments WHERE reel_id = $reel_id");
-        $conn->query("DELETE FROM reels WHERE id = $reel_id AND user_id = $user_id");
-        $_SESSION['msg'] = "REEL DELETED.";
+    $r_id = (int)$_POST['reel_id'];
+    // Delete reel and dependencies
+    $conn->query("DELETE FROM reel_likes WHERE reel_id = $r_id");
+    $conn->query("DELETE FROM reel_comments WHERE reel_id = $r_id");
+    $conn->query("DELETE FROM reel_edit_requests WHERE reel_id = $r_id");
+    $stmt = $conn->prepare("DELETE FROM reels WHERE id = ? AND user_id = ?");
+    $stmt->bind_param("ii", $r_id, $user_id);
+    if ($stmt->execute()) {
+        $_SESSION['msg'] = "REEL SHREDDED!";
         $_SESSION['msg_type'] = "success";
-    } else {
-        $_SESSION['msg'] = "REEL NOT FOUND OR ACCESS DENIED.";
-        $_SESSION['msg_type'] = "error";
+    }
+    header("Location: client-profile.php");
+    exit();
+}
+
+// --- POST: DELETE MY QNA ---
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_my_qna'])) {
+    $q_id = (int)$_POST['qna_id'];
+    $stmt = $conn->prepare("DELETE FROM community_qna WHERE id = ? AND user_id = ?");
+    $stmt->bind_param("ii", $q_id, $user_id);
+    if ($stmt->execute()) {
+        $_SESSION['msg'] = "Q&A DELETED.";
+        $_SESSION['msg_type'] = "success";
     }
     header("Location: client-profile.php");
     exit();
@@ -326,12 +397,19 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['submit_reel_edit'])) {
     $new_title = trim($_POST['new_title']);
     $new_desc = trim($_POST['new_description']);
 
-    // Ownership check
-    $own_check = $conn->prepare("SELECT id FROM reels WHERE id = ? AND user_id = ?");
+    // Ownership and Moderation check
+    $own_check = $conn->prepare("SELECT id, is_approved FROM reels WHERE id = ? AND user_id = ?");
     $own_check->bind_param("ii", $reel_id, $user_id);
     $own_check->execute();
-    if ($own_check->get_result()->num_rows === 0) {
-        $_SESSION['msg'] = "ACCESS DENIED.";
+    $reel_res = $own_check->get_result()->fetch_assoc();
+    if (!$reel_res) {
+        $_SESSION['msg'] = "REEL NOT FOUND.";
+        $_SESSION['msg_type'] = "error";
+        header("Location: client-profile.php");
+        exit();
+    }
+    if ($reel_res['is_approved'] != 1) {
+        $_SESSION['msg'] = "REEL MUST BE APPROVED BEFORE EDITING.";
         $_SESSION['msg_type'] = "error";
         header("Location: client-profile.php");
         exit();
@@ -355,6 +433,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['submit_reel_edit'])) {
         $ins = $conn->prepare("INSERT INTO reel_edit_requests (reel_id, user_id, new_title, new_description) VALUES (?, ?, ?, ?)");
         $ins->bind_param("iiss", $reel_id, $user_id, $new_title, $new_desc);
         $ins->execute();
+
+        // Notify user that their edit is in review
+        $notif_msg = "Your edit for the reel '" . $new_title . "' has been submitted and will be reviewed by an administrator.";
+        $notif_stmt = $conn->prepare("INSERT INTO notifications (user_id, message, is_read) VALUES (?, ?, 0)");
+        $notif_stmt->bind_param("is", $user_id, $notif_msg);
+        $notif_stmt->execute();
+
         $_SESSION['msg'] = "EDIT SUBMITTED FOR ADMIN REVIEW.";
         $_SESSION['msg_type'] = "success";
     }
@@ -412,12 +497,74 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_account'])) {
     box-shadow: 4px 4px 0px #000000;
 }
 
-.mini-listing:hover {
-    border-color: var(--primary);
-    transform: translate(-2px, -2px);
-    /* Stronger shadow on hover to match the single product page style */
-    box-shadow: 8px 8px 0px #000000;
+.status-sold { background: #000; color: #fff; }
+
+/* Status Badges - Global Dashboard Style */
+.listing-status-badge {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    font-size: 0.75rem;
+    font-weight: 900;
+    padding: 4px 10px;
+    border: 2px solid #000;
+    z-index: 2;
+    font-family: 'Staatliches', sans-serif;
+    letter-spacing: 1px;
+    text-transform: uppercase;
 }
+.status-active, .status-received { background: #2ecc71; color: white; }
+.status-pending { background: #f1c40f; color: #1a1a1a; }
+.status-cancelled, .status-rejected { background: var(--primary); color: white; }
+
+/* MY QNAs REDESIGN - MATCHING DASHBOARD ECOSYSTEM */
+.my-qna-card { border: 4px solid #000; padding: 1.5rem; margin-bottom: 1.5rem; background: #fff; display: flex; gap: 1.5rem; align-items: flex-start; box-shadow: 6px 6px 0 #000; transition: transform 0.2s; cursor: pointer; position: relative; }
+.my-qna-card:hover { transform: translateY(-2px); box-shadow: 8px 8px 0 #000; border-color: var(--primary); }
+.my-qna-info { flex: 1; min-width: 0; }
+.my-qna-title { font-family: 'Staatliches', sans-serif; font-size: 1.6rem; letter-spacing: 1px; margin: 0 0 8px; color: #000; text-transform: uppercase; word-break: break-word; line-height: 1.1; padding-right: 100px; }
+.my-qna-body-preview { font-family: 'Inter', sans-serif; font-size: 0.95rem; color: #444; margin: 0 0 12px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.4; }
+.my-qna-meta { display: flex; gap: 15px; font-family: 'Staatliches', sans-serif; font-size: 1rem; color: #555; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
+.my-qna-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+@media (max-width: 768px) { .my-qna-card { flex-direction: column; } .my-qna-title { padding-right: 0; margin-top: 30px; } }
+
+/* QNA DETAIL VIEW OVERLAY */
+.view-overlay {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.92); backdrop-filter: blur(8px);
+    z-index: 99999; display: flex; align-items: center; justify-content: center;
+    opacity: 0; visibility: hidden; transition: all 0.3s ease;
+}
+.view-overlay.active { opacity: 1; visibility: visible; }
+.view-shell {
+    width: 95%; max-width: 800px; background: #111;
+    border: 4px solid var(--charcoal); box-shadow: 15px 15px 0px var(--primary);
+    position: relative; transform: translateY(30px); transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    display: flex; flex-direction: column; max-height: 90vh;
+}
+.view-overlay.active .view-shell { transform: translateY(0); }
+.view-close {
+    position: absolute; top: 12px; right: 20px;
+    font-size: 3rem; color: white; cursor: pointer;
+    font-family: 'Staatliches', sans-serif; line-height: 1; z-index: 100;
+    transition: color 0.2s, transform 0.2s;
+    text-shadow: 2px 2px 0px var(--charcoal);
+}
+.view-close:hover { color: var(--primary); transform: scale(1.2); }
+.view-content {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 3rem;
+    scrollbar-width: thin;
+    scrollbar-color: var(--primary) #1a1a1a;
+}
+.view-content::-webkit-scrollbar { width: 10px; }
+.view-content::-webkit-scrollbar-track { background: #1a1a1a; }
+.view-content::-webkit-scrollbar-thumb { 
+    background: var(--primary); 
+    border: 2px solid #1a1a1a;
+}
+.view-content::-webkit-scrollbar-thumb:hover { background: white; }
 
 .mini-listing img {
     width: 100%;
@@ -555,6 +702,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_account'])) {
             <h3>MY WALLET</h3>
             <span style="color: #2ecc71; font-weight: 900;">$<?php echo number_format($user_data['wallet_balance'] ?? 0, 2); ?></span>
         </div>
+        <div class="option-card" onclick="openModal('myQnaModal')">
+            <i class="fa-solid fa-circle-question"></i>
+            <h3>MY QNAs</h3>
+        </div>
         <div class="option-card card-danger" onclick="openModal('deleteProfile')">
             <i class="fa-solid fa-trash-can"></i>
             <h3>DELETE ACCOUNT</h3>
@@ -639,6 +790,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_account'])) {
                         
                         <?php if($row['sold_count'] > 0): ?>
                             <span class="listing-status-badge status-sold">SOLD</span>
+                            <button type="button" class="btn-mini btn-danger" style="position:absolute; bottom:12px; right:12px; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; font-size:1rem; z-index: 10;" onclick="event.stopPropagation(); openHideInventoryModal(<?php echo $row['id']; ?>)">
+                                <i class="fas fa-trash"></i>
+                            </button>
                         <?php elseif($row['is_approved'] == 0): ?>
                             <span class="listing-status-badge status-pending">PENDING</span>
                         <?php else: ?>
@@ -683,21 +837,17 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_account'])) {
         <h3 class="admin-table-h3">MY <span class="header-span">REELS</span></h3>
 
         <style>
-            .my-reel-card { border: 4px solid #000; padding: 1.5rem; margin-bottom: 1.5rem; background: #fff; display: flex; gap: 1.5rem; align-items: flex-start; box-shadow: 6px 6px 0 #000; transition: transform 0.2s; }
+            .my-reel-card { border: 4px solid #000; padding: 1.5rem; margin-bottom: 1.5rem; background: #fff; display: flex; gap: 1.5rem; align-items: flex-start; box-shadow: 6px 6px 0 #000; transition: transform 0.2s; position: relative; }
             .my-reel-card:hover { transform: translateY(-2px); box-shadow: 8px 8px 0 #000; }
             .my-reel-thumb { width: 320px; max-width: 100%; flex-shrink: 0; background: #000; aspect-ratio: 16/9; border: 3px solid #000; }
             .my-reel-thumb iframe { width: 100%; height: 100%; border: none; display: block; }
             .my-reel-info { flex: 1; min-width: 0; }
-            .my-reel-title { font-family: 'Staatliches', sans-serif; font-size: 1.6rem; letter-spacing: 1px; margin: 0 0 8px; color: #000; text-transform: uppercase; word-break: break-word; line-height: 1.1; }
+            .my-reel-title { font-family: 'Staatliches', sans-serif; font-size: 1.6rem; letter-spacing: 1px; margin: 0 0 8px; color: #000; text-transform: uppercase; word-break: break-word; line-height: 1.1; padding-right: 120px; }
             .my-reel-desc { font-family: 'Inter', sans-serif; font-size: 0.95rem; color: #444; margin: 0 0 12px; word-break: break-word; line-height: 1.4; }
             .my-reel-meta { display: flex; gap: 15px; font-family: 'Staatliches', sans-serif; font-size: 1rem; color: #555; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
             .my-reel-actions { display: flex; gap: 10px; flex-wrap: wrap; }
-            .my-reel-status { display: inline-block; font-family: 'Staatliches', sans-serif; font-size: 0.85rem; padding: 4px 10px; border: 2px solid #000; letter-spacing: 1px; margin-bottom: 10px; font-weight: bold; }
             @media (max-width: 768px) { .my-reel-card { flex-direction: column; } .my-reel-thumb { width: 100%; } }
-            .reel-status-approved { background: #4ADE80; color: #000; }
-            .reel-status-pending-new { background: #ffcc00; border-color: #000; color: #000; }
-            .reel-status-rejected { background: var(--primary); border-color: #000; color: #fff; }
-            .reel-status-pending-edit { background: #a78bfa; border-color: #000; color: #fff; }
+            .status-edit { background: #a78bfa; color: #fff; }
             .my-reel-comments-container { margin-top: 10px; border-top: 1px dashed #ccc; padding-top: 10px; display: none; max-height: 150px; overflow-y: auto; }
             .my-reel-comments-container::-webkit-scrollbar { width: 6px; }
             .my-reel-comments-container::-webkit-scrollbar-track { background: #f1f1f1; border: 1px solid #ccc; }
@@ -718,14 +868,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_account'])) {
                     </div>
                     <div class="my-reel-info">
                         <?php if ($reel['is_approved'] == 1): ?>
-                            <span class="my-reel-status reel-status-approved">LIVE</span>
+                            <span class="listing-status-badge status-active">LIVE</span>
                         <?php elseif ($reel['is_approved'] == 0): ?>
-                            <span class="my-reel-status reel-status-pending-new">PENDING APPROVAL</span>
-                        <?php elseif ($reel['is_approved'] == -1): ?>
-                            <span class="my-reel-status reel-status-rejected">REJECTED</span>
+                            <span class="listing-status-badge status-pending">PENDING</span>
                         <?php endif; ?>
                         <?php if ($reel['has_pending_edit'] > 0): ?>
-                            <span class="my-reel-status reel-status-pending-edit">EDIT PENDING</span>
+                            <span class="listing-status-badge status-edit" style="top: 45px;">EDIT PENDING</span>
                         <?php endif; ?>
 
                         <p class="my-reel-title"><?php echo htmlspecialchars($reel['title']); ?></p>
@@ -743,15 +891,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_account'])) {
                             <span><?php echo date('M j, Y', strtotime($reel['created_at'])); ?></span>
                         </div>
                         <div class="my-reel-actions">
-                            <?php if ($reel['has_pending_edit'] == 0): ?>
+                            <?php if ($reel['is_approved'] == 1 && $reel['has_pending_edit'] == 0): ?>
                                 <button class="btn-mini btn-view" onclick="openEditReel(<?php echo $reel['id']; ?>, <?php echo htmlspecialchars(json_encode($reel['title'])); ?>, <?php echo htmlspecialchars(json_encode($reel['description'] ?? '')); ?>)">EDIT</button>
-                            <?php else: ?>
+                            <?php elseif ($reel['is_approved'] == 0): ?>
+                                <button class="btn-mini" style="background:#ccc; cursor:not-allowed;" disabled title="Wait for approval before editing">LOCKED</button>
+                            <?php elseif ($reel['has_pending_edit'] > 0): ?>
                                 <button class="btn-mini" style="background:#ccc; cursor:not-allowed;" disabled title="Edit already pending review">EDIT PENDING</button>
+                            <?php else: ?>
+                                <button class="btn-mini" style="background:#ccc; cursor:not-allowed;" disabled title="Cannot edit this reel">LOCKED</button>
                             <?php endif; ?>
-                            <form method="POST" action="client-profile.php" style="display:inline;" onsubmit="return confirm('DELETE THIS REEL PERMANENTLY? This cannot be undone.');">
-                                <input type="hidden" name="reel_id" value="<?php echo $reel['id']; ?>">
-                                <button type="submit" name="delete_my_reel" class="btn-mini btn-danger"><i class="fas fa-trash"></i> DELETE</button>
-                            </form>
+                            <button type="button" name="delete_my_reel" class="btn-mini btn-danger" onclick="openDeleteReelModal(<?php echo $reel['id']; ?>)">
+                                <i class="fas fa-trash"></i> DELETE
+                            </button>
                         </div>
                         <div id="reel-comments-<?php echo $reel['id']; ?>" class="my-reel-comments-container"></div>
                     </div>
@@ -848,6 +999,72 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_account'])) {
     </div>
 </div>
 
+<div id="myQnaModal" class="modal-overlay">
+    <div class="modal-content" style="max-width: 860px;"> 
+        <span class="close-modal" onclick="closeModal('myQnaModal')">&times;</span>
+        <h3 class="admin-table-h3">MY <span class="header-span">QUESTIONS</span></h3>
+
+        <?php if($my_qna_result->num_rows > 0): ?>
+            <div id="my-qna-list">
+                <?php while($row = $my_qna_result->fetch_assoc()): ?>
+                    <div class="my-qna-card my-qna-page-item" onclick="openQnaDetails(<?php echo $row['id']; ?>)">
+                        <div class="my-qna-info">
+                            <?php if($row['status'] === 'published'): ?>
+                                <span class="listing-status-badge status-active">PUBLISHED</span>
+                            <?php elseif($row['status'] === 'pending'): ?>
+                                <span class="listing-status-badge status-pending">PENDING</span>
+                            <?php endif; ?>
+
+                            <p class="my-qna-title"><?php echo strtoupper(htmlspecialchars($row['title'])); ?></p>
+                            <p class="my-qna-body-preview"><?php echo htmlspecialchars($row['body']); ?></p>
+                            
+                            <div class="my-qna-meta">
+                                <span><i class="fa-solid fa-calendar-day" style="color:var(--primary)"></i> <?php echo date('M j, Y', strtotime($row['created_at'])); ?></span>
+                                <?php if($row['admin_answer']): ?>
+                                    <span><i class="fa-solid fa-check-double" style="color:#2ecc71"></i> ANSWERED</span>
+                                <?php endif; ?>
+                            </div>
+
+                            <div class="my-qna-actions" onclick="event.stopPropagation();">
+                                <button type="button" class="btn-mini btn-danger" onclick="openDeleteQnaModal(<?php echo $row['id']; ?>)">
+                                    <i class="fa-solid fa-trash-can"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                <?php endwhile; ?>
+            </div>
+
+            <div id="my-qna-pagination-controls" class="listing-pagination">
+                <button class="btn-pagination" onclick="changeMyQnaPage(-1)" id="prevQnaBtn">
+                    <i class="fa-solid fa-chevron-left"></i>
+                </button>
+                <span id="myQnaPageIndicator" class="page-number">PAGE 1</span>
+                <button class="btn-pagination" onclick="changeMyQnaPage(1)" id="nextQnaBtn">
+                    <i class="fa-solid fa-chevron-right"></i>
+                </button>
+            </div>
+
+        <?php else: ?>
+            <div class="empty-placeholder-box">
+                <p class="empty-placeholder-title">YOU HAVEN'T ASKED ANY QUESTIONS YET.</p>
+                <p style="font-family:'Staatliches',sans-serif; color:#666; margin-bottom:20px;">Curiosity is the fuel for progress.</p>
+                <button class="btn-primary-brutal" onclick="closeModal('myQnaModal'); window.location.href='qna.php';">GO TO Q&A</button>
+            </div>
+        <?php endif; ?>
+    </div>
+</div>
+
+<!-- QNA VIEW MODAL -->
+<div class="view-overlay" id="qnaViewOverlay">
+    <div class="view-shell">
+        <span class="view-close" onclick="closeQnaView()">&times;</span>
+        <div class="view-content" id="qnaViewContent">
+            <!-- Populated via JS -->
+        </div>
+    </div>
+</div>
+
 <div id="notificationsModal" class="modal-overlay">
     <div class="modal-content">
         <span class="close-modal" onclick="closeModal('notificationsModal')">&times;</span>
@@ -868,9 +1085,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_account'])) {
                             <p class="notif-msg"><?php echo htmlspecialchars($short_msg); ?></p>
                             <span class="notif-date"><?php echo $formatted_date; ?></span>
                         </div>
-                        <a href="client-profile.php?delete_notif=<?php echo $n['id']; ?>" class="notif-delete-btn" onclick="return confirm('SHRED THIS MESSAGE PERMANENTLY?')">
+                        <button type="button" class="btn-mini btn-danger" style="position:absolute; top: 50%; right: 15px; transform: translateY(-50%); width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; font-size:1rem; z-index: 10;" onclick="event.stopPropagation(); openDeleteNotifModal(<?php echo $n['id']; ?>)">
                             <i class="fa-solid fa-trash-can"></i>
-                        </a>
+                        </button>
                     </div>
                 <?php endwhile; ?>
             <?php else: ?>
@@ -914,8 +1131,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_account'])) {
                         
                         <?php if ($purchase['status'] === 'CANCELLED'): ?>
                             <span class="listing-status-badge status-cancelled">CANCELLED</span>
+                            <button type="button" class="btn-mini btn-danger" style="position:absolute; bottom:12px; right:12px; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; font-size:1rem; z-index: 10;" onclick="openHideBuyHistoryModal(<?php echo $purchase['order_id']; ?>)">
+                                <i class="fas fa-trash"></i>
+                            </button>
                         <?php elseif ($purchase['status'] === 'RECEIVED'): ?>
                             <span class="listing-status-badge status-received">RECEIVED</span>
+                            <button type="button" class="btn-mini btn-danger" style="position:absolute; bottom:12px; right:12px; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; font-size:1rem; z-index: 10;" onclick="openHideBuyHistoryModal(<?php echo $purchase['order_id']; ?>)">
+                                <i class="fas fa-trash"></i>
+                            </button>
                         <?php else: ?>
                             <span class="listing-status-badge status-active">PAID</span>
                         <?php endif; ?>
@@ -1012,8 +1235,54 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_account'])) {
             currentMyReelsPage = 1;
             updateMyReelsPagination();
         }
+        if (id === 'myQnaModal') {
+            currentMyQnaPage = 1;
+            updateMyQnaPagination();
+        }
     }
     function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+
+    // --- Q&A DETAIL VIEW ---
+    function openQnaDetails(id) {
+        fetch(`client-profile.php?get_qna_details=${id}`)
+        .then(res => res.json())
+        .then(data => {
+            if (!data) return;
+            const content = document.getElementById('qnaViewContent');
+            const date = new Date(data.created_at);
+            const dateStr = date.toLocaleDateString('en-US', {year:'numeric', month:'short', day:'numeric'}).toUpperCase();
+            
+            content.innerHTML = `
+                <div class="view-body">
+                    <div class="view-meta" style="font-family:'Staatliches', sans-serif; letter-spacing:2px; color:var(--primary); margin-bottom:1.5rem; display:flex; gap:1.5rem; align-items:center;">
+                        <span>MY SUBMISSION</span>
+                        <span>${dateStr}</span>
+                    </div>
+                    <h2 style="color: #fff; font-family: 'Staatliches', sans-serif; font-size: 3rem; margin-bottom: 1.5rem; line-height:1; text-transform:uppercase;">${escHtml(data.title)}</h2>
+                    <div class="view-q-block" style="background: rgba(255,255,255,0.05); padding: 1.5rem; border-left: 4px solid #444; color: #ccc; font-family: 'Inter', sans-serif; line-height: 1.8; margin-bottom: 2rem; font-size:1.1rem; word-break:break-word;">
+                        ${escHtml(data.body).replace(/\n/g, '<br>')}
+                    </div>
+                    <div class="view-a-block" style="border-left: 4px solid var(--primary); padding: 2rem; background: rgba(225, 29, 72, 0.08); color: #fff; font-family: 'Inter', sans-serif; line-height:1.7; font-size:1.1rem; word-break:break-word;">
+                        <strong style="color: var(--primary); display: block; font-family: 'Staatliches', sans-serif; font-size: 1.5rem; margin-bottom: 0.8rem; letter-spacing:1px;">OFFICIAL ANSWER</strong>
+                        ${(data.admin_answer ? escHtml(data.admin_answer).replace(/\n/g, '<br>') : '—')}
+                    </div>
+                </div>
+            `;
+            document.getElementById('qnaViewOverlay').classList.add('active');
+            document.body.style.overflow = 'hidden';
+        });
+    }
+
+    function closeQnaView() {
+        document.getElementById('qnaViewOverlay').classList.remove('active');
+        document.body.style.overflow = '';
+    }
+
+    function escHtml(str) {
+        const d = document.createElement('div');
+        if (str) d.appendChild(document.createTextNode(str));
+        return d.innerHTML;
+    }
 
     // --- LISTING EDIT LOGIC ---
     function openEditListing(id) {
@@ -1205,6 +1474,38 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_account'])) {
         updateMyReelsPagination();
     }
 
+    // --- MY QNA PAGINATION ---
+    let currentMyQnaPage = 1;
+    const myQnaPerPage = 4;
+
+    function updateMyQnaPagination() {
+        const items = document.querySelectorAll('.my-qna-page-item');
+        const totalPages = Math.ceil(items.length / myQnaPerPage);
+        const prevBtn = document.getElementById('prevQnaBtn');
+        const nextBtn = document.getElementById('nextQnaBtn');
+        const indicator = document.getElementById('myQnaPageIndicator');
+
+        if (items.length === 0) {
+            const controls = document.getElementById('my-qna-pagination-controls');
+            if (controls) controls.style.display = 'none';
+            return;
+        }
+
+        items.forEach(item => item.style.display = 'none');
+        let start = (currentMyQnaPage - 1) * myQnaPerPage;
+        let end = start + myQnaPerPage;
+        for (let i = start; i < end; i++) { if (items[i]) items[i].style.display = 'flex'; }
+
+        if (indicator) indicator.innerText = `PAGE ${currentMyQnaPage} / ${totalPages}`;
+        if (prevBtn) prevBtn.disabled = currentMyQnaPage === 1;
+        if (nextBtn) nextBtn.disabled = currentMyQnaPage === totalPages || totalPages === 0;
+    }
+
+    function changeMyQnaPage(step) {
+        currentMyQnaPage += step;
+        updateMyQnaPagination();
+    }
+
     // --- NOTIFICATION LOGIC (Existing) ---
     let currentNotifPage = 1;
     const itemsPerPage = 5;
@@ -1254,11 +1555,25 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_account'])) {
 
     function backToNotifications() { closeModal('fullMessageModal'); openModal('notificationsModal'); }
 
-    window.onclick = function(event) { if (event.target.classList.contains('modal-overlay')) { event.target.classList.remove('active'); } }
+    window.onclick = function(event) { 
+        if (event.target.classList.contains('modal-overlay')) { 
+            event.target.classList.remove('active'); 
+        } 
+        if (event.target.classList.contains('view-overlay')) { 
+            closeQnaView(); 
+        }
+    }
 
     document.addEventListener("DOMContentLoaded", () => {
         const alertBox = document.getElementById('alert-box');
         if (alertBox) { setTimeout(() => { alertBox.style.opacity = "0"; setTimeout(() => alertBox.remove(), 500); }, 4000); }
+        
+        // Initialize all pagination systems
+        if (typeof updatePagination === 'function') updatePagination();
+        if (typeof updateMyReelsPagination === 'function') updateMyReelsPagination();
+        if (typeof updateMyQnaPagination === 'function') updateMyQnaPagination();
+        if (typeof updateListingPagination === 'function') updateListingPagination();
+        if (typeof updateBuyPagination === 'function') updateBuyPagination();
     });
 </script>
 
@@ -1287,6 +1602,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_account'])) {
     letter-spacing: 1px;
     display: block;
     margin-bottom: 6px;
+}
+.btn-hide-cancel {
+    background: #666 !important;
+    color: #fff !important;
+}
+.btn-hide-cancel:hover {
+    background: #444 !important;
 }
 </style>
 
@@ -1317,7 +1639,107 @@ function openConfirmReceiptModal(orderId) {
 function showNotReceivedMsg() {
     document.getElementById('notReceivedMsg').style.display = 'block';
 }
+
+function openHideInventoryModal(productId) {
+    document.getElementById('hideInventoryProductId').value = productId;
+    openModal('confirmHideInventoryModal');
+}
+
+function openHideBuyHistoryModal(orderId) {
+    document.getElementById('hideBuyHistoryOrderId').value = orderId;
+    openModal('confirmHideBuyHistoryModal');
+}
+
+function openDeleteReelModal(reelId) {
+    document.getElementById('deleteReelId').value = reelId;
+    openModal('confirmDeleteReelModal');
+}
+
+function openDeleteQnaModal(qnaId) {
+    document.getElementById('deleteQnaId').value = qnaId;
+    openModal('confirmDeleteQnaModal');
+}
+
+function openDeleteNotifModal(notifId) {
+    document.getElementById('deleteNotifId').value = notifId;
+    openModal('confirmDeleteNotifModal');
+}
 </script>
+
+<div id="confirmHideInventoryModal" class="modal-overlay">
+    <div class="modal-content" style="max-width: 400px; text-align: center;">
+        <span class="close-modal" onclick="closeModal('confirmHideInventoryModal')">&times;</span>
+        <h3 class="admin-table-h3" style="margin-top:0; font-size:2rem; padding-top:10px;">REMOVE ITEM FROM <span class="header-span">INVENTORY?</span></h3>
+        <p style="font-family:'Inter',sans-serif; margin-bottom:20px; color:#666;">Are you sure you want to remove this item from your inventory list?</p>
+        <div style="display:flex; gap:10px;">
+            <form action="client-profile.php" method="POST" style="flex:1;">
+                <input type="hidden" name="product_id" id="hideInventoryProductId">
+                <button type="submit" name="hide_inventory_item" class="btn-primary-brutal btn-full btn-receipt-yes" style="margin-top:0; padding:20px;">YES</button>
+            </form>
+            <button type="button" class="btn-primary-brutal btn-full btn-hide-cancel" style="margin-top:0;" onclick="closeModal('confirmHideInventoryModal')">CANCEL</button>
+        </div>
+    </div>
+</div>
+
+<div id="confirmHideBuyHistoryModal" class="modal-overlay">
+    <div class="modal-content" style="max-width: 400px; text-align: center;">
+        <span class="close-modal" onclick="closeModal('confirmHideBuyHistoryModal')">&times;</span>
+        <h3 class="admin-table-h3" style="margin-top:0; font-size:2.5rem;">REMOVE FROM <span class="header-span">HISTORY?</span></h3>
+        <p style="font-family:'Inter',sans-serif; margin-bottom:20px; color:#666;">Are you sure you want to remove this order from your buy history?</p>
+        <div style="display:flex; gap:10px;">
+            <form action="client-profile.php" method="POST" style="flex:1;">
+                <input type="hidden" name="order_id" id="hideBuyHistoryOrderId">
+                <button type="submit" name="hide_buy_history_item" class="btn-primary-brutal btn-full btn-receipt-yes" style="margin-top:0; padding:20px;">YES</button>
+            </form>
+            <button type="button" class="btn-primary-brutal btn-full btn-hide-cancel" style="margin-top:0;" onclick="closeModal('confirmHideBuyHistoryModal')">CANCEL</button>
+        </div>
+    </div>
+</div>
+
+<div id="confirmDeleteReelModal" class="modal-overlay">
+    <div class="modal-content" style="max-width: 400px; text-align: center;">
+        <span class="close-modal" onclick="closeModal('confirmDeleteReelModal')">&times;</span>
+        <h3 class="admin-table-h3" style="margin-top:0; font-size:2.5rem;">DELETE THIS <span class="header-span">REEL?</span></h3>
+        <p style="font-family:'Inter',sans-serif; margin-bottom:20px; color:#666;">This cannot be undone. All likes and comments will be lost in the void.</p>
+        <div style="display:flex; gap:10px;">
+            <form action="client-profile.php" method="POST" style="flex:1;">
+                <input type="hidden" name="reel_id" id="deleteReelId">
+                <button type="submit" name="delete_my_reel" class="btn-primary-brutal btn-full btn-receipt-yes" style="margin-top:0; padding:20px;">YES</button>
+            </form>
+            <button type="button" class="btn-primary-brutal btn-full btn-hide-cancel" style="margin-top:0;" onclick="closeModal('confirmDeleteReelModal')">CANCEL</button>
+        </div>
+    </div>
+</div>
+
+<div id="confirmDeleteQnaModal" class="modal-overlay">
+    <div class="modal-content" style="max-width: 400px; text-align: center;">
+        <span class="close-modal" onclick="closeModal('confirmDeleteQnaModal')">&times;</span>
+        <h3 class="admin-table-h3" style="margin-top:0; font-size:2.5rem;">DELETE THIS <span class="header-span">QUESTION?</span></h3>
+        <p style="font-family:'Inter',sans-serif; margin-bottom:20px; color:#666;">Are you sure? This will permanently remove your contribution.</p>
+        <div style="display:flex; gap:10px;">
+            <form action="client-profile.php" method="POST" style="flex:1;">
+                <input type="hidden" name="qna_id" id="deleteQnaId">
+                <button type="submit" name="delete_my_qna" class="btn-primary-brutal btn-full btn-receipt-yes" style="margin-top:0; padding:20px;">YES</button>
+            </form>
+            <button type="button" class="btn-primary-brutal btn-full btn-hide-cancel" style="margin-top:0;" onclick="closeModal('confirmDeleteQnaModal')">CANCEL</button>
+        </div>
+    </div>
+</div>
+
+<div id="confirmDeleteNotifModal" class="modal-overlay">
+    <div class="modal-content" style="max-width: 400px; text-align: center;">
+        <span class="close-modal" onclick="closeModal('confirmDeleteNotifModal')">&times;</span>
+        <h3 class="admin-table-h3" style="margin-top:0; font-size:2.5rem;">SHRED THIS <span class="header-span">MESSAGE?</span></h3>
+        <p style="font-family:'Inter',sans-serif; margin-bottom:20px; color:#666;">Once deleted, this system message will be gone forever.</p>
+        <div style="display:flex; gap:10px;">
+            <form action="client-profile.php" method="GET" style="flex:1;">
+                <input type="hidden" name="delete_notif" id="deleteNotifId">
+                <button type="submit" class="btn-primary-brutal btn-full btn-receipt-yes" style="margin-top:0; padding:20px;">YES</button>
+            </form>
+            <button type="button" class="btn-primary-brutal btn-full btn-hide-cancel" style="margin-top:0;" onclick="closeModal('confirmDeleteNotifModal')">CANCEL</button>
+        </div>
+    </div>
+</div>
 
 <?php include 'footer.php'; ?>
 </body>

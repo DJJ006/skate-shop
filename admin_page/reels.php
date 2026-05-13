@@ -10,11 +10,40 @@ if (!isset($_SESSION['user_id'])) {
 // Handle delete reel
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_reel'])) {
     $id = (int)$_POST['reel_id'];
-    $conn->query("DELETE FROM reel_likes WHERE reel_id = $id");
-    $conn->query("DELETE FROM reel_comments WHERE reel_id = $id");
-    $conn->query("DELETE FROM reels WHERE id = $id");
-    $_SESSION['msg'] = "REEL DELETED PERMANENTLY.";
-    $_SESSION['msg_type'] = "success";
+    $reason = trim($_POST['deletion_reason'] ?? '');
+
+    if ($id <= 0 || $reason === '') {
+        $_SESSION['msg'] = "DELETION REASON IS REQUIRED.";
+        $_SESSION['msg_type'] = "error";
+    } else {
+        // Fetch info for notification before delete
+        $info_stmt = $conn->prepare("SELECT user_id, title FROM reels WHERE id = ?");
+        $info_stmt->bind_param("i", $id);
+        $info_stmt->execute();
+        $reel = $info_stmt->get_result()->fetch_assoc();
+
+        if ($reel) {
+            $u_id = $reel['user_id'];
+            $title = $reel['title'];
+            
+            $conn->query("DELETE FROM reel_likes WHERE reel_id = $id");
+            $conn->query("DELETE FROM reel_comments WHERE reel_id = $id");
+            $conn->query("DELETE FROM reel_edit_requests WHERE reel_id = $id");
+            $conn->query("DELETE FROM reels WHERE id = $id");
+            
+            // Send notification
+            $msg = "Your reel '" . $title . "' was removed by an admin. Reason: " . $reason;
+            $notif_stmt = $conn->prepare("INSERT INTO notifications (user_id, message, is_read) VALUES (?, ?, 0)");
+            $notif_stmt->bind_param("is", $u_id, $msg);
+            $notif_stmt->execute();
+
+            $_SESSION['msg'] = "REEL DELETED PERMANENTLY AND USER NOTIFIED.";
+            $_SESSION['msg_type'] = "success";
+        } else {
+            $_SESSION['msg'] = "REEL NOT FOUND.";
+            $_SESSION['msg_type'] = "error";
+        }
+    }
     header("Location: reels.php");
     exit();
 }
@@ -32,26 +61,43 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['admin_delete_comment']
 
 // Handle search
 $search_query = isset($_GET['search']) ? trim($_GET['search']) : "";
+$sort_filter = isset($_GET['sort']) ? $_GET['sort'] : 'newest';
 
-// Fetch all approved reels with counts
+$where = ["r.is_approved = 1"];
+
+if ($search_query !== "") {
+    $clean_search = $conn->real_escape_string($search_query);
+    $where[] = "(r.id = '" . (int)$clean_search . "' OR r.title LIKE '%$clean_search%' OR u.username LIKE '%$clean_search%')";
+}
+
+$where_sql = implode(" AND ", $where);
+
+// Sorting logic
+$order_sql = "r.created_at DESC";
+if ($sort_filter === 'oldest') {
+    $order_sql = "r.created_at ASC";
+} elseif ($sort_filter === 'likes') {
+    $order_sql = "like_count DESC, r.created_at DESC";
+} elseif ($sort_filter === 'comments') {
+    $order_sql = "comment_count DESC, r.created_at DESC";
+}
+
+// Fetch reels with counts
 $reels_sql = "SELECT r.*, u.username,
     (SELECT COUNT(*) FROM reel_likes WHERE reel_id = r.id) as like_count,
     (SELECT COUNT(*) FROM reel_comments WHERE reel_id = r.id) as comment_count
     FROM reels r 
     JOIN users u ON r.user_id = u.id
-    WHERE r.is_approved = 1";
+    WHERE $where_sql
+    ORDER BY $order_sql";
 
-if ($search_query !== "") {
-    $clean_search = $conn->real_escape_string($search_query);
-    $reels_sql .= " AND (
-        r.id = '" . (int)$clean_search . "'
-        OR r.title LIKE '%$clean_search%'
-        OR u.username LIKE '%$clean_search%'
-    )";
-}
-
-$reels_sql .= " ORDER BY r.created_at DESC";
 $reels_result = $conn->query($reels_sql);
+
+function reel_status_badge(int $is_approved): string {
+    if ($is_approved == 0) return '<span class="listing-status-badge status-received">PENDING</span>';
+    if ($is_approved == 1) return '<span class="listing-status-badge status-active">PUBLISHED</span>';
+    return '<span class="listing-status-badge status-cancelled">REJECTED</span>';
+}
 
 $modals_html = [];
 ?>
@@ -148,7 +194,7 @@ $modals_html = [];
         <div class="grainy-card" style="padding: 20px;">
             <h3 class="admin-table-h3">PUBLISHED <span class="header-span">REELS</span></h3>
 
-            <!-- SEARCH BAR -->
+            <!-- FILTER BAR -->
             <div class="grainy-card filter-bar" style="margin-bottom: 25px; padding: 20px; border: 3px solid var(--charcoal);">
                 <form method="GET" action="reels.php" class="search-filter-form">
                     <div class="filter-group search-box" style="flex: 2;">
@@ -156,9 +202,19 @@ $modals_html = [];
                         <input type="text" name="search" placeholder="ID, Title, or Username..." value="<?php echo htmlspecialchars($search_query); ?>">
                     </div>
 
+                    <div class="filter-group" style="flex: 1;">
+                        <label>SORT BY</label>
+                        <select name="sort" onchange="this.form.submit()">
+                            <option value="newest" <?php echo $sort_filter === 'newest' ? 'selected' : ''; ?>>NEWEST FIRST</option>
+                            <option value="oldest" <?php echo $sort_filter === 'oldest' ? 'selected' : ''; ?>>OLDEST FIRST</option>
+                            <option value="likes" <?php echo $sort_filter === 'likes' ? 'selected' : ''; ?>>MOST LIKED</option>
+                            <option value="comments" <?php echo $sort_filter === 'comments' ? 'selected' : ''; ?>>MOST COMMENTS</option>
+                        </select>
+                    </div>
+
                     <div class="filter-actions" style="margin-top:22px;">
                         <button type="submit" class="btn-filter">SEARCH</button>
-                        <?php if (!empty($search_query)): ?>
+                        <?php if ($search_query !== '' || $sort_filter !== 'newest'): ?>
                             <a href="reels.php" class="btn-reset">RESET</a>
                         <?php endif; ?>
                     </div>
@@ -193,10 +249,9 @@ $modals_html = [];
                                 <td><span class="likes-comments-badge"><i class="fas fa-comment" style="color:var(--charcoal)"></i> <?php echo $item['comment_count']; ?></span></td>
                                 <td>
                                     <button class="btn-mini btn-view" onclick="openModal('reel-<?php echo $item['id']; ?>')">VIEW</button>
-                                    <form method="POST" style="display:inline;" onsubmit="return confirm('DELETE THIS REEL AND ALL ITS LIKES/COMMENTS?');">
-                                        <input type="hidden" name="reel_id" value="<?php echo $item['id']; ?>">
-                                        <button type="submit" name="delete_reel" class="btn-mini btn-danger" style="padding:6px 10px; font-size:0.85rem;"><i class="fas fa-trash"></i></button>
-                                    </form>
+                                    <button type="button" class="btn-mini btn-danger" style="padding:6px 10px; font-size:0.85rem;" onclick="openModal('reel-delete-<?php echo $item['id']; ?>')">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
                                 </td>
                             </tr>
 
@@ -246,6 +301,27 @@ $modals_html = [];
                                             <p style="color:#999; font-style:italic; font-family:'Staatliches',sans-serif;">NO COMMENTS YET.</p>
                                         <?php endif; ?>
                                     </div>
+                                    <div style="margin-top: 1.5rem; border-top: 2px solid #ddd; padding-top: 1.5rem;">
+                                        <button type="button" class="btn btn-danger" style="width:100%; font-size: 1.2rem;" onclick="openModal('reel-delete-<?php echo $item['id']; ?>')">DELETE REEL PERMANENTLY</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- DELETE REEL MODAL -->
+                            <div id="reel-delete-<?php echo $item['id']; ?>" class="modal-overlay modal-top-layer">
+                                <div class="modal-content">
+                                    <span class="close-modal" onclick="closeModal('reel-delete-<?php echo $item['id']; ?>')">&times;</span>
+                                    <h3 class="admin-table-h3">DELETE <span class="header-span">CONFIRMATION</span></h3>
+                                    <form method="post" action="reels.php" class="admin-form">
+                                        <input type="hidden" name="reel_id" value="<?php echo $item['id']; ?>">
+                                        
+                                        <label>WHY ARE YOU DELETING THIS REEL?</label>
+                                        <textarea name="deletion_reason" rows="4" placeholder="E.g. Inappropriate content, copyright violation, spam..." required></textarea>
+                                        
+                                        <p style="margin-top: 1rem; color: var(--primary); font-family: 'Staatliches', sans-serif; font-size: 0.9rem;">* THIS WILL PERMANENTLY REMOVE THE REEL, LIKES, AND COMMENTS.</p>
+                                        
+                                        <button type="submit" name="delete_reel" class="btn btn-danger" style="width:100%; margin-top: 1rem; font-size: 1.2rem;">PERMANENTLY DELETE</button>
+                                    </form>
                                 </div>
                             </div>
                             <?php $modals_html[] = ob_get_clean(); ?>

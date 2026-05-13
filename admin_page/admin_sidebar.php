@@ -2,6 +2,7 @@
 // Default counters
 $pending_gear_count = 0;
 $pending_reels_count = 0;
+$pending_qna_count = 0;
 
 if (isset($conn)) {
     // Count pending gear
@@ -26,6 +27,12 @@ if (isset($conn)) {
     if ($count_edits_result) {
         $count_row = $count_edits_result->fetch_assoc();
         $pending_reels_count += (int)$count_row['pending_count'];
+    }
+
+    $count_qna_result = @$conn->query("SELECT COUNT(*) as pending_count FROM community_qna WHERE status = 'pending'");
+    if ($count_qna_result) {
+        $count_row = $count_qna_result->fetch_assoc();
+        $pending_qna_count = (int)$count_row['pending_count'];
     }
 }
 
@@ -59,6 +66,14 @@ $current_page = basename($_SERVER['PHP_SELF']);
         <li>
             <a href="reels.php" class="nav-relative <?php echo ($current_page == 'reels.php') ? 'active' : ''; ?>">
                 <span class="material-icons">video_library</span> REELS MGMT
+            </a>
+        </li>
+        <li>
+            <a href="review-qna.php" class="nav-relative <?php echo ($current_page == 'review-qna.php') ? 'active' : ''; ?>" style="position: relative;">
+                <span class="material-icons">forum</span> REVIEW Q&A
+                <?php if (!empty($pending_qna_count)): ?>
+                    <span class="notification-badge"><?php echo $pending_qna_count; ?></span>
+                <?php endif; ?>
             </a>
         </li>
         <li>

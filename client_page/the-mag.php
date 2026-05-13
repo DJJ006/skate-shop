@@ -121,7 +121,7 @@ if (isset($_GET['slug'])) {
     opacity: 0.15; pointer-events: none; z-index: 1;
 }
 .mag-intro-tag {
-    position: absolute; top: 50px; right: -45px;
+    position: absolute; top: 35px; right: -35px;
     background: var(--primary); color: white;
     padding: 5px 40px; font-family: 'Staatliches', sans-serif;
     transform: rotate(45deg); font-size: 1rem; letter-spacing: 2px;
@@ -313,9 +313,9 @@ if (isset($_GET['slug'])) {
     display: flex; position: fixed; z-index: 4000;
     left: 0; top: 0; width: 100%; height: 100%;
     background: rgba(0,0,0,0.92); backdrop-filter: blur(8px);
-    align-items: flex-start; justify-content: center;
+    align-items: center; justify-content: center;
     opacity: 0; visibility: hidden; pointer-events: none;
-    transition: all 0.3s ease; overflow-y: auto; padding: 2rem 1rem;
+    transition: all 0.3s ease; padding: 2rem 1rem;
 }
 .article-overlay.active { opacity: 1; visibility: visible; pointer-events: all; }
 .article-shell {
@@ -323,16 +323,32 @@ if (isset($_GET['slug'])) {
     width: 100%; max-width: 820px; position: relative;
     box-shadow: 12px 12px 0px rgba(255,45,90,0.3);
     transform: translateY(30px); transition: transform 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-    margin: auto;
+    display: flex; flex-direction: column;
+    max-height: 90vh;
 }
 .article-overlay.active .article-shell { transform: translateY(0); }
 .article-close {
     position: absolute; top: 12px; right: 20px;
     font-size: 3rem; color: white; cursor: pointer;
-    font-family: 'Staatliches', sans-serif; line-height: 1; z-index: 10;
+    font-family: 'Staatliches', sans-serif; line-height: 1; z-index: 100;
     transition: color 0.2s, transform 0.2s;
+    text-shadow: 2px 2px 0px var(--charcoal);
 }
 .article-close:hover { color: var(--primary); transform: scale(1.2); }
+
+#articleContent {
+    flex: 1;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--primary) #1a1a1a;
+}
+#articleContent::-webkit-scrollbar { width: 10px; }
+#articleContent::-webkit-scrollbar-track { background: #1a1a1a; }
+#articleContent::-webkit-scrollbar-thumb { 
+    background: var(--primary); 
+    border: 2px solid #1a1a1a;
+}
+#articleContent::-webkit-scrollbar-thumb:hover { background: white; }
 .article-cover { width: 100%; max-height: 420px; object-fit: cover; display: block; }
 .article-cover-placeholder {
     width: 100%; height: 300px; background: #1a1a1a;
@@ -349,13 +365,14 @@ if (isset($_GET['slug'])) {
     font-family: 'Staatliches', sans-serif; font-size: 3.5rem;
     line-height: 1; letter-spacing: -1px; color: var(--textwhite);
     margin-bottom: 1.5rem; text-transform: uppercase;
+    padding-right: 3rem; /* Space for close button */
 }
 .article-divider {
     border: none; border-top: 3px solid var(--primary);
     margin-bottom: 2rem;
 }
 .article-content {
-    font-family: 'Inter', sans-serif; font-size: 1.05rem;
+    font-family: 'Inter', sans-serif; font-size: 1.2rem;
     line-height: 1.8; color: #ccc;
 }
 .article-content p { margin-bottom: 1.2rem; }

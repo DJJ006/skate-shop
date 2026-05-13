@@ -669,7 +669,7 @@ while ($row = $reels_result->fetch_assoc()) $reels[] = $row;
 <div class="reel-modal-overlay" id="uploadModal">
     <div class="reel-modal-content">
         <span class="reel-modal-close" id="close-upload-modal">&times;</span>
-        <h3 style="font-family: 'Staatliches', sans-serif; letter-spacing: -4px; font-size: 3rem; font-style: italic; margin: 0; padding-bottom: 20px; padding-top: 10px;">
+        <h3 style="font-family: 'Staatliches', sans-serif; letter-spacing: -4px; font-size: 3rem; font-style: italic; margin: 0; padding-bottom: 20px; padding-top: 10px; color: var(--textwhite); ">
             SHARE YOUR CLIP
         </h3>
         <form action="reels.php" method="POST">

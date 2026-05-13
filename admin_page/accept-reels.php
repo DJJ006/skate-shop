@@ -44,17 +44,23 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reject_reel_final'])) 
     $reel = $info_stmt->get_result()->fetch_assoc();
 
     if ($reel) {
-        
-        $sql = "UPDATE reels SET is_approved = -1, rejection_reason = '$reason' WHERE id = $id";
-        if ($conn->query($sql) === TRUE) {
-            $msg = "Your reel '" . $reel['title'] . "' was rejected. Reason: " . $reason;
-            $notif = $conn->prepare("INSERT INTO notifications (user_id, message) VALUES (?, ?)");
-            $notif->bind_param("is", $reel['user_id'], $msg);
-            $notif->execute();
+        $u_id = (int)$reel['user_id'];
+        $title = $reel['title'];
 
-            $_SESSION['msg'] = "REEL REJECTED & CLIENT NOTIFIED.";
-            $_SESSION['msg_type'] = "success";
-        }
+        // Send notification BEFORE deletion to ensure data availability if needed
+        $msg = "Your reel '" . $title . "' was rejected by an admin. Reason: " . $reason;
+        $notif = $conn->prepare("INSERT INTO notifications (user_id, message, is_read) VALUES (?, ?, 0)");
+        $notif->bind_param("is", $u_id, $msg);
+        $notif->execute();
+
+        // Perform full cleanup
+        $conn->query("DELETE FROM reel_likes WHERE reel_id = $id");
+        $conn->query("DELETE FROM reel_comments WHERE reel_id = $id");
+        $conn->query("DELETE FROM reel_edit_requests WHERE reel_id = $id");
+        $conn->query("DELETE FROM reels WHERE id = $id");
+
+        $_SESSION['msg'] = "REEL REJECTED & DELETED. CLIENT NOTIFIED.";
+        $_SESSION['msg_type'] = "success";
     }
     header("Location: accept-reels.php");
     exit();

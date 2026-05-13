@@ -140,7 +140,7 @@ session_start();
         </a>
 
         <!-- QnA -->
-        <a href="#" class="community-card">
+        <a href="qna.php" class="community-card">
             <span class="material-icons community-icon">forum</span>
             <h2>Q&A</h2>
             <p>Ask questions about the shop, products, or website.</p>

@@ -60,6 +60,12 @@ $reels_stmt->bind_param("i", $seller_id);
 $reels_stmt->execute();
 $reels_count = $reels_stmt->get_result()->fetch_assoc()['total_reels'] ?? 0;
 
+// QnA Count
+$qna_stmt = $conn->prepare("SELECT COUNT(*) as total_qna FROM community_qna WHERE user_id = ?");
+$qna_stmt->bind_param("i", $seller_id);
+$qna_stmt->execute();
+$qna_count = $qna_stmt->get_result()->fetch_assoc()['total_qna'] ?? 0;
+
 // Ratings Data
 $rating_stmt = $conn->prepare("SELECT AVG(rating) as avg_rating, COUNT(*) as total_ratings FROM seller_ratings WHERE seller_id = ?");
 $rating_stmt->bind_param("i", $seller_id);
@@ -118,6 +124,13 @@ $profile_pic = !empty($seller['profile_pic']) ? $seller['profile_pic'] : '../ass
                     REELS:
                     <span class="user-profile-meta-value user-profile-meta-value-primary">
                         <?php echo (int)$reels_count; ?>
+                    </span>
+                </span>
+
+                <span class="user-profile-meta-chip">
+                    QNAS ASKED:
+                    <span class="user-profile-meta-value user-profile-meta-value-primary">
+                        <?php echo (int)$qna_count; ?>
                     </span>
                 </span>
             </div>

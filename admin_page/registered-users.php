@@ -170,9 +170,9 @@ $modals_html = [];
                                 <td><?php echo htmlspecialchars($user['email']); ?></td>
                                 <td>
                                     <?php if(isset($user['is_blocked']) && $user['is_blocked'] == 1): ?>
-                                        <span class="badge-blocked">BLOCKED</span>
+                                        <span class="listing-status-badge status-cancelled">BLOCKED</span>
                                     <?php else: ?>
-                                        <span class="badge-active">ACTIVE</span>
+                                        <span class="listing-status-badge status-active">ACTIVE</span>
                                     <?php endif; ?>
                                 </td>
                                 <td>
