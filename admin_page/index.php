@@ -1,4 +1,5 @@
-<?php 
+<?php
+require_once 'admin_auth.php';
 // Adjust the path to your db.php since this is inside an 'admin' folder
 include '../db.php';
 
@@ -32,18 +33,7 @@ $recent_result = $conn->query($recent_sql);
 </head>
 <body>
 
-<header class="main-header">
-    <div class="container header-content">
-        <h1 class="logo">
-            <a href="../admin_page/index.php">SKATE<span>SHOP</span> ADMIN</a>
-        </h1>
-
-        <div class="mobile-menu-icon" id="menu-btn">
-            <span class="material-icons">menu</span>
-        </div>
-
-    </div>
-</header>
+<?php require __DIR__ . '/admin_header.php'; ?>
 
 <section class="admin-layout container">
     

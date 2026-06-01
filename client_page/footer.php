@@ -25,11 +25,11 @@
             <div class="footer-links">
                 <h4>SUPPORT</h4>
                 <ul>
-                    <li><a href="#">SHIPPING INFO</a></li>
-                    <li><a href="#">RETURNS</a></li>
-                    <li><a href="#">CONTACT US</a></li>
-                    <li><a href="#">PRIVACY POLICY</a></li>
-                    <li><a href="#">TERMS OF SERVICE</a></li>
+                    <li><a href="shipping-info.php">SHIPPING INFO</a></li>
+                    <li><a href="returns.php">RETURNS</a></li>
+                    <li><a href="contact-us.php">CONTACT US</a></li>
+                    <li><a href="privacy-policy.php">PRIVACY POLICY</a></li>
+                    <li><a href="terms-of-service.php">TERMS OF SERVICE</a></li>
                 </ul>
             </div>
         </div>

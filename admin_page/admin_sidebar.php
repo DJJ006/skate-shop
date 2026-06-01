@@ -3,6 +3,8 @@
 $pending_gear_count = 0;
 $pending_reels_count = 0;
 $pending_qna_count = 0;
+$pending_shoutouts_count = 0;
+$pending_tickets_count = 0;
 
 if (isset($conn)) {
     // Count pending gear
@@ -33,6 +35,21 @@ if (isset($conn)) {
     if ($count_qna_result) {
         $count_row = $count_qna_result->fetch_assoc();
         $pending_qna_count = (int)$count_row['pending_count'];
+    }
+
+    $count_shoutouts_result = @$conn->query("SELECT COUNT(*) as pending_count FROM community_shoutouts WHERE status = 'pending'");
+    if ($count_shoutouts_result) {
+        $count_row = $count_shoutouts_result->fetch_assoc();
+        $pending_shoutouts_count = (int)$count_row['pending_count'];
+    }
+
+    $t_check = @$conn->query("SHOW TABLES LIKE 'support_tickets'");
+    if ($t_check && $t_check->num_rows > 0) {
+        $ticket_count_sql = @$conn->query("SELECT COUNT(*) as pending_count FROM support_tickets WHERE status IN ('New', 'Open')");
+        if ($ticket_count_sql) {
+            $t_row = $ticket_count_sql->fetch_assoc();
+            $pending_tickets_count = (int)$t_row['pending_count'];
+        }
     }
 }
 
@@ -77,15 +94,35 @@ $current_page = basename($_SERVER['PHP_SELF']);
             </a>
         </li>
         <li>
+            <a href="review-shoutouts.php" class="nav-relative <?php echo ($current_page == 'review-shoutouts.php') ? 'active' : ''; ?>" style="position: relative;">
+                <span class="material-icons">rate_review</span> REVIEW SHOUTS
+                <?php if (!empty($pending_shoutouts_count)): ?>
+                    <span class="notification-badge notification-badge--nav-two-line"><?php echo $pending_shoutouts_count; ?></span>
+                <?php endif; ?>
+            </a>
+        </li>
+        <li>
             <a href="mag.php" class="nav-relative <?php echo ($current_page == 'mag.php') ? 'active' : ''; ?>">
                 <span class="material-icons">auto_stories</span> THE MAG
             </a>
         </li>
         <li>
             <a href="verify-seller.php" class="nav-relative <?php echo ($current_page == 'verify-seller.php') ? 'active' : ''; ?>">
-                <span class="material-icons">verified_user</span> TRUST & SAFETY
+                <span class="material-icons">verified</span> VERIFY SELLERS
             </a>
         </li>
-        <li><a href="../index.php"><span class="material-icons">public</span> VIEW LIVE SITE</a></li>
+        <li>
+            <a href="reports.php" class="nav-relative <?php echo ($current_page == 'reports.php') ? 'active' : ''; ?>" style="position: relative;">
+                <span class="material-icons">support_agent</span> REPORTS  SUPPORT
+                <?php if ($pending_tickets_count > 0): ?>
+                    <span class="notification-badge notification-badge--nav-two-line"><?php echo $pending_tickets_count; ?></span>
+                <?php endif; ?>
+            </a>
+        </li>
+        <hr style="border: 1px solid var(--charcoal); margin: 15px 0;">
+        <li><a href="admin-users.php" class="<?php echo ($current_page == 'admin-users.php') ? 'active' : ''; ?>"><span class="material-icons">admin_panel_settings</span> ADMIN USERS</a></li>
+        <li><a href="edit-profile.php" class="<?php echo ($current_page == 'edit-profile.php') ? 'active' : ''; ?>"><span class="material-icons">manage_accounts</span> MY PROFILE</a></li>
+        <li><a href="../client_page/index.php"><span class="material-icons">public</span> VIEW LIVE SITE</a></li>
+        <li style="margin-top: 10px;"><a href="logout.php" style="color: var(--primary);"><span class="material-icons">logout</span> LOGOUT</a></li>
     </ul>
 </aside>

@@ -1,5 +1,8 @@
-<?php 
-session_start();
+<?php
+require_once 'admin_auth.php';
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 include '../db.php'; 
 
 
@@ -37,13 +40,13 @@ $search = isset($_GET['search']) ? trim($_GET['search']) : '';
 $status_filter = isset($_GET['status']) ? $_GET['status'] : '';
 
 // Base query
-$users_sql = "SELECT id, username, email, is_blocked FROM users WHERE 1=1";
+$where_sql = "1=1";
 $params = [];
 $types = "";
 
 // If user is searching something
 if ($search !== '') {
-    $users_sql .= " AND (username LIKE ? OR email LIKE ? OR id = ?)";
+    $where_sql .= " AND (username LIKE ? OR email LIKE ? OR id = ?)";
     $search_param = "%$search%";
     $params[] = $search_param;
     $params[] = $search_param;
@@ -53,13 +56,28 @@ if ($search !== '') {
 
 // Dropdown status filters
 if ($status_filter === 'blocked') {
-    $users_sql .= " AND is_blocked = 1";
+    $where_sql .= " AND is_blocked = 1";
 } elseif ($status_filter === 'unblocked') {
-    $users_sql .= " AND (is_blocked = 0 OR is_blocked IS NULL)";
+    $where_sql .= " AND (is_blocked = 0 OR is_blocked IS NULL)";
 }
 
-$users_sql .= " ORDER BY id DESC";
+// PAGINATION SETUP
+$limit = 6;
+$page = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
+$offset = ($page - 1) * $limit;
 
+// COUNT TOTAL RECORDS
+$count_sql = "SELECT COUNT(*) as total FROM users WHERE $where_sql";
+$count_stmt = $conn->prepare($count_sql);
+if ($types !== "") {
+    $count_stmt->bind_param($types, ...$params);
+}
+$count_stmt->execute();
+$count_res = $count_stmt->get_result();
+$total_records = $count_res->fetch_assoc()['total'];
+$total_pages = ceil($total_records / $limit);
+
+$users_sql = "SELECT id, username, email, is_blocked FROM users WHERE $where_sql ORDER BY id DESC LIMIT $limit OFFSET $offset";
 // Execute prepared statement for fetching users
 $stmt = $conn->prepare($users_sql);
 if ($types !== "") {
@@ -87,18 +105,7 @@ $modals_html = [];
 </head>
 <body>
 
-<header class="main-header">
-    <div class="container header-content">
-        <h1 class="logo">
-            <a href="../admin_page/index.php">SKATE<span>SHOP</span> ADMIN</a>
-        </h1>
-
-        <div class="mobile-menu-icon" id="menu-btn">
-            <span class="material-icons">menu</span>
-        </div>
-
-    </div>
-</header>
+<?php require __DIR__ . '/admin_header.php'; ?>
 
 <section class="admin-layout container">
     
@@ -238,6 +245,27 @@ $modals_html = [];
                     <?php endif; ?>
                 </tbody>
             </table>
+
+            <?php if ($total_pages > 0): ?>
+            <div class="admin-pagination">
+                <?php
+                $query_string = $_GET;
+                if ($page > 1) {
+                    $query_string['page'] = $page - 1;
+                    echo '<a href="?' . http_build_query($query_string) . '" class="btn btn-outline">&laquo; PREV</a>';
+                }
+                for ($i = 1; $i <= $total_pages; $i++) {
+                    $query_string['page'] = $i;
+                    $active = ($i === $page) ? 'active' : '';
+                    echo '<a href="?' . http_build_query($query_string) . '" class="btn btn-outline ' . $active . '">' . $i . '</a>';
+                }
+                if ($page < $total_pages) {
+                    $query_string['page'] = $page + 1;
+                    echo '<a href="?' . http_build_query($query_string) . '" class="btn btn-outline">NEXT &raquo;</a>';
+                }
+                ?>
+            </div>
+            <?php endif; ?>
         </div>
     </main>
 </section>

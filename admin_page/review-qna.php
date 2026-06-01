@@ -1,11 +1,11 @@
 <?php
-session_start();
+require_once 'admin_auth.php';
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 include '../db.php';
 
-if (!isset($_SESSION['user_id'])) {
-    header('Location: ../client_page/login.php');
-    exit();
-}
+
 
 $qna_redirect_allowed = ['all', 'pending', 'published', 'rejected'];
 
@@ -26,9 +26,7 @@ function qna_admin_redirect_url(): string {
 }
 
 function qna_notify_user(mysqli $conn, int $user_id, string $message): void {
-    $stmt = $conn->prepare('INSERT INTO notifications (user_id, message, is_read) VALUES (?, ?, 0)');
-    $stmt->bind_param('is', $user_id, $message);
-    $stmt->execute();
+    sendAppNotification($conn, $user_id, $message);
 }
 
 // --- POST: publish (pending -> published) ---
@@ -204,7 +202,21 @@ if ($sort_filter === 'oldest') {
     $order_sql = "ORDER BY (q.status = 'published') DESC, q.created_at DESC";
 }
 
-$list_sql = "SELECT q.* FROM community_qna q WHERE $where_sql $order_sql";
+// PAGINATION SETUP
+$limit = 6;
+$page = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
+$offset = ($page - 1) * $limit;
+
+// COUNT TOTAL RECORDS
+$count_res = @$conn->query("SELECT COUNT(*) as total FROM community_qna q WHERE $where_sql");
+if ($count_res) {
+    $total_records = $count_res->fetch_assoc()['total'];
+    $total_pages = ceil($total_records / $limit);
+} else {
+    $total_pages = 0;
+}
+
+$list_sql = "SELECT q.* FROM community_qna q WHERE $where_sql $order_sql LIMIT $limit OFFSET $offset";
 $list_result = @$conn->query($list_sql);
 $rows = [];
 $table_missing = false;
@@ -296,11 +308,7 @@ function qna_status_badge_class(string $status): string {
 </head>
 <body>
 
-<header class="main-header">
-    <div class="container header-content">
-        <h1 class="logo"><a href="index.php">SKATE<span>SHOP</span> ADMIN</a></h1>
-    </div>
-</header>
+<?php require __DIR__ . '/admin_header.php'; ?>
 
 <section class="admin-layout container">
     <div style="margin-top: 47px;">
@@ -508,6 +516,28 @@ function qna_status_badge_class(string $status): string {
                     <?php endif; ?>
                 </tbody>
             </table>
+
+            <?php if (!$table_missing && $total_pages > 0): ?>
+            <div class="admin-pagination">
+                <?php
+                $query_string = $_GET;
+                if ($page > 1) {
+                    $query_string['page'] = $page - 1;
+                    echo '<a href="?' . http_build_query($query_string) . '" class="btn btn-outline">&laquo; PREV</a>';
+                }
+                for ($i = 1; $i <= $total_pages; $i++) {
+                    $query_string['page'] = $i;
+                    $active = ($i === $page) ? 'active' : '';
+                    echo '<a href="?' . http_build_query($query_string) . '" class="btn btn-outline ' . $active . '">' . $i . '</a>';
+                }
+                if ($page < $total_pages) {
+                    $query_string['page'] = $page + 1;
+                    echo '<a href="?' . http_build_query($query_string) . '" class="btn btn-outline">NEXT &raquo;</a>';
+                }
+                ?>
+            </div>
+            <?php endif; ?>
+
         </div>
         <?php endif; ?>
     </main>
@@ -545,3 +575,4 @@ document.addEventListener('DOMContentLoaded', () => {
 </script>
 </body>
 </html>
+

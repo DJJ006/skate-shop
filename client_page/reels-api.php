@@ -43,9 +43,7 @@ if ($action === 'toggle_like' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($reel_data && $reel_data['user_id'] != $user_id) {
             $username = $_SESSION['username'] ?? 'Someone';
             $msg = $username . ' liked your reel "' . $reel_data['title'] . '"';
-            $notif = $conn->prepare("INSERT INTO notifications (user_id, message) VALUES (?, ?)");
-            $notif->bind_param("is", $reel_data['user_id'], $msg);
-            $notif->execute();
+            sendAppNotification($conn, $reel_data['user_id'], $msg);
         }
     }
 
@@ -155,7 +153,7 @@ if ($action === 'get_comments' && $_SERVER['REQUEST_METHOD'] === 'GET') {
     $sort = $_GET['sort'] ?? 'oldest';
     $order = ($sort === 'newest') ? 'DESC' : 'ASC';
 
-    $stmt = $conn->prepare("SELECT id, user_id, username, comment, created_at FROM reel_comments WHERE reel_id = ? ORDER BY created_at $order");
+    $stmt = $conn->prepare("SELECT rc.id, rc.user_id, rc.username, rc.comment, rc.created_at, u.profile_pic FROM reel_comments rc JOIN users u ON rc.user_id = u.id WHERE rc.reel_id = ? ORDER BY rc.created_at $order");
     $stmt->bind_param("i", $reel_id);
     $stmt->execute();
     $result = $stmt->get_result();
@@ -167,7 +165,8 @@ if ($action === 'get_comments' && $_SERVER['REQUEST_METHOD'] === 'GET') {
             'username' => $row['username'],
             'comment' => htmlspecialchars($row['comment']),
             'created_at' => date('M j, Y H:i', strtotime($row['created_at'])),
-            'is_owner' => ((int)$row['user_id'] === (int)$current_user)
+            'is_owner' => ((int)$row['user_id'] === (int)$current_user),
+            'profile_pic' => $row['profile_pic']
         ];
     }
 

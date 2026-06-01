@@ -1,11 +1,11 @@
 <?php
-session_start();
+require_once 'admin_auth.php';
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 include '../db.php';
 
-if (!isset($_SESSION['user_id'])) {
-    header("Location: ../client_page/login.php");
-    exit();
-}
+
 
 // ── HELPERS ──────────────────────────────────────────────────────────────────
 function make_slug($str) {
@@ -141,6 +141,17 @@ if ($sort === 'oldest') {
 } else {
     $sql .= " ORDER BY created_at DESC";
 }
+// PAGINATION SETUP
+$limit = 6;
+$page = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
+$offset = ($page - 1) * $limit;
+
+// COUNT TOTAL RECORDS
+$count_res = $conn->query(str_replace("SELECT *", "SELECT COUNT(*) as total", $sql));
+$total_records = $count_res->fetch_assoc()['total'];
+$total_pages = ceil($total_records / $limit);
+
+$sql .= " LIMIT $limit OFFSET $offset";
 $posts_res = $conn->query($sql);
 $posts = [];
 if ($posts_res) {
@@ -221,11 +232,7 @@ if ($posts_res) {
 </head>
 <body>
 
-<header class="main-header">
-    <div class="container header-content">
-        <h1 class="logo"><a href="index.php">SKATE<span>SHOP</span> ADMIN</a></h1>
-    </div>
-</header>
+<?php require __DIR__ . '/admin_header.php'; ?>
 
 <section class="admin-layout container">
     <?php include 'admin_sidebar.php'; ?>
@@ -327,6 +334,28 @@ if ($posts_res) {
                 <?php endif; ?>
                 </tbody>
             </table>
+
+            <?php if ($total_pages > 0): ?>
+            <div class="admin-pagination">
+                <?php
+                $query_string = $_GET;
+                if ($page > 1) {
+                    $query_string['page'] = $page - 1;
+                    echo '<a href="?' . http_build_query($query_string) . '" class="btn btn-outline">&laquo; PREV</a>';
+                }
+                for ($i = 1; $i <= $total_pages; $i++) {
+                    $query_string['page'] = $i;
+                    $active = ($i === $page) ? 'active' : '';
+                    echo '<a href="?' . http_build_query($query_string) . '" class="btn btn-outline ' . $active . '">' . $i . '</a>';
+                }
+                if ($page < $total_pages) {
+                    $query_string['page'] = $page + 1;
+                    echo '<a href="?' . http_build_query($query_string) . '" class="btn btn-outline">NEXT &raquo;</a>';
+                }
+                ?>
+            </div>
+            <?php endif; ?>
+
         </div>
     </main>
 </section>
@@ -492,3 +521,4 @@ function escMagHtml(str) {
 
 </body>
 </html>
+

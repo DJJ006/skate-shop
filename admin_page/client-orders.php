@@ -1,5 +1,8 @@
 <?php
-session_start();
+require_once 'admin_auth.php';
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 include '../db.php';
 
 // Ensure the column exists for data safety
@@ -71,7 +74,53 @@ if (isset($_GET['type_filter'])) {
     $type_filter = $_GET['type_filter'];
 }
 
-// Build the order query
+// Build the conditions
+$where_sql = " o.is_hidden_admin = 0 ";
+
+if ($status_filter === 'PAID') {
+    $where_sql .= " AND o.status = 'PAID' ";
+} elseif ($status_filter === 'CANCELLED') {
+    $where_sql .= " AND o.status = 'CANCELLED' ";
+} elseif ($status_filter === 'RECEIVED') {
+    $where_sql .= " AND o.status = 'RECEIVED' ";
+} else {
+    $where_sql .= " AND o.status IN ('PAID', 'CANCELLED', 'RECEIVED') ";
+}
+
+if ($type_filter === 'MARKETPLACE') {
+    $where_sql .= " AND p.is_marketplace = 1 ";
+} elseif ($type_filter === 'SHOP') {
+    $where_sql .= " AND p.is_marketplace = 0 ";
+}
+
+if ($search_query !== "") {
+    $clean_search = $conn->real_escape_string($search_query);
+    $order_id_search = null;
+    if (preg_match('/^ORD-(\d+)$/i', $clean_search, $matches)) {
+        $order_id_search = (int)$matches[1];
+    }
+    
+    $where_sql .= " AND (";
+    $where_sql .= " p.title LIKE '%$clean_search%' ";
+    $where_sql .= " OR u.username LIKE '%$clean_search%' ";
+    if ($order_id_search !== null) {
+        $where_sql .= " OR o.id = $order_id_search ";
+    }
+    $where_sql .= ") ";
+}
+
+// PAGINATION SETUP
+$limit = 6;
+$page = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
+$offset = ($page - 1) * $limit;
+
+// COUNT TOTAL RECORDS
+$count_sql = "SELECT COUNT(*) as total FROM orders o JOIN products p ON o.product_id = p.id JOIN users u ON o.buyer_id = u.id WHERE $where_sql";
+$count_res = $conn->query($count_sql);
+$total_records = $count_res->fetch_assoc()['total'];
+$total_pages = ceil($total_records / $limit);
+
+// Build the final order query
 $sql = "
     SELECT 
         o.id as order_id, 
@@ -89,42 +138,10 @@ $sql = "
     FROM orders o 
     JOIN products p ON o.product_id = p.id 
     JOIN users u ON o.buyer_id = u.id 
-    WHERE o.is_hidden_admin = 0
+    WHERE $where_sql
+    ORDER BY o.created_at DESC 
+    LIMIT $limit OFFSET $offset
 ";
-
-if ($status_filter === 'PAID') {
-    $sql .= " AND o.status = 'PAID' ";
-} elseif ($status_filter === 'CANCELLED') {
-    $sql .= " AND o.status = 'CANCELLED' ";
-} elseif ($status_filter === 'RECEIVED') {
-    $sql .= " AND o.status = 'RECEIVED' ";
-} else {
-    $sql .= " AND o.status IN ('PAID', 'CANCELLED', 'RECEIVED') ";
-}
-
-if ($type_filter === 'MARKETPLACE') {
-    $sql .= " AND p.is_marketplace = 1 ";
-} elseif ($type_filter === 'SHOP') {
-    $sql .= " AND p.is_marketplace = 0 ";
-}
-
-if ($search_query !== "") {
-    $clean_search = $conn->real_escape_string($search_query);
-    $order_id_search = null;
-    if (preg_match('/^ORD-(\d+)$/i', $clean_search, $matches)) {
-        $order_id_search = (int)$matches[1];
-    }
-    
-    $sql .= " AND (";
-    $sql .= " p.title LIKE '%$clean_search%' ";
-    $sql .= " OR u.username LIKE '%$clean_search%' ";
-    if ($order_id_search !== null) {
-        $sql .= " OR o.id = $order_id_search ";
-    }
-    $sql .= ") ";
-}
-
-$sql .= " ORDER BY o.created_at DESC";
 $orders_stmt = $conn->query($sql);
 ?>
 
@@ -144,16 +161,7 @@ $orders_stmt = $conn->query($sql);
 </head>
 <body>
 
-<header class="main-header">
-    <div class="container header-content">
-        <h1 class="logo">
-            <a href="index.php">SKATE<span>SHOP</span> ADMIN</a>
-        </h1>
-        <div class="mobile-menu-icon" id="menu-btn">
-            <span class="material-icons">menu</span>
-        </div>
-    </div>
-</header>
+<?php require __DIR__ . '/admin_header.php'; ?>
 
 <section class="admin-layout container">
     <?php include 'admin_sidebar.php'; ?>
@@ -308,6 +316,28 @@ $orders_stmt = $conn->query($sql);
                     </tbody>
                 </table>
             </div>
+
+            <?php if ($total_pages > 0): ?>
+            <div class="admin-pagination">
+                <?php
+                $query_string = $_GET;
+                if ($page > 1) {
+                    $query_string['page'] = $page - 1;
+                    echo '<a href="?' . http_build_query($query_string) . '" class="btn btn-outline">&laquo; PREV</a>';
+                }
+                for ($i = 1; $i <= $total_pages; $i++) {
+                    $query_string['page'] = $i;
+                    $active = ($i === $page) ? 'active' : '';
+                    echo '<a href="?' . http_build_query($query_string) . '" class="btn btn-outline ' . $active . '">' . $i . '</a>';
+                }
+                if ($page < $total_pages) {
+                    $query_string['page'] = $page + 1;
+                    echo '<a href="?' . http_build_query($query_string) . '" class="btn btn-outline">NEXT &raquo;</a>';
+                }
+                ?>
+            </div>
+            <?php endif; ?>
+
         </div>
     </main>
 </section>

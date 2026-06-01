@@ -130,8 +130,19 @@ $allowed_sorts = ['id', 'title', 'price', 'created_at'];
 if (!in_array($sort_by, $allowed_sorts)) { $sort_by = 'created_at'; }
 
 // FINAL SELECT QUERY: Added brand here so it shows up in your table/modals
+// PAGINATION SETUP
+$limit = 6;
+$page = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
+$offset = ($page - 1) * $limit;
+
+// COUNT TOTAL RECORDS
+$count_sql = "SELECT COUNT(*) as total FROM products WHERE $where_sql";
+$count_res = $conn->query($count_sql);
+$total_records = $count_res->fetch_assoc()['total'];
+$total_pages = ceil($total_records / $limit);
+
 $products_sql = "SELECT id, title, brand, price, category, condition_badge, description, created_at 
-                 FROM products WHERE $where_sql ORDER BY $sort_by $order";
+                 FROM products WHERE $where_sql ORDER BY $sort_by $order LIMIT $limit OFFSET $offset";
 $products_result = $conn->query($products_sql);
 ?>
 
@@ -151,11 +162,7 @@ $products_result = $conn->query($products_sql);
 </head>
 <body>
 
-<header class="main-header">
-    <div class="container header-content">
-        <h1 class="logo"><a href="index.php">SKATE<span>SHOP</span> ADMIN</a></h1>
-    </div>
-</header>
+<?php require __DIR__ . '/admin_header.php'; ?>
 
 <section class="admin-layout container">
     <?php include 'admin_sidebar.php'; ?>
@@ -282,6 +289,27 @@ $products_result = $conn->query($products_sql);
                     <?php endif; ?>
                 </tbody>
             </table>
+
+            <?php if ($total_pages > 0): ?>
+            <div class="admin-pagination">
+                <?php
+                $query_string = $_GET;
+                if ($page > 1) {
+                    $query_string['page'] = $page - 1;
+                    echo '<a href="?' . http_build_query($query_string) . '" class="btn btn-outline">&laquo; PREV</a>';
+                }
+                for ($i = 1; $i <= $total_pages; $i++) {
+                    $query_string['page'] = $i;
+                    $active = ($i === $page) ? 'active' : '';
+                    echo '<a href="?' . http_build_query($query_string) . '" class="btn btn-outline ' . $active . '">' . $i . '</a>';
+                }
+                if ($page < $total_pages) {
+                    $query_string['page'] = $page + 1;
+                    echo '<a href="?' . http_build_query($query_string) . '" class="btn btn-outline">NEXT &raquo;</a>';
+                }
+                ?>
+            </div>
+            <?php endif; ?>
         </div>
     </main>
 </section>

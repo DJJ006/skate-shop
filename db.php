@@ -13,6 +13,9 @@ if(!$conn){
     #echo "Ir izveidots savienojums ar datubāzi";
 }
 
+require_once __DIR__ . '/notification-service.php';
+
+
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();

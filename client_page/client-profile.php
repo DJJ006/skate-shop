@@ -2,6 +2,20 @@
 session_start();
 include '../db.php'; 
 
+// --- MIGRATION: Ensure the table exists
+$conn->query("
+CREATE TABLE IF NOT EXISTS email_change_requests (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    new_email VARCHAR(255) NOT NULL,
+    token VARCHAR(64) NOT NULL,
+    expires_at DATETIME NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY (user_id),
+    UNIQUE KEY (token),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+)");
+
 // --- MIGRATION: Ensure hidden columns exist for cleanup feature ---
 $check_p = $conn->query("SHOW COLUMNS FROM products LIKE 'hidden_from_seller'");
 if ($check_p->num_rows == 0) {
@@ -23,7 +37,7 @@ $username = $_SESSION['username'];
 // --- AJAX: FETCH SINGLE PRODUCT FOR EDIT ---
 if (isset($_GET['get_listing_details'])) {
     $p_id = (int)$_GET['get_listing_details'];
-    $stmt = $conn->prepare("SELECT * FROM products WHERE id = ? AND seller_id = ?");
+    $stmt = $conn->prepare("SELECT * FROM products WHERE id = ? AND seller_id = ? AND is_approved = 1");
     $stmt->bind_param("ii", $p_id, $user_id);
     $stmt->execute();
     echo json_encode($stmt->get_result()->fetch_assoc());
@@ -37,6 +51,20 @@ if (isset($_GET['get_qna_details'])) {
     $stmt->bind_param("ii", $q_id, $user_id);
     $stmt->execute();
     echo json_encode($stmt->get_result()->fetch_assoc());
+    exit();
+}
+
+// --- AJAX: FETCH SINGLE SHOUTOUT DETAILS ---
+if (isset($_GET['get_shoutout_details'])) {
+    $s_id = (int)$_GET['get_shoutout_details'];
+    $stmt = $conn->prepare("SELECT * FROM community_shoutouts WHERE id = ? AND user_id = ?");
+    if ($stmt) {
+        $stmt->bind_param("ii", $s_id, $user_id);
+        $stmt->execute();
+        echo json_encode($stmt->get_result()->fetch_assoc());
+    } else {
+        echo json_encode(null);
+    }
     exit();
 }
 
@@ -76,14 +104,8 @@ if (isset($_SESSION['msg'])) {
     unset($_SESSION['msg_type']);
 }
 
-// Fetch basic user data
-$stmt = $conn->prepare("SELECT email, profile_pic FROM users WHERE id = ?");
-$stmt->bind_param("i", $user_id);
-$stmt->execute();
-$user_data = $stmt->get_result()->fetch_assoc();
-
 // Fetch basic user data including wallet_balance
-$stmt = $conn->prepare("SELECT email, profile_pic, wallet_balance FROM users WHERE id = ?");
+$stmt = $conn->prepare("SELECT username, email, profile_pic, wallet_balance, email_notifications FROM users WHERE id = ?");
 $stmt->bind_param("i", $user_id);
 $stmt->execute();
 $user_data = $stmt->get_result()->fetch_assoc();
@@ -138,6 +160,44 @@ $my_qna_stmt->bind_param("i", $user_id);
 $my_qna_stmt->execute();
 $my_qna_result = $my_qna_stmt->get_result();
 
+// Fetch Support Tickets
+$my_tickets = null;
+$t_check = @$conn->query("SHOW TABLES LIKE 'support_tickets'");
+if ($t_check && $t_check->num_rows > 0) {
+    $tickets_stmt = $conn->prepare("SELECT * FROM support_tickets WHERE user_id = ? ORDER BY updated_at DESC");
+    $tickets_stmt->bind_param("i", $user_id);
+    $tickets_stmt->execute();
+    $my_tickets = $tickets_stmt->get_result();
+}
+
+// Fetch Followers
+$followers_stmt = $conn->prepare("
+    SELECT u.id, u.username, u.profile_pic 
+    FROM user_follows f 
+    JOIN users u ON f.follower_id = u.id 
+    WHERE f.followed_id = ?
+    ORDER BY f.created_at DESC
+");
+$followers_stmt->bind_param("i", $user_id);
+$followers_stmt->execute();
+$followers_list = $followers_stmt->get_result();
+
+// Fetch My Shoutouts (empty if table missing)
+$my_shoutouts_rows = [];
+if (@$conn->query("SELECT 1 FROM community_shoutouts LIMIT 1") !== false) {
+    $my_shoutouts_stmt = $conn->prepare("SELECT * FROM community_shoutouts WHERE user_id = ? ORDER BY created_at DESC");
+    if ($my_shoutouts_stmt) {
+        $my_shoutouts_stmt->bind_param("i", $user_id);
+        $my_shoutouts_stmt->execute();
+        $my_shoutouts_res = $my_shoutouts_stmt->get_result();
+        if ($my_shoutouts_res) {
+            while ($sr = $my_shoutouts_res->fetch_assoc()) {
+                $my_shoutouts_rows[] = $sr;
+            }
+        }
+    }
+}
+
 // --- POST: CONFIRM RECEIPT ---
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_receipt'])) {
     $order_id = (int)$_POST['order_id'];
@@ -179,12 +239,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_receipt'])) {
                 $payout_stmt->execute();
 
                 $seller_msg = "Your funds have been released! $" . number_format($seller_payout, 2) . " has been added to your Wallet for a confirmed delivery.";
-                $seller_notif_stmt = $conn->prepare("INSERT INTO notifications (user_id, message, is_read) VALUES (?, ?, 0)");
-                $seller_notif_stmt->bind_param("is", $seller_id, $seller_msg);
-                $seller_notif_stmt->execute();
+                sendAppNotification($conn, $seller_id, $seller_msg);
             }
         } else {
-            // Official Shop Product - Update payout status so it doesn't stay PENDING
+            // Official Shop Product
             $payout_stmt = $conn->prepare("UPDATE orders SET payout_status = 'NOT_APPLICABLE', payout_date = NOW() WHERE id = ?");
             $payout_stmt->bind_param("i", $order_id);
             $payout_stmt->execute();
@@ -206,7 +264,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_receipt'])) {
 // --- POST: HIDE INVENTORY ITEM (SOLD) ---
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['hide_inventory_item'])) {
     $product_id = (int)$_POST['product_id'];
-    // Verify ownership
     $check = $conn->prepare("SELECT id FROM products WHERE id = ? AND seller_id = ?");
     $check->bind_param("ii", $product_id, $user_id);
     $check->execute();
@@ -224,7 +281,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['hide_inventory_item'])
 // --- POST: HIDE BUY HISTORY ITEM (CANCELLED/RECEIVED) ---
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['hide_buy_history_item'])) {
     $order_id = (int)$_POST['order_id'];
-    // Verify ownership and status
     $check = $conn->prepare("SELECT id FROM orders WHERE id = ? AND buyer_id = ? AND status IN ('CANCELLED', 'RECEIVED')");
     $check->bind_param("ii", $order_id, $user_id);
     $check->execute();
@@ -241,13 +297,110 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['hide_buy_history_item'
 
 // --- POST: UPDATE PROFILE ---
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_profile'])) {
-    $new_password = $_POST['new_password'];
-    $confirm_password = $_POST['confirm_password'];
+    $new_username = trim($_POST['new_username'] ?? '');
+    $new_email = trim($_POST['new_email'] ?? '');
+    $current_password = $_POST['current_password'] ?? '';
+    $new_password = $_POST['new_password'] ?? '';
+    $confirm_password = $_POST['confirm_password'] ?? '';
     $update_query_parts = [];
     $types = "";
     $params = [];
+    $username_changed = false;
+
+    if (!empty($new_username) && $new_username !== $user_data['username']) {
+        if (!preg_match('/^[a-zA-Z0-9_]{3,20}$/', $new_username)) {
+            $_SESSION['msg'] = "USERNAME MUST BE 3-20 CHARACTERS (ALPHANUMERIC & UNDERSCORES ONLY).";
+            $_SESSION['msg_type'] = "error";
+            header("Location: client-profile.php");
+            exit();
+        }
+        $check_user = $conn->prepare("SELECT id FROM users WHERE username = ? AND id != ?");
+        $check_user->bind_param("si", $new_username, $user_id);
+        $check_user->execute();
+        if ($check_user->get_result()->num_rows > 0) {
+            $_SESSION['msg'] = "USERNAME ALREADY TAKEN.";
+            $_SESSION['msg_type'] = "error";
+            header("Location: client-profile.php");
+            exit();
+        }
+        $update_query_parts[] = "username = ?";
+        $types .= "s";
+        $params[] = $new_username;
+        $username_changed = true;
+    }
+
+    if (!empty($new_email) && $new_email !== $user_data['email']) {
+        if (!filter_var($new_email, FILTER_VALIDATE_EMAIL)) {
+            $_SESSION['msg'] = "INVALID EMAIL FORMAT.";
+            $_SESSION['msg_type'] = "error";
+            header("Location: client-profile.php");
+            exit();
+        }
+        $check_email = $conn->prepare("SELECT id FROM users WHERE email = ? AND id != ?");
+        $check_email->bind_param("si", $new_email, $user_id);
+        $check_email->execute();
+        if ($check_email->get_result()->num_rows > 0) {
+            $_SESSION['msg'] = "EMAIL ALREADY TAKEN.";
+            $_SESSION['msg_type'] = "error";
+            header("Location: client-profile.php");
+            exit();
+        }
+        
+        // Handle Secure Email Change Flow
+        $token = bin2hex(random_bytes(32));
+        $expires_at = date('Y-m-d H:i:s', strtotime('+24 hours'));
+        
+        $req_stmt = $conn->prepare("INSERT INTO email_change_requests (user_id, new_email, token, expires_at) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE new_email = VALUES(new_email), token = VALUES(token), expires_at = VALUES(expires_at)");
+        $req_stmt->bind_param("isss", $user_id, $new_email, $token, $expires_at);
+        
+        if ($req_stmt->execute()) {
+            $verify_link = "http://" . $_SERVER['HTTP_HOST'] . dirname($_SERVER['PHP_SELF']) . "/verify-email.php?token=" . $token;
+            $email_body = "
+                <p>You requested to change your email address to <strong>" . htmlspecialchars($new_email) . "</strong>.</p>
+                <p>Please click the link below to verify this change. You will be required to enter your current password.</p>
+                <p><a href='" . $verify_link . "' style='display:inline-block; padding:10px 20px; background:#ff4b4b; color:#fff; text-decoration:none; font-weight:bold;'>VERIFY EMAIL CHANGE</a></p>
+                <p>If you did not request this, please ignore this email or secure your account.</p>
+                <p><small>This link will expire in 24 hours.</small></p>
+            ";
+            require_once __DIR__ . '/../notification-service.php';
+            $html_body = buildEmailTemplate("Verify Email Change", $email_body);
+            sendEmail($user_data['email'], "SkateShop - Verify Your Email Change", $html_body);
+            
+            $_SESSION['msg'] = "Email change request submitted. Please check your current email address to verify and complete the change.";
+            $_SESSION['msg_type'] = "success";
+            
+            // Delete any existing pending email notifications to avoid duplicates
+            $msg_like = "Email change request to%";
+            $del_old = $conn->prepare("DELETE FROM notifications WHERE user_id = ? AND message LIKE ?");
+            $del_old->bind_param("is", $user_id, $msg_like);
+            $del_old->execute();
+            
+            // Add a standard notification
+            $email_notif = "Email change request to " . $new_email . " is pending. Please check your current email address to verify.";
+            $ins = $conn->prepare("INSERT INTO notifications (user_id, message, is_read) VALUES (?, ?, 0)");
+            $ins->bind_param("is", $user_id, $email_notif);
+            $ins->execute();
+        } else {
+            $_SESSION['msg'] = "ERROR INITIATING EMAIL CHANGE.";
+            $_SESSION['msg_type'] = "error";
+            header("Location: client-profile.php");
+            exit();
+        }
+    }
 
     if (!empty($new_password)) {
+        $pwd_stmt = $conn->prepare("SELECT password FROM users WHERE id = ?");
+        $pwd_stmt->bind_param("i", $user_id);
+        $pwd_stmt->execute();
+        $user_pwd_hash = $pwd_stmt->get_result()->fetch_assoc()['password'];
+
+        if (!password_verify($current_password, $user_pwd_hash)) {
+            $_SESSION['msg'] = "INCORRECT CURRENT PASSWORD.";
+            $_SESSION['msg_type'] = "error";
+            header("Location: client-profile.php");
+            exit();
+        }
+
         if ($new_password === $confirm_password) {
             $update_query_parts[] = "password = ?";
             $types .= "s";
@@ -272,14 +425,42 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_profile'])) {
         }
     }
 
+    $email_notifications = isset($_POST['email_notifications']) ? 1 : 0;
+    $update_query_parts[] = "email_notifications = ?";
+    $types .= "i";
+    $params[] = $email_notifications;
+
+
     if (!empty($update_query_parts)) {
         $sql = "UPDATE users SET " . implode(", ", $update_query_parts) . " WHERE id = ?";
         $types .= "i"; $params[] = $user_id;
         $stmt = $conn->prepare($sql);
         $stmt->bind_param($types, ...$params);
         $stmt->execute();
-        $_SESSION['msg'] = "PROFILE UPDATED.";
-        $_SESSION['msg_type'] = "success";
+        
+        if ($username_changed) {
+            $_SESSION['username'] = $new_username;
+            
+            $c1 = $conn->prepare("UPDATE products SET seller_name = ? WHERE seller_id = ?");
+            $c1->bind_param("si", $new_username, $user_id); $c1->execute();
+            
+            $c2 = $conn->prepare("UPDATE reels SET username = ? WHERE user_id = ?");
+            $c2->bind_param("si", $new_username, $user_id); $c2->execute();
+            
+            $c3 = $conn->prepare("UPDATE reel_comments SET username = ? WHERE user_id = ?");
+            $c3->bind_param("si", $new_username, $user_id); $c3->execute();
+            
+            $c4 = $conn->prepare("UPDATE community_qna SET username = ? WHERE user_id = ?");
+            $c4->bind_param("si", $new_username, $user_id); $c4->execute();
+            
+            $c5 = $conn->prepare("UPDATE community_shoutouts SET username = ? WHERE user_id = ?");
+            $c5->bind_param("si", $new_username, $user_id); $c5->execute();
+        }
+
+        if (empty($_SESSION['msg']) || $_SESSION['msg'] === "PROFILE UPDATED.") {
+            $_SESSION['msg'] = "PROFILE UPDATED.";
+            $_SESSION['msg_type'] = "success";
+        }
     }
     header("Location: client-profile.php");
     exit();
@@ -309,7 +490,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_market_item'])) {
 }
 
 // --- POST: UPDATE EXISTING LISTING ---
-// --- POST: UPDATE EXISTING LISTING ---
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_listing'])) {
     $p_id = (int)$_POST['product_id'];
     $title = $conn->real_escape_string($_POST['title']);
@@ -319,13 +499,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_listing'])) {
     $condition = $conn->real_escape_string($_POST['condition_badge']);
     $description = $conn->real_escape_string($_POST['description']);
 
-    // 1. Initial query parts
-    // We reset is_approved to 0 so admin reviews changes.
     $sql = "UPDATE products SET title=?, brand=?, price=?, category=?, condition_badge=?, description=?, is_approved=0";
-    $types = "ssdsss"; // Match the 6 fields above: title(s), brand(s), price(d), category(s), condition(s), description(s)
+    $types = "ssdsss"; 
     $params = [$title, $brand, $price, $category, $condition, $description];
 
-    // 2. Check if a new image was uploaded
     if (isset($_FILES['item_image']) && $_FILES['item_image']['error'] == 0) {
         $target_file = "../assets/uploads/" . uniqid('market_') . '.' . pathinfo($_FILES["item_image"]["name"], PATHINFO_EXTENSION);
         if (move_uploaded_file($_FILES["item_image"]["tmp_name"], $target_file)) {
@@ -335,16 +512,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_listing'])) {
         }
     }
 
-    // 3. Add WHERE clause
-    $sql .= " WHERE id=? AND seller_id=?";
+    $sql .= " WHERE id=? AND seller_id=? AND is_approved = 1";
     $types .= "ii";
     $params[] = $p_id;
     $params[] = $user_id;
 
-    // 4. Prepare and Bind
     $stmt = $conn->prepare($sql);
-    
-    // THE FIX: We pass the types string first, then the unpacked params array
     $stmt->bind_param($types, ...$params);
     
     if ($stmt->execute()) {
@@ -361,10 +534,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_listing'])) {
 
 // --- POST: DELETE MY REEL ---
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_my_reel'])) {
-    $reel_id = (int)$_POST['reel_id'];
-    // Verify ownership
     $r_id = (int)$_POST['reel_id'];
-    // Delete reel and dependencies
     $conn->query("DELETE FROM reel_likes WHERE reel_id = $r_id");
     $conn->query("DELETE FROM reel_comments WHERE reel_id = $r_id");
     $conn->query("DELETE FROM reel_edit_requests WHERE reel_id = $r_id");
@@ -391,17 +561,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_my_qna'])) {
     exit();
 }
 
+// --- POST: DELETE MY SHOUTOUT ---
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_my_shoutout'])) {
+    $s_id = (int)$_POST['shoutout_id'];
+    $stmt = $conn->prepare("DELETE FROM community_shoutouts WHERE id = ? AND user_id = ?");
+    if ($stmt) {
+        $stmt->bind_param("ii", $s_id, $user_id);
+        if ($stmt->execute()) {
+            $_SESSION['msg'] = "SHOUTOUT DELETED.";
+            $_SESSION['msg_type'] = "success";
+        }
+    }
+    header("Location: client-profile.php");
+    exit();
+}
+
 // --- POST: SUBMIT REEL EDIT ---
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['submit_reel_edit'])) {
     $reel_id = (int)$_POST['reel_id'];
     $new_title = trim($_POST['new_title']);
     $new_desc = trim($_POST['new_description']);
 
-    // Ownership and Moderation check
     $own_check = $conn->prepare("SELECT id, is_approved FROM reels WHERE id = ? AND user_id = ?");
     $own_check->bind_param("ii", $reel_id, $user_id);
     $own_check->execute();
     $reel_res = $own_check->get_result()->fetch_assoc();
+    
     if (!$reel_res) {
         $_SESSION['msg'] = "REEL NOT FOUND.";
         $_SESSION['msg_type'] = "error";
@@ -425,7 +610,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['submit_reel_edit'])) {
         $_SESSION['msg'] = "DESCRIPTION IS TOO LONG (MAX 100).";
         $_SESSION['msg_type'] = "error";
     } else {
-        // Cancel any existing pending edit for this reel
         $cancel_edit = $conn->prepare("DELETE FROM reel_edit_requests WHERE reel_id = ? AND user_id = ? AND status = 'pending'");
         $cancel_edit->bind_param("ii", $reel_id, $user_id);
         $cancel_edit->execute();
@@ -434,11 +618,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['submit_reel_edit'])) {
         $ins->bind_param("iiss", $reel_id, $user_id, $new_title, $new_desc);
         $ins->execute();
 
-        // Notify user that their edit is in review
         $notif_msg = "Your edit for the reel '" . $new_title . "' has been submitted and will be reviewed by an administrator.";
-        $notif_stmt = $conn->prepare("INSERT INTO notifications (user_id, message, is_read) VALUES (?, ?, 0)");
-        $notif_stmt->bind_param("is", $user_id, $notif_msg);
-        $notif_stmt->execute();
+        sendAppNotification($conn, $user_id, $notif_msg);
 
         $_SESSION['msg'] = "EDIT SUBMITTED FOR ADMIN REVIEW.";
         $_SESSION['msg_type'] = "success";
@@ -449,17 +630,167 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['submit_reel_edit'])) {
 
 // --- POST: DELETE ACCOUNT ---
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_account'])) {
-    $del_listings = $conn->prepare("DELETE FROM products WHERE seller_id = ?");
-    $del_listings->bind_param("i", $user_id);
-    $del_listings->execute();
+    $delete_password = $_POST['delete_password'] ?? '';
+    
+    // Fetch the user's current hashed password
+    $pwd_stmt = $conn->prepare("SELECT password FROM users WHERE id = ?");
+    $pwd_stmt->bind_param("i", $user_id);
+    $pwd_stmt->execute();
+    $pwd_res = $pwd_stmt->get_result()->fetch_assoc();
+    
+    if (!$pwd_res || !password_verify($delete_password, $pwd_res['password'])) {
+        $_SESSION['msg'] = "INCORRECT PASSWORD. PROFILE NOT DELETED.";
+        $_SESSION['msg_type'] = "error";
+        header("Location: client-profile.php");
+        exit();
+    }
 
-    $del_stmt = $conn->prepare("DELETE FROM users WHERE id = ?");
-    $del_stmt->bind_param("i", $user_id);
-    if ($del_stmt->execute()) {
+    // --- 1. Fetch File Paths for Deletion ---
+    $files_to_delete = [];
+
+    // Profile Pic
+    $pp_stmt = $conn->prepare("SELECT profile_pic FROM users WHERE id = ?");
+    $pp_stmt->bind_param("i", $user_id);
+    $pp_stmt->execute();
+    $pp_res = $pp_stmt->get_result()->fetch_assoc();
+    if ($pp_res && !empty($pp_res['profile_pic']) && strpos($pp_res['profile_pic'], 'assets/uploads/') !== false) {
+        $files_to_delete[] = $pp_res['profile_pic'];
+    }
+
+    // Product Images
+    $pi_stmt = $conn->prepare("SELECT image_url FROM products WHERE seller_id = ?");
+    $pi_stmt->bind_param("i", $user_id);
+    $pi_stmt->execute();
+    $pi_res = $pi_stmt->get_result();
+    while ($row = $pi_res->fetch_assoc()) {
+        if (!empty($row['image_url']) && strpos($row['image_url'], 'assets/uploads/') !== false) {
+            $files_to_delete[] = $row['image_url'];
+        }
+    }
+
+    // Reel Videos
+    $rv_stmt = $conn->prepare("SELECT video_url FROM reels WHERE user_id = ?");
+    $rv_stmt->bind_param("i", $user_id);
+    $rv_stmt->execute();
+    $rv_res = $rv_stmt->get_result();
+    while ($row = $rv_res->fetch_assoc()) {
+        if (!empty($row['video_url']) && strpos($row['video_url'], 'assets/uploads/') !== false) {
+            $files_to_delete[] = $row['video_url'];
+        }
+    }
+
+    // --- 2. Database Transaction for Complete Deletion ---
+    $conn->begin_transaction();
+    try {
+        // Anonymize Orders to preserve history for the other party
+        try {
+            $conn->query("UPDATE orders SET buyer_id = NULL WHERE buyer_id = " . (int)$user_id);
+            $conn->query("UPDATE orders SET seller_id = NULL WHERE seller_id = " . (int)$user_id);
+        } catch (Exception $e) {
+            // Fallback if NULL is not allowed
+            $conn->query("UPDATE orders SET buyer_id = 0 WHERE buyer_id = " . (int)$user_id);
+            $conn->query("UPDATE orders SET seller_id = 0 WHERE seller_id = " . (int)$user_id);
+        }
+
+        // Delete dependencies
+        $conn->query("DELETE FROM user_follows WHERE follower_id = " . (int)$user_id . " OR followed_id = " . (int)$user_id);
+        
+        $sr_check = $conn->query("SHOW TABLES LIKE 'seller_ratings'");
+        if ($sr_check && $sr_check->num_rows > 0) {
+            $conn->query("DELETE FROM seller_ratings WHERE buyer_id = " . (int)$user_id . " OR seller_id = " . (int)$user_id);
+        }
+        
+        $conn->query("DELETE FROM notifications WHERE user_id = " . (int)$user_id);
+        
+        $ec_check = $conn->query("SHOW TABLES LIKE 'email_change_requests'");
+        if ($ec_check && $ec_check->num_rows > 0) {
+            $conn->query("DELETE FROM email_change_requests WHERE user_id = " . (int)$user_id);
+        }
+        
+        $conn->query("DELETE FROM reel_likes WHERE user_id = " . (int)$user_id);
+        $conn->query("DELETE FROM reel_comments WHERE user_id = " . (int)$user_id);
+        $conn->query("DELETE FROM reel_edit_requests WHERE user_id = " . (int)$user_id);
+        $conn->query("DELETE FROM reels WHERE user_id = " . (int)$user_id);
+        $conn->query("DELETE FROM community_qna WHERE user_id = " . (int)$user_id);
+        
+        $cs_check = $conn->query("SHOW TABLES LIKE 'community_shoutouts'");
+        if ($cs_check && $cs_check->num_rows > 0) {
+            $conn->query("DELETE FROM community_shoutouts WHERE user_id = " . (int)$user_id);
+        }
+        
+        $conn->query("DELETE FROM products WHERE seller_id = " . (int)$user_id);
+        $conn->query("DELETE FROM users WHERE id = " . (int)$user_id);
+
+        $conn->commit();
+        
+        // --- 3. Unlink Files after successful commit ---
+        foreach ($files_to_delete as $file) {
+            if (file_exists($file)) {
+                @unlink($file);
+            }
+        }
+
         session_destroy();
         header("Location: ../client_page/index.php");
         exit();
+
+    } catch (Exception $e) {
+        $conn->rollback();
+        $_SESSION['msg'] = "ERROR DELETING ACCOUNT: " . strtoupper($e->getMessage());
+        $_SESSION['msg_type'] = "error";
+        header("Location: client-profile.php");
+        exit();
     }
+}
+
+// --- POST: USER TICKET REPLY ---
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['user_ticket_reply'])) {
+    $ticket_id = (int)$_POST['ticket_id'];
+    $reply_message = trim($_POST['reply_message']);
+    
+    // Verify ticket belongs to user
+    $chk = $conn->query("SELECT id, status FROM support_tickets WHERE id = $ticket_id AND user_id = $user_id");
+    if ($chk && $chk->num_rows > 0) {
+        $t_data = $chk->fetch_assoc();
+        
+        if ($t_data['status'] === 'New') {
+            $_SESSION['msg'] = "PLEASE WAIT FOR AN ADMINISTRATOR TO RESPOND BEFORE SENDING ANOTHER MESSAGE.";
+            $_SESSION['msg_type'] = "error";
+        } elseif (in_array($t_data['status'], ['Resolved', 'Closed'])) {
+            $_SESSION['msg'] = "THIS TICKET IS CLOSED AND CANNOT ACCEPT NEW REPLIES.";
+            $_SESSION['msg_type'] = "error";
+        } elseif (!empty($reply_message)) {
+            $stmt = $conn->prepare("INSERT INTO support_ticket_replies (ticket_id, sender_type, user_id, message) VALUES (?, 'user', ?, ?)");
+            $stmt->bind_param("iis", $ticket_id, $user_id, $reply_message);
+            $stmt->execute();
+            
+            $conn->query("UPDATE support_tickets SET status = 'Open' WHERE id = $ticket_id AND status != 'Open'");
+            
+            $_SESSION['msg'] = "REPLY SENT.";
+            $_SESSION['msg_type'] = "success";
+        }
+    }
+    header("Location: client-profile.php");
+    exit();
+}
+
+// User Delete Ticket Logic
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_user_ticket_btn'])) {
+    $del_ticket_id = (int)$_POST['delete_ticket_id'];
+    
+    // Hard delete to clean up records
+    $del_stmt = $conn->prepare("DELETE FROM support_tickets WHERE id = ? AND user_id = ?");
+    $del_stmt->bind_param("ii", $del_ticket_id, $user_id);
+    
+    if ($del_stmt->execute()) {
+        $_SESSION['msg'] = "TICKET AND ALL MESSAGES PERMANENTLY DELETED.";
+        $_SESSION['msg_type'] = "success";
+    } else {
+        $_SESSION['msg'] = "ERROR DELETING TICKET.";
+        $_SESSION['msg_type'] = "error";
+    }
+    header("Location: client-profile.php");
+    exit();
 }
 ?>
 
@@ -471,188 +802,267 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_account'])) {
     <title>SkateShop | DASHBOARD</title>
     <link rel="stylesheet" href="../assets/style.css"> 
     <link rel="stylesheet" href="../assets/admin.css">
+    <link rel="stylesheet" href="../assets/user-profile.css">
+    <script src="../assets/script.js" defer></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
         /* --- Optimized Listings Design --- */
         .listings-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-    gap: 20px;
-    padding: 10px 0;
-}
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+            gap: 20px;
+            padding: 10px 0;
+        }
 
-.mini-listing {
-    /* Changed from #1a1a1a to #ffffff */
-    background: #ffffff; 
-    /* Changed from #333 to a solid black for contrast */
-    border: 3px solid #000000; 
-    position: relative;
-    padding: 15px;
-    display: flex;
-    flex-direction: column;
-    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
-    cursor: pointer;
-    overflow: hidden;
-    /* Added a subtle light shadow for depth */
-    box-shadow: 4px 4px 0px #000000;
-}
+        /* Support Ticket Message Styling (Copied from reports.php) */
+        .thread-msg {
+            background: #fff;
+            border: 3px solid #000;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 4px 4px 0px #000;
+        }
+        .thread-msg.admin-msg {
+            background: #f1f8fa;
+            border-color: var(--primary);
+            box-shadow: 4px 4px 0px var(--primary);
+        }
+        .thread-msg-header {
+            font-family: 'Staatliches', sans-serif;
+            font-size: 1.3rem;
+            margin-bottom: 15px;
+            display: flex;
+            justify-content: space-between;
+            color: #222;
+            border-bottom: 2px dashed #ccc;
+            padding-bottom: 10px;
+        }
+        .thread-msg-header .sender-name {
+            letter-spacing: 1px;
+            color: #000;
+        }
+        .thread-msg-header .msg-timestamp {
+            font-family: 'Inter', sans-serif;
+            font-size: 0.85rem;
+            color: #666;
+            font-weight: 600;
+        }
+        .thread-msg .msg-body p {
+            font-family: 'Inter', sans-serif;
+            font-size: 1.05rem;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            color: #111;
+        }
 
-.status-sold { background: #000; color: #fff; }
+        .mini-listing {
+            background: #ffffff; 
+            border: 3px solid #000000; 
+            position: relative;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+            cursor: pointer;
+            overflow: hidden;
+            box-shadow: 4px 4px 0px #000000;
+        }
 
-/* Status Badges - Global Dashboard Style */
-.listing-status-badge {
-    position: absolute;
-    top: 10px;
-    right: 10px;
-    font-size: 0.75rem;
-    font-weight: 900;
-    padding: 4px 10px;
-    border: 2px solid #000;
-    z-index: 2;
-    font-family: 'Staatliches', sans-serif;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-}
-.status-active, .status-received { background: #2ecc71; color: white; }
-.status-pending { background: #f1c40f; color: #1a1a1a; }
-.status-cancelled, .status-rejected { background: var(--primary); color: white; }
+        .status-sold { background: #000; color: #fff; }
 
-/* MY QNAs REDESIGN - MATCHING DASHBOARD ECOSYSTEM */
-.my-qna-card { border: 4px solid #000; padding: 1.5rem; margin-bottom: 1.5rem; background: #fff; display: flex; gap: 1.5rem; align-items: flex-start; box-shadow: 6px 6px 0 #000; transition: transform 0.2s; cursor: pointer; position: relative; }
-.my-qna-card:hover { transform: translateY(-2px); box-shadow: 8px 8px 0 #000; border-color: var(--primary); }
-.my-qna-info { flex: 1; min-width: 0; }
-.my-qna-title { font-family: 'Staatliches', sans-serif; font-size: 1.6rem; letter-spacing: 1px; margin: 0 0 8px; color: #000; text-transform: uppercase; word-break: break-word; line-height: 1.1; padding-right: 100px; }
-.my-qna-body-preview { font-family: 'Inter', sans-serif; font-size: 0.95rem; color: #444; margin: 0 0 12px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.4; }
-.my-qna-meta { display: flex; gap: 15px; font-family: 'Staatliches', sans-serif; font-size: 1rem; color: #555; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
-.my-qna-actions { display: flex; gap: 10px; flex-wrap: wrap; }
-@media (max-width: 768px) { .my-qna-card { flex-direction: column; } .my-qna-title { padding-right: 0; margin-top: 30px; } }
+        /* Status Badges - Global Dashboard Style */
+        .listing-status-badge {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            font-size: 0.75rem;
+            font-weight: 900;
+            padding: 4px 10px;
+            border: 2px solid #000;
+            z-index: 2;
+            font-family: 'Staatliches', sans-serif;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+        .status-active, .status-received { background: #2ecc71; color: white; }
+        .status-pending { background: #f1c40f; color: #1a1a1a; }
+        .status-cancelled, .status-rejected { background: var(--primary); color: white; }
+        .status-edit-locked { background: #666; color: #fff; font-size: 0.65rem !important; }
 
-/* QNA DETAIL VIEW OVERLAY */
-.view-overlay {
-    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-    background: rgba(0,0,0,0.92); backdrop-filter: blur(8px);
-    z-index: 99999; display: flex; align-items: center; justify-content: center;
-    opacity: 0; visibility: hidden; transition: all 0.3s ease;
-}
-.view-overlay.active { opacity: 1; visibility: visible; }
-.view-shell {
-    width: 95%; max-width: 800px; background: #111;
-    border: 4px solid var(--charcoal); box-shadow: 15px 15px 0px var(--primary);
-    position: relative; transform: translateY(30px); transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-    display: flex; flex-direction: column; max-height: 90vh;
-}
-.view-overlay.active .view-shell { transform: translateY(0); }
-.view-close {
-    position: absolute; top: 12px; right: 20px;
-    font-size: 3rem; color: white; cursor: pointer;
-    font-family: 'Staatliches', sans-serif; line-height: 1; z-index: 100;
-    transition: color 0.2s, transform 0.2s;
-    text-shadow: 2px 2px 0px var(--charcoal);
-}
-.view-close:hover { color: var(--primary); transform: scale(1.2); }
-.view-content {
-    flex: 1;
-    overflow-y: auto;
-    overflow-x: hidden;
-    padding: 3rem;
-    scrollbar-width: thin;
-    scrollbar-color: var(--primary) #1a1a1a;
-}
-.view-content::-webkit-scrollbar { width: 10px; }
-.view-content::-webkit-scrollbar-track { background: #1a1a1a; }
-.view-content::-webkit-scrollbar-thumb { 
-    background: var(--primary); 
-    border: 2px solid #1a1a1a;
-}
-.view-content::-webkit-scrollbar-thumb:hover { background: white; }
+        /* MY QNAs REDESIGN - MATCHING DASHBOARD ECOSYSTEM */
+        .my-qna-card { border: 4px solid #000; padding: 1.5rem; margin-bottom: 1.5rem; background: #fff; display: flex; gap: 1.5rem; align-items: flex-start; box-shadow: 6px 6px 0 #000; transition: transform 0.2s; cursor: pointer; position: relative; }
+        .my-qna-card:hover { transform: translateY(-2px); box-shadow: 8px 8px 0 #000; border-color: var(--primary); }
+        .my-qna-info { flex: 1; min-width: 0; }
+        .my-qna-title { font-family: 'Staatliches', sans-serif; font-size: 1.6rem; letter-spacing: 1px; margin: 0 0 8px; color: #000; text-transform: uppercase; word-break: break-word; line-height: 1.1; padding-right: 100px; }
+        .my-qna-body-preview { font-family: 'Inter', sans-serif; font-size: 0.95rem; color: #444; margin: 0 0 12px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.4; }
+        .my-qna-meta { display: flex; gap: 15px; font-family: 'Staatliches', sans-serif; font-size: 1rem; color: #555; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
+        .my-qna-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+        @media (max-width: 768px) { .my-qna-card { flex-direction: column; } .my-qna-title { padding-right: 0; margin-top: 30px; } }
 
-.mini-listing img {
-    width: 100%;
-    height: 160px;
-    object-fit: cover;
-    margin-bottom: 12px;
-    filter: grayscale(0%); /* Removed grayscale for a cleaner light look */
-    border: 2px solid #000000;
-    background: #f9f9f9;
-}
+        /* QNA DETAIL VIEW OVERLAY */
+        .view-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.92); backdrop-filter: blur(8px);
+            z-index: 99999; display: flex; align-items: center; justify-content: center;
+            opacity: 0; visibility: hidden; transition: all 0.3s ease;
+        }
+        .view-overlay.active { opacity: 1; visibility: visible; }
+        .view-shell {
+            width: 95%; max-width: 800px; background: #111;
+            border: 4px solid var(--charcoal); box-shadow: 15px 15px 0px var(--primary);
+            position: relative; transform: translateY(30px); transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            display: flex; flex-direction: column; max-height: 90vh;
+        }
+        .view-overlay.active .view-shell { transform: translateY(0); }
+        .view-close {
+            position: absolute; top: 12px; right: 20px;
+            font-size: 3rem; color: white; cursor: pointer;
+            font-family: 'Staatliches', sans-serif; line-height: 1; z-index: 100;
+            transition: color 0.2s, transform 0.2s;
+            text-shadow: 2px 2px 0px var(--charcoal);
+        }
+        .view-close:hover { color: var(--primary); transform: scale(1.2); }
+        .view-content {
+            flex: 1;
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding: 3rem;
+            scrollbar-width: thin;
+            scrollbar-color: var(--primary) #1a1a1a;
+        }
+        .view-content::-webkit-scrollbar { width: 10px; }
+        .view-content::-webkit-scrollbar-track { background: #1a1a1a; }
+        .view-content::-webkit-scrollbar-thumb { 
+            background: var(--primary); 
+            border: 2px solid #1a1a1a;
+        }
+        .view-content::-webkit-scrollbar-thumb:hover { background: white; }
 
-.mini-listing-info {
-    flex-grow: 1;
-}
+        .mini-listing img {
+            width: 100%;
+            height: 160px;
+            object-fit: cover;
+            margin-bottom: 12px;
+            filter: grayscale(0%);
+            border: 2px solid #000000;
+            background: #f9f9f9;
+        }
 
-.mini-listing-title {
-    font-size: 1.1rem;
-    /* Changed from #fff to #000 */
-    color: #000000; 
-    margin: 0 0 5px 0;
-    font-family: 'Arial Black', sans-serif;
-    letter-spacing: -0.5px;
-    text-transform: uppercase;
-}
+        .mini-listing-info {
+            flex-grow: 1;
+        }
 
-.mini-listing-price {
-    color: var(--primary);
-    font-weight: bold;
-    font-size: 1.2rem;
-    margin: 0;
-}
+        .mini-listing-title {
+            font-size: 1.1rem;
+            color: #000000; 
+            margin: 0 0 5px 0;
+            font-family: 'Arial Black', sans-serif;
+            letter-spacing: -0.5px;
+            text-transform: uppercase;
+        }
 
-.mini-listing-id {
-    font-size: 0.7rem;
-    /* Changed to a darker grey for readability on light bg */
-    color: #444; 
-    margin-top: 10px;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-}
+        .mini-listing-price {
+            color: var(--primary);
+            font-weight: bold;
+            font-size: 1.2rem;
+            margin: 0;
+        }
 
-/* Pagination Styling */
-.listing-pagination {
-    margin-top: 30px;
-    /* Changed from #333 to #000 */
-    border-top: 3px solid #000000; 
-    padding-top: 20px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: 20px;
-}
+        .mini-listing-id {
+            font-size: 0.7rem;
+            color: #444; 
+            margin-top: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
 
-.page-number {
-    font-weight: bold;
-    color: #000;
-}
+        /* Pagination Styling */
+        .listing-pagination {
+            margin-top: 30px;
+            border-top: 3px solid #000000; 
+            padding-top: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 20px;
+        }
 
-.btn-pagination {
-    background: #fff;
-    color: #000;
-    border: 3px solid #000;
-    padding: 10px 14px;
-    cursor: pointer;
-    box-shadow: 4px 4px 0 #000;
-}
+        .page-number {
+            font-weight: bold;
+            color: #000;
+        }
 
-.btn-pagination i {
-    color: #000;
-}
+        .btn-pagination {
+            background: #fff;
+            color: #000;
+            border: 3px solid #000;
+            padding: 10px 14px;
+            cursor: pointer;
+            box-shadow: 4px 4px 0 #000;
+        }
 
-.btn-pagination:disabled {
-    opacity: 0.3;
-    cursor: not-allowed;
-}
+        .btn-pagination i {
+            color: #000;
+        }
 
-.empty-placeholder-box {
-    display: flex;
-    flex-direction: column;
-    align-items: center;       
-    justify-content: center;
-    text-align: center;         
-}
+        .btn-pagination:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
 
-.empty-placeholder-box .btn-primary-brutal {
-    margin-top: 15px;
-    padding: 12px 20px;         /* ✅ better padding */
-}
+        .empty-placeholder-box {
+            display: flex;
+            flex-direction: column;
+            align-items: center;        
+            justify-content: center;
+            text-align: center;          
+        }
+
+        .empty-placeholder-box .btn-primary-brutal {
+            margin-top: 15px;
+            padding: 12px 20px;         
+        }
+
+        /* Additional Confirm Modal Styles */
+        #confirmReceiptModal .btn-receipt-no {
+            flex: 1;
+            background: var(--primary);
+            color: #fff !important;
+        }
+        #confirmReceiptModal .btn-receipt-no:hover {
+            background: var(--textwhite);
+            color: #1A1A1A !important;
+        }
+        #confirmReceiptModal .btn-receipt-yes {
+            background: #2ecc71;
+            color: #fff !important;
+        }
+        #confirmReceiptModal .btn-receipt-yes:hover {
+            background: #27ae60;
+            color: #fff !important;
+        }
+        #notReceivedMsg .contact-label {
+            color: var(--primary);
+            font-size: 1.1rem;
+            font-family: 'Staatliches', sans-serif;
+            letter-spacing: 1px;
+            display: block;
+            margin-bottom: 6px;
+        }
+        .btn-hide-cancel {
+            background: #666 !important;
+            color: #fff !important;
+        }
+        .btn-hide-cancel:hover {
+            background: #444 !important;
+        }
+        .custom-checkbox { display: block; position: relative; padding-left: 38px; margin-bottom: 25px; cursor: pointer; font-family: 'Staatliches', sans-serif; font-size: 1.2rem; color: var(--charcoal); letter-spacing: 1px; user-select: none; }
+        .custom-checkbox input[type="checkbox"] { position: absolute; opacity: 0; cursor: pointer; height: 0; width: 0; }
+        .custom-checkbox .checkmark { position: absolute; top: 0; left: 0; height: 24px; width: 24px; background-color: var(--textwhite); border: 3px solid var(--charcoal); transition: background-color 0.15s, border-color 0.15s; }
+        .custom-checkbox:hover .checkmark { border-color: var(--primary); }
+        .custom-checkbox input[type="checkbox"]:checked ~ .checkmark { background-color: var(--primary) !important; border-color: var(--primary) !important; }
+        .custom-checkbox .checkmark:after { content: ""; position: absolute; display: none; left: 6px; top: 2px; width: 6px; height: 11px; border: solid #fff; border-width: 0 3px 3px 0; transform: rotate(45deg); }
+        .custom-checkbox input[type="checkbox"]:checked ~ .checkmark:after { display: block; }
     </style>
 </head>
 <body>
@@ -662,7 +1072,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_account'])) {
 <main class="container">
     <div class="dashboard-header">
         <h2 class="glitch-text-admin">USER <span class="text-primary">DASHBOARD</span></h2>
-        <p class="admin-text-shop">WELCOME BACK, @<?php echo htmlspecialchars($username); ?></p>
+        <div style="display: flex; justify-content: space-between; align-items: flex-end; width: 100%; flex-wrap: wrap; gap: 1rem;">
+            <p class="admin-text-shop">WELCOME BACK, @<?php echo htmlspecialchars($username); ?></p>
+            <button class="btn-primary-brutal" onclick="openMyProfile('<?php echo urlencode($username); ?>')" style="padding: 0.5rem 1.5rem; font-size: 1.2rem; transform: skewX(-6deg); margin-bottom: 5px; cursor: pointer;">VIEW PROFILE</button>
+        </div>
     </div>
 
     <?php if ($msg): ?>
@@ -706,12 +1119,54 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_account'])) {
             <i class="fa-solid fa-circle-question"></i>
             <h3>MY QNAs</h3>
         </div>
+        <div class="option-card" onclick="openModal('myShoutoutModal')">
+            <i class="fa-solid fa-bullhorn"></i>
+            <h3>MY SHOUTOUTS</h3>
+        </div>
+        <div class="option-card" onclick="openModal('ticketsModal')">
+            <i class="fa-solid fa-headset"></i>
+            <h3>SUPPORT HISTORY</h3>
+        </div>
         <div class="option-card card-danger" onclick="openModal('deleteProfile')">
             <i class="fa-solid fa-trash-can"></i>
             <h3>DELETE ACCOUNT</h3>
         </div>
     </div>
 </main>
+
+<!-- === USER PROFILE MODAL (OWN PROFILE) === -->
+<div id="userProfileModal" class="modal-overlay">
+    <div class="modal-content seller-profile-modal-shell" id="userProfileContent" style="padding: 30px; width: 90%; max-width: 1100px; max-height: 90vh; overflow-y: auto;">
+        <!-- Content loaded via AJAX -->
+    </div>
+</div>
+
+<!-- === FOLLOWERS MODAL === -->
+<div id="followersModal" class="modal-overlay">
+    <div class="modal-content" style="max-width: 500px;">
+        <span class="close-modal" onclick="closeModal('followersModal')">&times;</span>
+        <h3 class="admin-table-h3">MY <span class="header-span">FOLLOWERS</span></h3>
+        <div class="followers-list" style="margin-top: 1rem; max-height: 400px; overflow-y: auto;">
+            <?php if ($followers_list->num_rows > 0): ?>
+                <?php while ($f = $followers_list->fetch_assoc()): ?>
+                    <div class="follower-item" style="display: flex; align-items: center; gap: 1rem; padding: 10px; border-bottom: 2px solid #eee;">
+                        <img src="<?php echo htmlspecialchars($f['profile_pic'] ? $f['profile_pic'] : '../assets/images/default-avatar.png'); ?>" 
+                             style="width: 50px; height: 50px; border-radius: 50%; border: 2px solid var(--primary); object-fit: cover;">
+                        <span style="font-family: 'Staatliches', sans-serif; font-size: 1.2rem; color: var(--charcoal);">
+                            @<?php echo htmlspecialchars($f['username']); ?>
+                        </span>
+                        <button class="btn-mini btn-view" style="margin-left: auto;" onclick="closeModal('followersModal'); openMyProfile('<?php echo urlencode($f['username']); ?>')">VIEW</button>
+                    </div>
+                <?php endwhile; ?>
+            <?php else: ?>
+                <div class="empty-placeholder-box" style="padding: 20px;">
+                    <p class="empty-placeholder-title" style="font-size: 1.2rem;">NO FOLLOWERS YET.</p>
+                    <p style="font-family:'Staatliches',sans-serif; color:#666;">Keep shredding to get noticed!</p>
+                </div>
+            <?php endif; ?>
+        </div>
+    </div>
+</div>
 
 <div id="editProfile" class="modal-overlay">
     <div class="modal-content">
@@ -723,10 +1178,22 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_account'])) {
             </div>
             <label>CHANGE AVATAR</label>
             <input type="file" name="profile_pic" accept="image/*">
+            <label>USERNAME</label>
+            <input type="text" name="new_username" placeholder="<?php echo htmlspecialchars($user_data['username'] ?? ''); ?>">
+            <label>EMAIL</label>
+            <input type="email" name="new_email" value="<?php echo htmlspecialchars($user_data['email'] ?? ''); ?>" required>
+            <label>CURRENT PASSWORD</label>
+            <input type="password" name="current_password" placeholder="REQUIRED IF CHANGING PASSWORD">
             <label>NEW PASSWORD</label>
             <input type="password" name="new_password" placeholder="LEAVE BLANK TO KEEP CURRENT">
             <label>CONFIRM PASSWORD</label>
-            <input type="password" name="confirm_password" placeholder="REPEAT NEW PASSWORD">
+            <input type="password" name="confirm_password" placeholder="REPEAT NEW PASSWORD" style="margin-bottom: 20px;">
+
+            <label class="custom-checkbox">
+                <input type="checkbox" name="email_notifications" value="1" <?php echo (($user_data['email_notifications'] ?? 1) == 1) ? 'checked' : ''; ?>>
+                <span class="checkmark"></span>
+                RECEIVE EMAIL NOTIFICATIONS
+            </label>
             <button type="submit" name="update_profile" class="btn-primary-brutal btn-full">SAVE CHANGES</button>
         </form>
     </div>
@@ -782,8 +1249,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_account'])) {
         <?php if($user_listings->num_rows > 0): ?>
             <div class="listings-grid" id="listings-wrapper">
                 <?php while($row = $user_listings->fetch_assoc()): ?>
-                    <?php if($row['sold_count'] > 0): ?>
-                        <div class="mini-listing listing-page-item" style="cursor: default; opacity: 0.8;">
+                    <?php 
+                        $is_pending = ($row['is_approved'] == 0 && $row['sold_count'] == 0);
+                        $is_sold = ($row['sold_count'] > 0);
+                        $can_edit = (!$is_pending && !$is_sold);
+                    ?>
+                    <?php if(!$can_edit): ?>
+                        <div class="mini-listing listing-page-item" style="cursor: not-allowed; opacity: 0.8;" title="<?php echo $is_pending ? 'CANNOT EDIT WHILE PENDING' : 'SOLD ITEMS CANNOT BE EDITED'; ?>">
                     <?php else: ?>
                         <div class="mini-listing listing-page-item" onclick="openEditListing(<?php echo $row['id']; ?>)">
                     <?php endif; ?>
@@ -794,7 +1266,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_account'])) {
                                 <i class="fas fa-trash"></i>
                             </button>
                         <?php elseif($row['is_approved'] == 0): ?>
-                            <span class="listing-status-badge status-pending">PENDING</span>
+                            <span class="listing-status-badge status-edit-locked" style="top: 10px;">CANNOT EDIT WHILE PENDING</span>
+                            <span class="listing-status-badge status-pending" style="top: 40px;">PENDING</span>
                         <?php else: ?>
                             <span class="listing-status-badge status-active">ACTIVE</span>
                         <?php endif; ?>
@@ -1055,11 +1528,75 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_account'])) {
     </div>
 </div>
 
+<div id="myShoutoutModal" class="modal-overlay">
+    <div class="modal-content" style="max-width: 860px;">
+        <span class="close-modal" onclick="closeModal('myShoutoutModal')">&times;</span>
+        <h3 class="admin-table-h3">MY <span class="header-span">SHOUTOUTS</span></h3>
+
+        <?php if (count($my_shoutouts_rows) > 0): ?>
+            <div id="my-shoutout-list">
+                <?php foreach ($my_shoutouts_rows as $row): ?>
+                    <div class="my-qna-card my-qna-page-item" onclick="openShoutoutDetails(<?php echo (int)$row['id']; ?>)">
+                        <div class="my-qna-info">
+                            <?php if ($row['status'] === 'published'): ?>
+                                <span class="listing-status-badge status-active">PUBLISHED</span>
+                            <?php elseif ($row['status'] === 'pending'): ?>
+                                <span class="listing-status-badge status-pending">PENDING</span>
+                            <?php elseif ($row['status'] === 'rejected'): ?>
+                                <span class="listing-status-badge status-cancelled">REJECTED</span>
+                            <?php endif; ?>
+
+                            <p class="my-qna-title"><?php echo strtoupper(htmlspecialchars($row['title'])); ?></p>
+                            <p class="my-qna-body-preview"><?php echo htmlspecialchars($row['body']); ?></p>
+
+                            <div class="my-qna-meta">
+                                <span><i class="fa-solid fa-calendar-day" style="color:var(--primary)"></i> <?php echo date('M j, Y', strtotime($row['created_at'])); ?></span>
+                            </div>
+
+                            <div class="my-qna-actions" onclick="event.stopPropagation();">
+                                <button type="button" class="btn-mini btn-danger" onclick="openDeleteShoutoutModal(<?php echo (int)$row['id']; ?>)">
+                                    <i class="fa-solid fa-trash-can"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                <?php endforeach; ?>
+            </div>
+
+            <div id="my-shoutout-pagination-controls" class="listing-pagination">
+                <button class="btn-pagination" onclick="changeMyShoutoutPage(-1)" id="prevShoutoutBtn">
+                    <i class="fa-solid fa-chevron-left"></i>
+                </button>
+                <span id="myShoutoutPageIndicator" class="page-number">PAGE 1</span>
+                <button class="btn-pagination" onclick="changeMyShoutoutPage(1)" id="nextShoutoutBtn">
+                    <i class="fa-solid fa-chevron-right"></i>
+                </button>
+            </div>
+
+        <?php else: ?>
+            <div class="empty-placeholder-box">
+                <p class="empty-placeholder-title">YOU HAVEN'T POSTED ANY SHOUTOUTS YET.</p>
+                <p style="font-family:'Staatliches',sans-serif; color:#666; margin-bottom:20px;">Share some love on the community wall.</p>
+                <button class="btn-primary-brutal" onclick="closeModal('myShoutoutModal'); window.location.href='shoutouts.php';">GO TO SHOUTOUTS</button>
+            </div>
+        <?php endif; ?>
+    </div>
+</div>
+
 <!-- QNA VIEW MODAL -->
 <div class="view-overlay" id="qnaViewOverlay">
     <div class="view-shell">
         <span class="view-close" onclick="closeQnaView()">&times;</span>
         <div class="view-content" id="qnaViewContent">
+            <!-- Populated via JS -->
+        </div>
+    </div>
+</div>
+
+<div class="view-overlay" id="shoutoutViewOverlay">
+    <div class="view-shell">
+        <span class="view-close" onclick="closeShoutoutView()">&times;</span>
+        <div class="view-content" id="shoutoutViewContent">
             <!-- Populated via JS -->
         </div>
     </div>
@@ -1209,408 +1746,104 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_account'])) {
     <div class="modal-content modal-danger-dialog">
         <span class="close-modal" onclick="closeModal('deleteProfile')">&times;</span>
         <h3 class="admin-table-h3">ARE <span class="header-span">YOU</span> SURE?</h3>
-        <p class="modal-danger-text">This action is permanent. All your listings will be dragged to the graveyard.</p>
-        <form action="client-profile.php" method="POST">
+        <p class="modal-danger-text">This action is permanent. All your releated things will be dragged to the graveyard.</p>
+        <form action="client-profile.php" method="POST" class="admin-form">
+            <label style="color:var(--primary); font-family:'Staatliches',sans-serif; font-size:1.2rem; letter-spacing:1px; margin-bottom:5px; display:block;">ENTER PASSWORD TO CONFIRM</label>
+            <input type="password" name="delete_password" required style="width:100%; padding:10px; margin-bottom:20px; font-family:'Inter',sans-serif; border: 3px solid #000; outline:none;">
             <button type="submit" name="delete_account" class="btn-danger btn-full btn-space-bottom">YES, DELETE EVERYTHING</button>
+        </form>
+    </div>
+    </div>
+</div>
+
+<!-- Support Tickets Modal -->
+<div id="ticketsModal" class="modal-overlay">
+    <div class="modal-content" style="max-width: 900px;">
+        <span class="close-modal" onclick="closeModal('ticketsModal')">&times;</span>
+        <h3 class="admin-table-h3">SUPPORT <span class="header-span">HISTORY</span></h3>
+        
+        <table class="recent-activity-table" style="margin-top: 20px;">
+            <thead>
+                <tr>
+                    <th>TICKET ID</th>
+                    <th>SUBJECT</th>
+                    <th>STATUS</th>
+                    <th>LAST UPDATED</th>
+                    <th>ACTION</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php if ($my_tickets && $my_tickets->num_rows > 0): ?>
+                    <?php while ($t = $my_tickets->fetch_assoc()): ?>
+                        <tr>
+                            <td class="td-id">#<?php echo $t['id']; ?></td>
+                            <td><?php echo htmlspecialchars($t['subject']); ?></td>
+                            <td>
+                                <?php if($t['status'] === 'New'): ?>
+                                    <span class="badge-market" style="border: 2px solid #000; box-shadow: 2px 2px 0px #000;">WAITING</span>
+                                <?php else: ?>
+                                    <span class="badge-shop" style="background:#000; color:#fff; border:none;"><?php echo htmlspecialchars(strtoupper($t['status'])); ?></span>
+                                <?php endif; ?>
+                            </td>
+                            <td><?php echo date('M d, Y H:i', strtotime($t['updated_at'])); ?></td>
+                            <td>
+                                <div style="display:flex; gap:10px;">
+                                    <button class="btn btn-primary" style="padding: 5px 10px; font-size: 0.9rem; border: 2px solid #000;" onclick="openTicketViewModal(<?php echo $t['id']; ?>)">VIEW</button>
+                                    <button class="btn-mini btn-danger" onclick="openDeleteTicketModal(<?php echo $t['id']; ?>)"><i class="fas fa-trash"></i></button>
+                                </div>
+                            </td>
+                        </tr>
+                    <?php endwhile; ?>
+                <?php else: ?>
+                    <tr><td colspan="5" style="text-align: center; padding: 20px;">YOU HAVE NO SUPPORT TICKETS YET.</td></tr>
+                <?php endif; ?>
+            </tbody>
+        </table>
+        
+        <div style="text-align:center; margin-top: 20px;">
+            <a href="contact-us.php" class="btn-primary-brutal" style="display:inline-block; padding: 10px 20px; text-decoration: none;">OPEN NEW TICKET</a>
+        </div>
+    </div>
+</div>
+
+<!-- View Specific Ticket Modal -->
+<div id="ticketViewModal" class="modal-overlay">
+    <div class="modal-content" style="max-width: 800px; max-height: 90vh; display:flex; flex-direction:column;">
+        <span class="close-modal" onclick="closeModal('ticketViewModal')">&times;</span>
+        <h3 class="admin-table-h3">TICKET <span class="header-span">#<span id="u_t_id"></span></span></h3>
+        <div id="u_ticket_content" style="flex:1; overflow-y:auto; padding: 20px; border: 3px solid #000; margin-bottom:20px; background:#f9f9f9;">
+            Loading...
+        </div>
+        
+        <form action="client-profile.php" method="POST" class="admin-form" style="margin-top: 0;">
+            <input type="hidden" name="ticket_id" id="reply_t_id">
+            <textarea name="reply_message" rows="3" required placeholder="Type your reply..." style="width:100%; border:3px solid #000; padding:10px; font-family:'Inter',sans-serif; margin-bottom:10px; outline:none;"></textarea>
+            <button type="submit" name="user_ticket_reply" class="btn-primary-brutal" style="width:100%;">SEND REPLY</button>
         </form>
     </div>
 </div>
 
 <script>
-    function openModal(id) { 
-        document.getElementById(id).classList.add('active'); 
-        if (id === 'notificationsModal') {
-            currentNotifPage = 1;
-            updatePagination();
-        }
-        if (id === 'myListings') {
-            currentListPage = 1;
-            updateListingPagination();
-        }
-        if (id === 'buyHistory') {
-            currentBuyPage = 1;
-            updateBuyPagination();
-        }
-        if (id === 'myReels') {
-            currentMyReelsPage = 1;
-            updateMyReelsPagination();
-        }
-        if (id === 'myQnaModal') {
-            currentMyQnaPage = 1;
-            updateMyQnaPagination();
-        }
-    }
-    function closeModal(id) { document.getElementById(id).classList.remove('active'); }
-
-    // --- Q&A DETAIL VIEW ---
-    function openQnaDetails(id) {
-        fetch(`client-profile.php?get_qna_details=${id}`)
-        .then(res => res.json())
-        .then(data => {
-            if (!data) return;
-            const content = document.getElementById('qnaViewContent');
-            const date = new Date(data.created_at);
-            const dateStr = date.toLocaleDateString('en-US', {year:'numeric', month:'short', day:'numeric'}).toUpperCase();
-            
-            content.innerHTML = `
-                <div class="view-body">
-                    <div class="view-meta" style="font-family:'Staatliches', sans-serif; letter-spacing:2px; color:var(--primary); margin-bottom:1.5rem; display:flex; gap:1.5rem; align-items:center;">
-                        <span>MY SUBMISSION</span>
-                        <span>${dateStr}</span>
-                    </div>
-                    <h2 style="color: #fff; font-family: 'Staatliches', sans-serif; font-size: 3rem; margin-bottom: 1.5rem; line-height:1; text-transform:uppercase;">${escHtml(data.title)}</h2>
-                    <div class="view-q-block" style="background: rgba(255,255,255,0.05); padding: 1.5rem; border-left: 4px solid #444; color: #ccc; font-family: 'Inter', sans-serif; line-height: 1.8; margin-bottom: 2rem; font-size:1.1rem; word-break:break-word;">
-                        ${escHtml(data.body).replace(/\n/g, '<br>')}
-                    </div>
-                    <div class="view-a-block" style="border-left: 4px solid var(--primary); padding: 2rem; background: rgba(225, 29, 72, 0.08); color: #fff; font-family: 'Inter', sans-serif; line-height:1.7; font-size:1.1rem; word-break:break-word;">
-                        <strong style="color: var(--primary); display: block; font-family: 'Staatliches', sans-serif; font-size: 1.5rem; margin-bottom: 0.8rem; letter-spacing:1px;">OFFICIAL ANSWER</strong>
-                        ${(data.admin_answer ? escHtml(data.admin_answer).replace(/\n/g, '<br>') : '—')}
-                    </div>
-                </div>
-            `;
-            document.getElementById('qnaViewOverlay').classList.add('active');
-            document.body.style.overflow = 'hidden';
-        });
-    }
-
-    function closeQnaView() {
-        document.getElementById('qnaViewOverlay').classList.remove('active');
-        document.body.style.overflow = '';
-    }
-
-    function escHtml(str) {
-        const d = document.createElement('div');
-        if (str) d.appendChild(document.createTextNode(str));
-        return d.innerHTML;
-    }
-
-    // --- LISTING EDIT LOGIC ---
-    function openEditListing(id) {
-        fetch(`client-profile.php?get_listing_details=${id}`)
-        .then(res => res.json())
-        .then(data => {
-            document.getElementById('edit-p-id').value = data.id;
-            document.getElementById('edit-p-title').value = data.title;
-            document.getElementById('edit-p-brand').value = data.brand;
-            document.getElementById('edit-p-price').value = data.price;
-            document.getElementById('edit-p-category').value = data.category;
-            document.getElementById('edit-p-condition').value = data.condition_badge;
-            document.getElementById('edit-p-desc').value = data.description;
-            
-            closeModal('myListings');
-            openModal('editListingModal');
-        });
-    }
-
-    function backToListings() {
-        closeModal('editListingModal');
-        openModal('myListings');
-    }
-
-    // --- MY REELS EDIT LOGIC ---
-    function toggleReelComments(reelId) {
-        const container = document.getElementById('reel-comments-' + reelId);
-        if (container.style.display === 'block') {
-            container.style.display = 'none';
-            return;
-        }
-        
-        container.style.display = 'block';
-        container.innerHTML = '<div style="font-size:0.8rem; color:#666; font-family:\'Inter\',sans-serif;">LOADING COMMENTS...</div>';
-        
-        fetch(`reels-api.php?action=get_comments&reel_id=${reelId}`)
-            .then(res => res.json())
-            .then(data => {
-                if (data.success) {
-                    if (data.comments.length === 0) {
-                        container.innerHTML = '<div style="font-size:0.85rem; color:#666; font-family:\'Inter\',sans-serif;">No comments yet.</div>';
-                        return;
-                    }
-                    let html = '';
-                    data.comments.forEach(c => {
-                        html += `
-                            <div class="my-reel-comment">
-                                <strong>@${c.username}</strong>
-                                <span class="my-reel-comment-date">${c.created_at}</span>
-                                <div style="margin-top:2px;">${c.comment}</div>
-                            </div>
-                        `;
-                    });
-                    container.innerHTML = html;
-                } else {
-                    container.innerHTML = '<div style="font-size:0.85rem; color:red;">Error loading comments.</div>';
-                }
-            })
-            .catch(err => {
-                container.innerHTML = '<div style="font-size:0.85rem; color:red;">Network error.</div>';
-            });
-    }
-
-    function openEditReel(id, title, desc) {
-        document.getElementById('edit-reel-id').value = id;
-        document.getElementById('edit-reel-title').value = title;
-        document.getElementById('edit-reel-desc').value = desc;
-        updateReelEditCounter('edit-reel-title', 'edit-reel-title-counter', 35);
-        updateReelEditCounter('edit-reel-desc', 'edit-reel-desc-counter', 100);
-        closeModal('myReels');
-        openModal('editReelModal');
-    }
-
-    function updateReelEditCounter(inputId, counterId, max) {
-        const input = document.getElementById(inputId);
-        const counter = document.getElementById(counterId);
-        if (!input || !counter) return;
-        function refresh() {
-            const remaining = max - input.value.length;
-            counter.textContent = remaining + ' characters remaining';
-            counter.style.color = remaining <= 5 ? 'var(--primary)' : remaining <= 15 ? '#ffcc00' : '#777';
-        }
-        input.removeEventListener('input', input._reelCounterFn);
-        input._reelCounterFn = refresh;
-        input.addEventListener('input', refresh);
-        refresh();
-    }
-
-    // Initialise counters when edit reel modal opens
-    document.addEventListener('DOMContentLoaded', () => {
-        const titleInput = document.getElementById('edit-reel-title');
-        const descInput  = document.getElementById('edit-reel-desc');
-        if (titleInput) titleInput.addEventListener('input', () => updateReelEditCounter('edit-reel-title', 'edit-reel-title-counter', 35));
-        if (descInput)  descInput.addEventListener('input',  () => updateReelEditCounter('edit-reel-desc',  'edit-reel-desc-counter',  100));
-    });
-
-    // --- BUY HISTORY PAGINATION ---
-    let currentBuyPage = 1;
-    const buyItemsPerPage = 6;
-
-    function updateBuyPagination() {
-        const items = document.querySelectorAll('.buy-history-page-item');
-        const totalPages = Math.ceil(items.length / buyItemsPerPage);
-        const prevBtn = document.getElementById('prevBuyBtn');
-        const nextBtn = document.getElementById('nextBuyBtn');
-        const indicator = document.getElementById('buyPageIndicator');
-
-        if (items.length === 0) {
-            const controls = document.getElementById('buy-history-pagination-controls');
-            if (controls) controls.style.display = 'none';
-            return;
-        }
-
-        items.forEach(item => item.style.display = 'none');
-        let start = (currentBuyPage - 1) * buyItemsPerPage;
-        let end = start + buyItemsPerPage;
-        for (let i = start; i < end; i++) { if (items[i]) items[i].style.display = 'block'; }
-
-        indicator.innerText = `PAGE ${currentBuyPage} / ${totalPages}`;
-        prevBtn.disabled = currentBuyPage === 1;
-        nextBtn.disabled = currentBuyPage === totalPages || totalPages === 0;
-    }
-
-    function changeBuyPage(step) {
-        currentBuyPage += step;
-        updateBuyPagination();
-    }
-
-    // --- LISTING PAGINATION ---
-    let currentListPage = 1;
-    const listItemsPerPage = 6; // Grid looks better with 4 items per page (2x2)
-
-    function updateListingPagination() {
-        const items = document.querySelectorAll('.listing-page-item');
-        const totalPages = Math.ceil(items.length / listItemsPerPage);
-        const prevBtn = document.getElementById('prevListBtn');
-        const nextBtn = document.getElementById('nextListBtn');
-        const indicator = document.getElementById('listingPageIndicator');
-
-        if (items.length === 0) {
-            document.getElementById('listing-pagination-controls').style.display = 'none';
-            return;
-        }
-
-        items.forEach(item => item.style.display = 'none');
-        let start = (currentListPage - 1) * listItemsPerPage;
-        let end = start + listItemsPerPage;
-        for (let i = start; i < end; i++) { if (items[i]) items[i].style.display = 'block'; }
-
-        indicator.innerText = `PAGE ${currentListPage} / ${totalPages}`;
-        prevBtn.disabled = currentListPage === 1;
-        nextBtn.disabled = currentListPage === totalPages || totalPages === 0;
-    }
-
-    function changeListingPage(step) {
-        currentListPage += step;
-        updateListingPagination();
-    }
-
-    // --- MY REELS PAGINATION ---
-    let currentMyReelsPage = 1;
-    const myReelsPerPage = 4;
-
-    function updateMyReelsPagination() {
-        const items = document.querySelectorAll('.my-reel-page-item');
-        const totalPages = Math.ceil(items.length / myReelsPerPage);
-        const prevBtn = document.getElementById('prevReelBtn');
-        const nextBtn = document.getElementById('nextReelBtn');
-        const indicator = document.getElementById('myReelsPageIndicator');
-
-        if (items.length === 0) {
-            const controls = document.getElementById('my-reels-pagination-controls');
-            if (controls) controls.style.display = 'none';
-            return;
-        }
-
-        items.forEach(item => item.style.display = 'none');
-        let start = (currentMyReelsPage - 1) * myReelsPerPage;
-        let end = start + myReelsPerPage;
-        for (let i = start; i < end; i++) { if (items[i]) items[i].style.display = 'flex'; }
-
-        if (indicator) indicator.innerText = `PAGE ${currentMyReelsPage} / ${totalPages}`;
-        if (prevBtn) prevBtn.disabled = currentMyReelsPage === 1;
-        if (nextBtn) nextBtn.disabled = currentMyReelsPage === totalPages || totalPages === 0;
-    }
-
-    function changeMyReelsPage(step) {
-        currentMyReelsPage += step;
-        updateMyReelsPagination();
-    }
-
-    // --- MY QNA PAGINATION ---
-    let currentMyQnaPage = 1;
-    const myQnaPerPage = 4;
-
-    function updateMyQnaPagination() {
-        const items = document.querySelectorAll('.my-qna-page-item');
-        const totalPages = Math.ceil(items.length / myQnaPerPage);
-        const prevBtn = document.getElementById('prevQnaBtn');
-        const nextBtn = document.getElementById('nextQnaBtn');
-        const indicator = document.getElementById('myQnaPageIndicator');
-
-        if (items.length === 0) {
-            const controls = document.getElementById('my-qna-pagination-controls');
-            if (controls) controls.style.display = 'none';
-            return;
-        }
-
-        items.forEach(item => item.style.display = 'none');
-        let start = (currentMyQnaPage - 1) * myQnaPerPage;
-        let end = start + myQnaPerPage;
-        for (let i = start; i < end; i++) { if (items[i]) items[i].style.display = 'flex'; }
-
-        if (indicator) indicator.innerText = `PAGE ${currentMyQnaPage} / ${totalPages}`;
-        if (prevBtn) prevBtn.disabled = currentMyQnaPage === 1;
-        if (nextBtn) nextBtn.disabled = currentMyQnaPage === totalPages || totalPages === 0;
-    }
-
-    function changeMyQnaPage(step) {
-        currentMyQnaPage += step;
-        updateMyQnaPagination();
-    }
-
-    // --- NOTIFICATION LOGIC (Existing) ---
-    let currentNotifPage = 1;
-    const itemsPerPage = 5;
-
-    function updatePagination() {
-        const items = document.querySelectorAll('.notif-page-item');
-        const totalPages = Math.ceil(items.length / itemsPerPage);
-        const prevBtn = document.getElementById('prevBtn');
-        const nextBtn = document.getElementById('nextBtn');
-        const indicator = document.getElementById('pageIndicator');
-        if (items.length === 0) {
-            if(document.getElementById('pagination-controls')) document.getElementById('pagination-controls').style.display = 'none';
-            return;
-        }
-        items.forEach(item => item.style.display = 'none');
-        let start = (currentNotifPage - 1) * itemsPerPage;
-        let end = start + itemsPerPage;
-        for (let i = start; i < end; i++) { if (items[i]) items[i].style.display = 'flex'; }
-        indicator.innerText = `PAGE ${currentNotifPage} / ${totalPages}`;
-        prevBtn.disabled = currentNotifPage === 1;
-        nextBtn.disabled = currentNotifPage === totalPages;
-    }
-
-    function changePage(step) {
-        currentNotifPage += step;
-        updatePagination();
-    }
-
-    function openFullMessage(el) {
-        const notifId = el.getAttribute('data-notif-id');
-        document.getElementById('fullMessageDisplay').innerText = el.getAttribute('data-full-msg');
-        document.getElementById('fullMessageDateDisplay').innerText = el.getAttribute('data-date');
-        closeModal('notificationsModal');
-        openModal('fullMessageModal');
-        const parentItem = el.closest('.notification-item');
-        if (parentItem.classList.contains('unread')) {
-            fetch(`client-profile.php?ajax_read_notif=${notifId}`).then(() => {
-                parentItem.classList.remove('unread');
-                const badge = document.querySelector('.notification-badge-client');
-                if (badge) {
-                    let count = parseInt(badge.innerText);
-                    if (count > 1) badge.innerText = count - 1; else badge.remove();
-                }
-            });
-        }
-    }
-
-    function backToNotifications() { closeModal('fullMessageModal'); openModal('notificationsModal'); }
-
-    window.onclick = function(event) { 
-        if (event.target.classList.contains('modal-overlay')) { 
-            event.target.classList.remove('active'); 
-        } 
-        if (event.target.classList.contains('view-overlay')) { 
-            closeQnaView(); 
-        }
-    }
-
-    document.addEventListener("DOMContentLoaded", () => {
-        const alertBox = document.getElementById('alert-box');
-        if (alertBox) { setTimeout(() => { alertBox.style.opacity = "0"; setTimeout(() => alertBox.remove(), 500); }, 4000); }
-        
-        // Initialize all pagination systems
-        if (typeof updatePagination === 'function') updatePagination();
-        if (typeof updateMyReelsPagination === 'function') updateMyReelsPagination();
-        if (typeof updateMyQnaPagination === 'function') updateMyQnaPagination();
-        if (typeof updateListingPagination === 'function') updateListingPagination();
-        if (typeof updateBuyPagination === 'function') updateBuyPagination();
-    });
+// Prevent modal closing when interacting inside
+document.querySelectorAll('.modal-content').forEach(mc => {
+    mc.addEventListener('click', e => e.stopPropagation());
+});
 </script>
 
-<style>
-#confirmReceiptModal .btn-receipt-no {
-    flex: 1;
-    background: var(--primary);
-    color: #fff !important;
-}
-#confirmReceiptModal .btn-receipt-no:hover {
-    background: var(--textwhite);
-    color: #1A1A1A !important;
-}
-#confirmReceiptModal .btn-receipt-yes {
-    background: #2ecc71;
-    color: #fff !important;
-}
-#confirmReceiptModal .btn-receipt-yes:hover {
-    background: #27ae60;
-    color: #fff !important;
-}
-#notReceivedMsg .contact-label {
-    color: var(--primary);
-    font-size: 1.1rem;
-    font-family: 'Staatliches', sans-serif;
-    letter-spacing: 1px;
-    display: block;
-    margin-bottom: 6px;
-}
-.btn-hide-cancel {
-    background: #666 !important;
-    color: #fff !important;
-}
-.btn-hide-cancel:hover {
-    background: #444 !important;
-}
-</style>
+<div id="confirmDeleteTicketModal" class="modal-overlay">
+    <div class="modal-content" style="max-width: 400px; text-align: center;">
+        <span class="close-modal" onclick="closeModal('confirmDeleteTicketModal')">&times;</span>
+        <h3 class="admin-table-h3" style="margin-top:0; font-size:2.5rem;">DELETE <span class="header-span">TICKET?</span></h3>
+        <p style="font-family:'Inter',sans-serif; margin-bottom:20px; color:#666;">Are you sure you want to permanently delete this ticket and all its messages? This cannot be undone.</p>
+        <div style="display:flex; gap:10px;">
+            <form action="client-profile.php" method="POST" style="flex:1;">
+                <input type="hidden" name="delete_ticket_id" id="deleteTicketIdInput">
+                <button type="submit" name="delete_user_ticket_btn" class="btn-primary-brutal btn-full btn-receipt-yes" style="margin-top:0; padding:20px;">YES, DELETE</button>
+            </form>
+            <button type="button" class="btn-primary-brutal btn-full btn-hide-cancel" style="margin-top:0;" onclick="closeModal('confirmDeleteTicketModal')">CANCEL</button>
+        </div>
+    </div>
+</div>
 
 <div id="confirmReceiptModal" class="modal-overlay">
     <div class="modal-content" style="max-width: 400px; text-align: center;">
@@ -1629,42 +1862,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_account'])) {
         </div>
     </div>
 </div>
-
-<script>
-function openConfirmReceiptModal(orderId) {
-    document.getElementById('confirmReceiptOrderId').value = orderId;
-    document.getElementById('notReceivedMsg').style.display = 'none';
-    openModal('confirmReceiptModal');
-}
-function showNotReceivedMsg() {
-    document.getElementById('notReceivedMsg').style.display = 'block';
-}
-
-function openHideInventoryModal(productId) {
-    document.getElementById('hideInventoryProductId').value = productId;
-    openModal('confirmHideInventoryModal');
-}
-
-function openHideBuyHistoryModal(orderId) {
-    document.getElementById('hideBuyHistoryOrderId').value = orderId;
-    openModal('confirmHideBuyHistoryModal');
-}
-
-function openDeleteReelModal(reelId) {
-    document.getElementById('deleteReelId').value = reelId;
-    openModal('confirmDeleteReelModal');
-}
-
-function openDeleteQnaModal(qnaId) {
-    document.getElementById('deleteQnaId').value = qnaId;
-    openModal('confirmDeleteQnaModal');
-}
-
-function openDeleteNotifModal(notifId) {
-    document.getElementById('deleteNotifId').value = notifId;
-    openModal('confirmDeleteNotifModal');
-}
-</script>
 
 <div id="confirmHideInventoryModal" class="modal-overlay">
     <div class="modal-content" style="max-width: 400px; text-align: center;">
@@ -1726,6 +1923,21 @@ function openDeleteNotifModal(notifId) {
     </div>
 </div>
 
+<div id="confirmDeleteShoutoutModal" class="modal-overlay">
+    <div class="modal-content" style="max-width: 400px; text-align: center;">
+        <span class="close-modal" onclick="closeModal('confirmDeleteShoutoutModal')">&times;</span>
+        <h3 class="admin-table-h3" style="margin-top:0; font-size:2.5rem;">DELETE THIS <span class="header-span">SHOUTOUT?</span></h3>
+        <p style="font-family:'Inter',sans-serif; margin-bottom:20px; color:#666;">Are you sure? This will permanently remove your shoutout.</p>
+        <div style="display:flex; gap:10px;">
+            <form action="client-profile.php" method="POST" style="flex:1;">
+                <input type="hidden" name="shoutout_id" id="deleteShoutoutId">
+                <button type="submit" name="delete_my_shoutout" class="btn-primary-brutal btn-full btn-receipt-yes" style="margin-top:0; padding:20px;">YES</button>
+            </form>
+            <button type="button" class="btn-primary-brutal btn-full btn-hide-cancel" style="margin-top:0;" onclick="closeModal('confirmDeleteShoutoutModal')">CANCEL</button>
+        </div>
+    </div>
+</div>
+
 <div id="confirmDeleteNotifModal" class="modal-overlay">
     <div class="modal-content" style="max-width: 400px; text-align: center;">
         <span class="close-modal" onclick="closeModal('confirmDeleteNotifModal')">&times;</span>
@@ -1740,6 +1952,605 @@ function openDeleteNotifModal(notifId) {
         </div>
     </div>
 </div>
+
+<script>
+    // --- MODAL STACK MANAGER ---
+    const ModalStack = {
+        stack: [],
+        baseZIndex: 90000,
+
+        open: function(id) {
+            const modal = document.getElementById(id);
+            if (!modal) return;
+
+            // Remove from current position if it exists so we can push it to the top
+            this.stack = this.stack.filter(mId => mId !== id);
+            this.stack.push(id);
+
+            // Apply progressive z-index so child modals always appear on top
+            modal.style.zIndex = this.baseZIndex + (this.stack.length * 10);
+            modal.classList.add('active');
+
+            // Modal specific initialization/pagination logic
+            if (id === 'notificationsModal') { currentNotifPage = 1; updatePagination(); }
+            if (id === 'myListings') { currentListPage = 1; updateListingPagination(); }
+            if (id === 'buyHistory') { currentBuyPage = 1; updateBuyPagination(); }
+            if (id === 'myReels') { currentMyReelsPage = 1; updateMyReelsPagination(); }
+            if (id === 'myQnaModal') { currentMyQnaPage = 1; updateMyQnaPagination(); }
+            if (id === 'myShoutoutModal') { currentMyShoutoutPage = 1; updateMyShoutoutPagination(); }
+        },
+
+        close: function(id) {
+            const modal = document.getElementById(id);
+            if (!modal) return;
+
+            modal.classList.remove('active');
+            
+            // Clean up z-index after the fade-out transition
+            setTimeout(() => {
+                if (!modal.classList.contains('active')) modal.style.zIndex = '';
+            }, 300);
+
+            // Remove from the stack tracker
+            this.stack = this.stack.filter(mId => mId !== id);
+        }
+    };
+
+    function openModal(id) {
+        ModalStack.open(id);
+    }
+
+    function closeModal(id) {
+        // INTERCEPT PARENT CLOSURE
+        if (id === 'userProfileModal') return; 
+        ModalStack.close(id);
+    }
+
+    function closeMyProfileModal() {
+        const profileModal = document.getElementById('userProfileModal');
+        profileModal.classList.remove('active');
+        profileModal.style.zIndex = '';
+        ModalStack.stack = ModalStack.stack.filter(mId => mId !== 'userProfileModal');
+    }
+
+    function closeSellerModal() {
+        closeMyProfileModal();
+    }
+
+    // --- AJAX PROFILE LOADER ---
+    function openMyProfile(username) {
+        const modal = document.getElementById('userProfileModal');
+        const contentDiv = document.getElementById('userProfileContent');
+        
+        contentDiv.innerHTML = '<div class="user-profile-loading"><h2 class="glitch-text" style="text-align:center; padding: 50px;">LOADING RECORD...</h2></div>';
+        
+        ModalStack.open('userProfileModal');
+
+        fetch(`user-profile.php?username=${username}`)
+            .then(response => response.text())
+            .then(html => {
+                contentDiv.innerHTML = html;
+            })
+            .catch(err => {
+                contentDiv.innerHTML = '<span class="close-modal" onclick="closeSellerModal()">&times;</span><h3 style="color:#ff4b2b; text-align:center; padding: 50px;">FAILED TO LOAD PROFILE.</h3>';
+            });
+    }
+
+    // --- GLOBAL CLICK HANDLER ---
+    window.onclick = function(event) { 
+        if (event.target.classList.contains('modal-overlay')) { 
+            if (event.target.id === 'userProfileModal') {
+                closeMyProfileModal();
+            } else {
+                ModalStack.close(event.target.id);
+            }
+        } 
+        
+        if (event.target.classList.contains('view-overlay') || event.target.id === 'qnaViewOverlay' || event.target.id === 'shoutoutViewOverlay') {
+            event.target.classList.remove('active');
+            document.body.style.overflow = '';
+        }
+    }
+
+    // --- HELPER FUNCS ---
+    function escHtml(str) {
+        const d = document.createElement('div');
+        if (str) d.appendChild(document.createTextNode(str));
+        return d.innerHTML;
+    }
+
+    // --- CONFIRMATION MODALS ---
+    function openConfirmReceiptModal(orderId) {
+        document.getElementById('confirmReceiptOrderId').value = orderId;
+        document.getElementById('notReceivedMsg').style.display = 'none';
+        openModal('confirmReceiptModal');
+    }
+    function showNotReceivedMsg() {
+        document.getElementById('notReceivedMsg').style.display = 'block';
+    }
+    function openHideInventoryModal(productId) {
+        document.getElementById('hideInventoryProductId').value = productId;
+        openModal('confirmHideInventoryModal');
+    }
+    function openHideBuyHistoryModal(orderId) {
+        document.getElementById('hideBuyHistoryOrderId').value = orderId;
+        openModal('confirmHideBuyHistoryModal');
+    }
+    function openDeleteReelModal(reelId) {
+        document.getElementById('deleteReelId').value = reelId;
+        openModal('confirmDeleteReelModal');
+    }
+    function openDeleteQnaModal(qnaId) {
+        document.getElementById('deleteQnaId').value = qnaId;
+        openModal('confirmDeleteQnaModal');
+    }
+    function openDeleteShoutoutModal(shoutoutId) {
+        document.getElementById('deleteShoutoutId').value = shoutoutId;
+        openModal('confirmDeleteShoutoutModal');
+    }
+    function openDeleteNotifModal(notifId) {
+        document.getElementById('deleteNotifId').value = notifId;
+        openModal('confirmDeleteNotifModal');
+    }
+
+    // --- Q&A DETAIL VIEW ---
+    function openQnaDetails(id) {
+        fetch(`client-profile.php?get_qna_details=${id}`)
+        .then(res => res.json())
+        .then(data => {
+            if (!data) return;
+            const content = document.getElementById('qnaViewContent');
+            const date = new Date(data.created_at);
+            const dateStr = date.toLocaleDateString('en-US', {year:'numeric', month:'short', day:'numeric'}).toUpperCase();
+            
+            content.innerHTML = `
+                <div class="view-body">
+                    <div class="view-meta" style="font-family:'Staatliches', sans-serif; letter-spacing:2px; color:var(--primary); margin-bottom:1.5rem; display:flex; gap:1.5rem; align-items:center;">
+                        <span>MY SUBMISSION</span>
+                        <span>${dateStr}</span>
+                    </div>
+                    <h2 style="color: #fff; font-family: 'Staatliches', sans-serif; font-size: 3rem; margin-bottom: 1.5rem; line-height:1; text-transform:uppercase;">${escHtml(data.title)}</h2>
+                    <div class="view-q-block" style="background: rgba(255,255,255,0.05); padding: 1.5rem; border-left: 4px solid #444; color: #ccc; font-family: 'Inter', sans-serif; line-height: 1.8; margin-bottom: 2rem; font-size:1.1rem; word-break:break-word;">
+                        ${escHtml(data.body).replace(/\n/g, '<br>')}
+                    </div>
+                    <div class="view-a-block" style="border-left: 4px solid var(--primary); padding: 2rem; background: rgba(225, 29, 72, 0.08); color: #fff; font-family: 'Inter', sans-serif; line-height:1.7; font-size:1.1rem; word-break:break-word;">
+                        <strong style="color: var(--primary); display: block; font-family: 'Staatliches', sans-serif; font-size: 1.5rem; margin-bottom: 0.8rem; letter-spacing:1px;">OFFICIAL ANSWER</strong>
+                        ${(data.admin_answer ? escHtml(data.admin_answer).replace(/\n/g, '<br>') : '—')}
+                    </div>
+                </div>
+            `;
+            const overlay = document.getElementById('qnaViewOverlay');
+            overlay.style.zIndex = '999999';
+            overlay.classList.add('active');
+            document.body.style.overflow = 'hidden';
+        });
+    }
+
+    function openShoutoutDetails(id) {
+        fetch(`client-profile.php?get_shoutout_details=${id}`)
+        .then(res => res.json())
+        .then(data => {
+            if (!data) return;
+            const content = document.getElementById('shoutoutViewContent');
+            const date = new Date(data.created_at);
+            const dateStr = date.toLocaleDateString('en-US', {year:'numeric', month:'short', day:'numeric'}).toUpperCase();
+            const statusLabel = (data.status || '').toUpperCase();
+
+            content.innerHTML = `
+                <div class="view-body">
+                    <div class="view-meta" style="font-family:'Staatliches', sans-serif; letter-spacing:2px; color:var(--primary); margin-bottom:1.5rem; display:flex; gap:1.5rem; align-items:center; flex-wrap:wrap;">
+                        <span>MY SHOUTOUT</span>
+                        <span>${statusLabel}</span>
+                        <span>${dateStr}</span>
+                    </div>
+                    <h2 style="color: #fff; font-family: 'Staatliches', sans-serif; font-size: 3rem; margin-bottom: 1.5rem; line-height:1; text-transform:uppercase;">${escHtml(data.title)}</h2>
+                    <div class="view-q-block" style="background: rgba(255,255,255,0.05); padding: 1.5rem; border-left: 4px solid #444; color: #ccc; font-family: 'Inter', sans-serif; line-height: 1.8; margin-bottom: 2rem; font-size:1.1rem; word-break:break-word;">
+                        ${escHtml(data.body).replace(/\n/g, '<br>')}
+                    </div>
+                </div>
+            `;
+            const overlay = document.getElementById('shoutoutViewOverlay');
+            overlay.style.zIndex = '999999';
+            overlay.classList.add('active');
+            document.body.style.overflow = 'hidden';
+        });
+    }
+
+    function closeQnaView() {
+        document.getElementById('qnaViewOverlay').classList.remove('active');
+        document.body.style.overflow = '';
+    }
+
+    function closeShoutoutView() {
+        const el = document.getElementById('shoutoutViewOverlay');
+        if (el) {
+            el.classList.remove('active');
+            document.body.style.overflow = '';
+        }
+    }
+
+    // --- LISTING EDIT LOGIC ---
+    function openEditListing(id) {
+        fetch(`client-profile.php?get_listing_details=${id}`)
+        .then(res => res.json())
+        .then(data => {
+            document.getElementById('edit-p-id').value = data.id;
+            document.getElementById('edit-p-title').value = data.title;
+            document.getElementById('edit-p-brand').value = data.brand;
+            document.getElementById('edit-p-price').value = data.price;
+            document.getElementById('edit-p-category').value = data.category;
+            document.getElementById('edit-p-condition').value = data.condition_badge;
+            document.getElementById('edit-p-desc').value = data.description;
+            
+            closeModal('myListings');
+            openModal('editListingModal');
+        });
+    }
+
+    function backToListings() {
+        closeModal('editListingModal');
+        openModal('myListings');
+    }
+
+    // --- MY REELS EDIT LOGIC ---
+    function toggleReelComments(reelId) {
+        const container = document.getElementById('reel-comments-' + reelId);
+        if (container.style.display === 'block') {
+            container.style.display = 'none';
+            return;
+        }
+        
+        container.style.display = 'block';
+        container.innerHTML = '<div style="font-size:0.8rem; color:#666; font-family:\'Inter\',sans-serif;">LOADING COMMENTS...</div>';
+        
+        fetch(`reels-api.php?action=get_comments&reel_id=${reelId}`)
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    if (data.comments.length === 0) {
+                        container.innerHTML = '<div style="font-size:0.85rem; color:#666; font-family:\'Inter\',sans-serif;">No comments yet.</div>';
+                        return;
+                    }
+                    let html = '';
+                    data.comments.forEach(c => {
+                        const avatar = c.profile_pic ? c.profile_pic : '../assets/images/default-avatar.png';
+                        html += `
+                            <div class="my-reel-comment" style="display: flex; gap: 10px; align-items: flex-start; margin-bottom: 15px;">
+                                <img src="${avatar}" style="width:30px; height:30px; border-radius:50%; object-fit:cover; border: 2px solid #000;" alt="Avatar">
+                                <div>
+                                    <strong>@${c.username}</strong>
+                                    <span class="my-reel-comment-date">${c.created_at}</span>
+                                    <div style="margin-top:2px;">${c.comment}</div>
+                                </div>
+                            </div>
+                        `;
+                    });
+                    container.innerHTML = html;
+                } else {
+                    container.innerHTML = '<div style="font-size:0.85rem; color:red;">Error loading comments.</div>';
+                }
+            })
+            .catch(err => {
+                container.innerHTML = '<div style="font-size:0.85rem; color:red;">Network error.</div>';
+            });
+    }
+
+    function openEditReel(id, title, desc) {
+        document.getElementById('edit-reel-id').value = id;
+        document.getElementById('edit-reel-title').value = title;
+        document.getElementById('edit-reel-desc').value = desc;
+        updateReelEditCounter('edit-reel-title', 'edit-reel-title-counter', 35);
+        updateReelEditCounter('edit-reel-desc', 'edit-reel-desc-counter', 100);
+        closeModal('myReels');
+        openModal('editReelModal');
+    }
+
+    function updateReelEditCounter(inputId, counterId, max) {
+        const input = document.getElementById(inputId);
+        const counter = document.getElementById(counterId);
+        if (!input || !counter) return;
+        function refresh() {
+            const remaining = max - input.value.length;
+            counter.textContent = remaining + ' characters remaining';
+            counter.style.color = remaining <= 5 ? 'var(--primary)' : remaining <= 15 ? '#ffcc00' : '#777';
+        }
+        input.removeEventListener('input', input._reelCounterFn);
+        input._reelCounterFn = refresh;
+        input.addEventListener('input', refresh);
+        refresh();
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const titleInput = document.getElementById('edit-reel-title');
+        const descInput  = document.getElementById('edit-reel-desc');
+        if (titleInput) titleInput.addEventListener('input', () => updateReelEditCounter('edit-reel-title', 'edit-reel-title-counter', 35));
+        if (descInput)  descInput.addEventListener('input',  () => updateReelEditCounter('edit-reel-desc',  'edit-reel-desc-counter',  100));
+    });
+
+    // --- BUY HISTORY PAGINATION ---
+    let currentBuyPage = 1;
+    const buyItemsPerPage = 6;
+
+    function updateBuyPagination() {
+        const items = document.querySelectorAll('.buy-history-page-item');
+        const totalPages = Math.ceil(items.length / buyItemsPerPage);
+        const prevBtn = document.getElementById('prevBuyBtn');
+        const nextBtn = document.getElementById('nextBuyBtn');
+        const indicator = document.getElementById('buyPageIndicator');
+
+        if (items.length === 0) {
+            const controls = document.getElementById('buy-history-pagination-controls');
+            if (controls) controls.style.display = 'none';
+            return;
+        }
+
+        items.forEach(item => item.style.display = 'none');
+        let start = (currentBuyPage - 1) * buyItemsPerPage;
+        let end = start + buyItemsPerPage;
+        for (let i = start; i < end; i++) { if (items[i]) items[i].style.display = 'block'; }
+
+        indicator.innerText = `PAGE ${currentBuyPage} / ${totalPages}`;
+        if(prevBtn) prevBtn.disabled = currentBuyPage === 1;
+        if(nextBtn) nextBtn.disabled = currentBuyPage === totalPages || totalPages === 0;
+    }
+
+    function changeBuyPage(step) {
+        currentBuyPage += step;
+        updateBuyPagination();
+    }
+
+    // --- LISTING PAGINATION ---
+    let currentListPage = 1;
+    const listItemsPerPage = 6;
+
+    function updateListingPagination() {
+        const items = document.querySelectorAll('.listing-page-item');
+        const totalPages = Math.ceil(items.length / listItemsPerPage);
+        const prevBtn = document.getElementById('prevListBtn');
+        const nextBtn = document.getElementById('nextListBtn');
+        const indicator = document.getElementById('listingPageIndicator');
+
+        if (items.length === 0) {
+            if(document.getElementById('listing-pagination-controls')) document.getElementById('listing-pagination-controls').style.display = 'none';
+            return;
+        }
+
+        items.forEach(item => item.style.display = 'none');
+        let start = (currentListPage - 1) * listItemsPerPage;
+        let end = start + listItemsPerPage;
+        for (let i = start; i < end; i++) { if (items[i]) items[i].style.display = 'block'; }
+
+        indicator.innerText = `PAGE ${currentListPage} / ${totalPages}`;
+        if(prevBtn) prevBtn.disabled = currentListPage === 1;
+        if(nextBtn) nextBtn.disabled = currentListPage === totalPages || totalPages === 0;
+    }
+
+    function changeListingPage(step) {
+        currentListPage += step;
+        updateListingPagination();
+    }
+
+    // --- MY REELS PAGINATION ---
+    let currentMyReelsPage = 1;
+    const myReelsPerPage = 4;
+
+    function updateMyReelsPagination() {
+        const items = document.querySelectorAll('.my-reel-page-item');
+        const totalPages = Math.ceil(items.length / myReelsPerPage);
+        const prevBtn = document.getElementById('prevReelBtn');
+        const nextBtn = document.getElementById('nextReelBtn');
+        const indicator = document.getElementById('myReelsPageIndicator');
+
+        if (items.length === 0) {
+            const controls = document.getElementById('my-reels-pagination-controls');
+            if (controls) controls.style.display = 'none';
+            return;
+        }
+
+        items.forEach(item => item.style.display = 'none');
+        let start = (currentMyReelsPage - 1) * myReelsPerPage;
+        let end = start + myReelsPerPage;
+        for (let i = start; i < end; i++) { if (items[i]) items[i].style.display = 'flex'; }
+
+        if (indicator) indicator.innerText = `PAGE ${currentMyReelsPage} / ${totalPages}`;
+        if (prevBtn) prevBtn.disabled = currentMyReelsPage === 1;
+        if (nextBtn) nextBtn.disabled = currentMyReelsPage === totalPages || totalPages === 0;
+    }
+
+    function changeMyReelsPage(step) {
+        currentMyReelsPage += step;
+        updateMyReelsPagination();
+    }
+
+    // --- MY QNA PAGINATION ---
+    let currentMyQnaPage = 1;
+    const myQnaPerPage = 4;
+
+    function updateMyQnaPagination() {
+        const items = document.querySelectorAll('#my-qna-list .my-qna-page-item');
+        const totalPages = Math.ceil(items.length / myQnaPerPage);
+        const prevBtn = document.getElementById('prevQnaBtn');
+        const nextBtn = document.getElementById('nextQnaBtn');
+        const indicator = document.getElementById('myQnaPageIndicator');
+
+        if (items.length === 0) {
+            const controls = document.getElementById('my-qna-pagination-controls');
+            if (controls) controls.style.display = 'none';
+            return;
+        }
+
+        items.forEach(item => item.style.display = 'none');
+        let start = (currentMyQnaPage - 1) * myQnaPerPage;
+        let end = start + myQnaPerPage;
+        for (let i = start; i < end; i++) { if (items[i]) items[i].style.display = 'flex'; }
+
+        if (indicator) indicator.innerText = `PAGE ${currentMyQnaPage} / ${totalPages}`;
+        if (prevBtn) prevBtn.disabled = currentMyQnaPage === 1;
+        if (nextBtn) nextBtn.disabled = currentMyQnaPage === totalPages || totalPages === 0;
+    }
+
+    function changeMyQnaPage(step) {
+        currentMyQnaPage += step;
+        updateMyQnaPagination();
+    }
+
+    // --- MY SHOUTOUT PAGINATION ---
+    let currentMyShoutoutPage = 1;
+    const myShoutoutPerPage = 4;
+
+    function updateMyShoutoutPagination() {
+        const items = document.querySelectorAll('#my-shoutout-list .my-qna-page-item');
+        const totalPages = Math.ceil(items.length / myShoutoutPerPage);
+        const prevBtn = document.getElementById('prevShoutoutBtn');
+        const nextBtn = document.getElementById('nextShoutoutBtn');
+        const indicator = document.getElementById('myShoutoutPageIndicator');
+
+        if (items.length === 0) {
+            const controls = document.getElementById('my-shoutout-pagination-controls');
+            if (controls) controls.style.display = 'none';
+            return;
+        }
+
+        items.forEach(item => item.style.display = 'none');
+        let start = (currentMyShoutoutPage - 1) * myShoutoutPerPage;
+        let end = start + myShoutoutPerPage;
+        for (let i = start; i < end; i++) { if (items[i]) items[i].style.display = 'flex'; }
+
+        if (indicator) indicator.innerText = `PAGE ${currentMyShoutoutPage} / ${totalPages}`;
+        if (prevBtn) prevBtn.disabled = currentMyShoutoutPage === 1;
+        if (nextBtn) nextBtn.disabled = currentMyShoutoutPage === totalPages || totalPages === 0;
+    }
+
+    function changeMyShoutoutPage(step) {
+        currentMyShoutoutPage += step;
+        updateMyShoutoutPagination();
+    }
+
+    // --- SUPPORT TICKET VIEW LOGIC ---
+    function openTicketViewModal(ticketId) {
+        document.getElementById('reply_t_id').value = ticketId;
+        document.getElementById('u_t_id').innerText = ticketId;
+        openModal('ticketViewModal');
+        
+        // Fetch ticket details via AJAX
+        fetch('../admin_page/get-ticket.php?id=' + ticketId)
+            .then(response => response.text())
+            .then(html => {
+                document.getElementById('u_ticket_content').innerHTML = html;
+                // Remove admin action form from user view if it exists in the fetched HTML
+                const adminForm = document.getElementById('u_ticket_content').querySelector('form');
+                if(adminForm) adminForm.remove();
+                const adminActionHeader = document.getElementById('u_ticket_content').querySelector('h4:last-of-type');
+                if(adminActionHeader && adminActionHeader.innerText === 'ADMIN ACTION') adminActionHeader.remove();
+
+                // Check ticket status for locking
+                const statusDiv = document.getElementById('fetched_ticket_status');
+                const userReplyForm = document.querySelector('#ticketViewModal form.admin-form');
+                
+                // Clear any old warning message if it exists
+                const oldWarning = document.getElementById('ticketLockWarning');
+                if (oldWarning) oldWarning.remove();
+
+                if (statusDiv && userReplyForm) {
+                    const status = statusDiv.innerText.trim();
+                    if (status === 'New') {
+                        userReplyForm.style.display = 'none';
+                        
+                        const warning = document.createElement('div');
+                        warning.id = 'ticketLockWarning';
+                        warning.className = 'admin-alert alert-error';
+                        warning.style.marginTop = '0';
+                        warning.style.backgroundColor = '#ffcc00'; // Yellow for waiting
+                        warning.style.color = '#000';
+                        warning.innerText = 'WAITING FOR ADMINISTRATOR RESPONSE. YOU CAN REPLY ONCE AN ADMINISTRATOR HAS RESPONDED TO THIS TICKET.';
+                        
+                        userReplyForm.parentNode.insertBefore(warning, userReplyForm);
+                    } else if (status === 'Resolved' || status === 'Closed') {
+                        userReplyForm.style.display = 'none';
+                        
+                        const warning = document.createElement('div');
+                        warning.id = 'ticketLockWarning';
+                        warning.className = 'admin-alert alert-error';
+                        warning.style.marginTop = '0';
+                        warning.innerText = status === 'Resolved' 
+                            ? 'THIS TICKET HAS BEEN RESOLVED AND IS NO LONGER ACCEPTING NEW REPLIES.' 
+                            : 'THIS TICKET HAS BEEN CLOSED BY THE ADMINISTRATION TEAM.';
+                        
+                        userReplyForm.parentNode.insertBefore(warning, userReplyForm);
+                    } else {
+                        userReplyForm.style.display = 'block';
+                    }
+                }
+            });
+    }
+
+    function openDeleteTicketModal(ticketId) {
+        document.getElementById('deleteTicketIdInput').value = ticketId;
+        openModal('confirmDeleteTicketModal');
+    }
+
+    // --- NOTIFICATION LOGIC ---
+    let currentNotifPage = 1;
+    const itemsPerPage = 5;
+
+    function updatePagination() {
+        const items = document.querySelectorAll('.notif-page-item');
+        const totalPages = Math.ceil(items.length / itemsPerPage);
+        const prevBtn = document.getElementById('prevBtn');
+        const nextBtn = document.getElementById('nextBtn');
+        const indicator = document.getElementById('pageIndicator');
+        if (items.length === 0) {
+            if(document.getElementById('pagination-controls')) document.getElementById('pagination-controls').style.display = 'none';
+            return;
+        }
+        items.forEach(item => item.style.display = 'none');
+        let start = (currentNotifPage - 1) * itemsPerPage;
+        let end = start + itemsPerPage;
+        for (let i = start; i < end; i++) { if (items[i]) items[i].style.display = 'flex'; }
+        indicator.innerText = `PAGE ${currentNotifPage} / ${totalPages}`;
+        if(prevBtn) prevBtn.disabled = currentNotifPage === 1;
+        if(nextBtn) nextBtn.disabled = currentNotifPage === totalPages;
+    }
+
+    function changePage(step) {
+        currentNotifPage += step;
+        updatePagination();
+    }
+
+    function openFullMessage(el) {
+        const notifId = el.getAttribute('data-notif-id');
+        document.getElementById('fullMessageDisplay').innerText = el.getAttribute('data-full-msg');
+        document.getElementById('fullMessageDateDisplay').innerText = el.getAttribute('data-date');
+        closeModal('notificationsModal');
+        openModal('fullMessageModal');
+        const parentItem = el.closest('.notification-item');
+        if (parentItem.classList.contains('unread')) {
+            fetch(`client-profile.php?ajax_read_notif=${notifId}`).then(() => {
+                parentItem.classList.remove('unread');
+                const badge = document.querySelector('.notification-badge-client');
+                if (badge) {
+                    let count = parseInt(badge.innerText);
+                    if (count > 1) badge.innerText = count - 1; else badge.remove();
+                }
+            });
+        }
+    }
+
+    function backToNotifications() { closeModal('fullMessageModal'); openModal('notificationsModal'); }
+
+    document.addEventListener("DOMContentLoaded", () => {
+        const alertBox = document.getElementById('alert-box');
+        if (alertBox) { setTimeout(() => { alertBox.style.opacity = "0"; setTimeout(() => alertBox.remove(), 500); }, 4000); }
+        
+        // Initialize all pagination systems
+        if (typeof updatePagination === 'function') updatePagination();
+        if (typeof updateMyReelsPagination === 'function') updateMyReelsPagination();
+        if (typeof updateMyQnaPagination === 'function') updateMyQnaPagination();
+        if (typeof updateMyShoutoutPagination === 'function') updateMyShoutoutPagination();
+        if (typeof updateListingPagination === 'function') updateListingPagination();
+        if (typeof updateBuyPagination === 'function') updateBuyPagination();
+    });
+</script>
 
 <?php include 'footer.php'; ?>
 </body>

@@ -47,9 +47,7 @@ if ($table_ok && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_q
             $_SESSION['msg'] = 'QUESTION SUBMITTED! IT WILL APPEAR AFTER ADMIN REVIEW.';
             $_SESSION['msg_type'] = 'success';
             $notif = 'Your QnA has been submitted and is awaiting admin review.';
-            $n = $conn->prepare('INSERT INTO notifications (user_id, message) VALUES (?, ?)');
-            $n->bind_param('is', $user_id, $notif);
-            $n->execute();
+            sendAppNotification($conn, $user_id, $notif);
         } else {
             $_SESSION['msg'] = 'COULD NOT SUBMIT. TRY AGAIN LATER.';
             $_SESSION['msg_type'] = 'error';

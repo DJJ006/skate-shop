@@ -403,9 +403,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['proceed_to_payment'])
                             $purchase_code = "ORD-" . str_pad($order_id, 6, "0", STR_PAD_LEFT);
                             $ship_addr = "{$shipping_payload['full_name']}, {$shipping_payload['address_line_1']}, {$shipping_payload['city']}, {$shipping_payload['country']}";
                             $seller_notif_msg = "Your marketplace item '{$p['title']}' has been purchased!\nOrder Code: {$purchase_code}\nShip to: {$ship_addr}";
-                            $seller_notif = $conn->prepare("INSERT INTO notifications (user_id, message) VALUES (?, ?)");
-                            $seller_notif->bind_param("is", $seller_id, $seller_notif_msg);
-                            $seller_notif->execute();
+                            sendAppNotification($conn, $seller_id, $seller_notif_msg);
                         } else {
                             $update_prod = $conn->prepare("UPDATE products SET quantity = quantity - 1 WHERE id = ?");
                             $update_prod->bind_param("i", $p['id']);
@@ -413,9 +411,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['proceed_to_payment'])
                         }
 
                         $buyer_msg = "Your order for '{$p['title']}' was successful (Paid via Wallet).";
-                        $buyer_notif = $conn->prepare("INSERT INTO notifications (user_id, message) VALUES (?, ?)");
-                        $buyer_notif->bind_param("is", $buyer_id, $buyer_msg);
-                        $buyer_notif->execute();
+                        sendAppNotification($conn, $buyer_id, $buyer_msg);
+                        
+                        // Send email receipt
+                        sendOrderReceiptEmail($conn, $order_id);
                     }
                 }
             }

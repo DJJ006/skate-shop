@@ -1,5 +1,8 @@
 <?php
-session_start();
+require_once 'admin_auth.php';
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 include '../db.php';
 require_once '../stripe-config.php';
 
@@ -133,17 +136,13 @@ try {
                    . "A full refund has been issued to your original payment method. "
                    . "Please allow 5–10 business days for the refund to appear on your statement.";
 
-    $notif_stmt = $conn->prepare("INSERT INTO notifications (user_id, message) VALUES (?, ?)");
-    $notif_stmt->bind_param("is", $buyer_id, $notif_message);
-    $notif_stmt->execute();
+    sendAppNotification($conn, $buyer_id, $notif_message);
 
     if ($seller_id > 0) {
         $seller_notif_message = "ORDER CANCELLED — The order {$purchase_code} for your marketplace item has been cancelled by the admin.\n\n"
                               . "REASON: {$cancel_reason}\n\n"
                               . "Your item has been placed back into the marketplace and is available for purchase again.";
-        $seller_notif_stmt = $conn->prepare("INSERT INTO notifications (user_id, message) VALUES (?, ?)");
-        $seller_notif_stmt->bind_param("is", $seller_id, $seller_notif_message);
-        $seller_notif_stmt->execute();
+        sendAppNotification($conn, $seller_id, $seller_notif_message);
     }
 
     $conn->commit();
@@ -183,17 +182,13 @@ try {
                 $notif_msg2 = "Order cancelled. Your order {$purchase_code} has been cancelled by the admin.\n\n"
                             . "REASON: {$cancel_reason}\n\n"
                             . "This order had already been refunded previously.";
-                $notif_stmt2 = $conn->prepare("INSERT INTO notifications (user_id, message) VALUES (?, ?)");
-                $notif_stmt2->bind_param("is", $buyer_id, $notif_msg2);
-                $notif_stmt2->execute();
+                sendAppNotification($conn, $buyer_id, $notif_msg2);
 
                 if (isset($seller_id) && $seller_id > 0) {
                     $seller_notif_msg2 = "Order cancelled. The order {$purchase_code} for your marketplace item has been cancelled by the admin.\n\n"
                                        . "REASON: {$cancel_reason}\n\n"
                                        . "Your item has been placed back into the marketplace.";
-                    $seller_notif_stmt2 = $conn->prepare("INSERT INTO notifications (user_id, message) VALUES (?, ?)");
-                    $seller_notif_stmt2->bind_param("is", $seller_id, $seller_notif_msg2);
-                    $seller_notif_stmt2->execute();
+                    sendAppNotification($conn, $seller_id, $seller_notif_msg2);
                 }
             }
         } catch (Exception $inner) {

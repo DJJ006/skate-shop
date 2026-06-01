@@ -4,9 +4,6 @@ include '../db.php';
 
 header('Content-Type: application/json');
 
-/**
- * Persists the current session cart to the database for logged-in users.
- */
 function saveCartToDb($conn) {
     if (empty($_SESSION['user_id'])) return;
     $user_id = (int)$_SESSION['user_id'];
@@ -18,7 +15,6 @@ function saveCartToDb($conn) {
     }
 }
 
-// Auth guard — guests cannot use the cart
 if (empty($_SESSION['user_id'])) {
     echo json_encode([
         'success' => false,
@@ -29,7 +25,6 @@ if (empty($_SESSION['user_id'])) {
     exit;
 }
 
-// Checkout lock — prevent mutations while a checkout is in progress
 $mutation_actions = ['add', 'remove', 'update', 'clear'];
 if (!empty($_SESSION['cart_locked']) && in_array($action, $mutation_actions)) {
     echo json_encode([
@@ -40,7 +35,6 @@ if (!empty($_SESSION['cart_locked']) && in_array($action, $mutation_actions)) {
     exit;
 }
 
-// Initialize cart: if session cart is empty and user is logged in, restore from DB
 if (!isset($_SESSION['cart'])) {
     $_SESSION['cart'] = [];
 }

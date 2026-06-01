@@ -60,8 +60,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 '<button class="comment-delete-btn" onclick="deleteComment(' + c.id + ')">DELETE</button>' +
                 '</div>';
         }
-        div.innerHTML = '<div class="comment-header"><strong><a href="javascript:void(0)" onclick="openUserProfile(\'' + encodeURIComponent(c.username) + '\')" style="color:var(--primary); text-decoration:underline; font-weight:bold;">@' + c.username + '</a></strong><span class="comment-date">' + c.created_at + '</span></div>' +
-            '<p class="comment-text" id="comment-text-' + c.id + '">' + c.comment + '</p>' + actions;
+        const avatar = c.profile_pic ? c.profile_pic : '../assets/images/default-avatar.png';
+        div.innerHTML = `
+            <div class="comment-header" style="display: flex; gap: 10px; align-items: center; margin-bottom: 8px;">
+                <img src="${avatar}" style="width:35px; height:35px; border-radius:50%; object-fit:cover; border: 2px solid #000;" alt="Avatar">
+                <div>
+                    <strong><a href="javascript:void(0)" onclick="openUserProfile('${encodeURIComponent(c.username)}')" style="color:var(--primary); text-decoration:underline; font-weight:bold;">@${c.username}</a></strong>
+                    <span class="comment-date" style="display:block; font-size:0.75rem;">${c.created_at}</span>
+                </div>
+            </div>
+            <p class="comment-text" id="comment-text-${c.id}">${c.comment}</p>
+            ${actions}
+        `;
 
         if (prepend) {
             commentsList.prepend(div);

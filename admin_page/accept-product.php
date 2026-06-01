@@ -1,5 +1,8 @@
 <?php
-session_start();
+require_once 'admin_auth.php';
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 include '../db.php';
 
 
@@ -15,9 +18,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['accept_product'])) {
     if ($conn->query($sql) === TRUE) {
         
         $msg = "Your product '" . $prod['title'] . "' has been approved and is now live!";
-        $notif = $conn->prepare("INSERT INTO notifications (user_id, message) VALUES (?, ?)");
-        $notif->bind_param("is", $prod['seller_id'], $msg);
-        $notif->execute();
+        sendAppNotification($conn, $prod['seller_id'], $msg);
 
         $_SESSION['msg'] = "LISTING APPROVED! CLIENT NOTIFIED.";
         $_SESSION['msg_type'] = "success";
@@ -39,9 +40,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reject_product_final']
     if ($conn->query($sql) === TRUE) {
         
         $msg = "Your product '" . $prod['title'] . "' was rejected. Reason: " . $reason;
-        $notif = $conn->prepare("INSERT INTO notifications (user_id, message) VALUES (?, ?)");
-        $notif->bind_param("is", $prod['seller_id'], $msg);
-        $notif->execute();
+        sendAppNotification($conn, $prod['seller_id'], $msg);
 
         $_SESSION['msg'] = "LISTING REJECTED & CLIENT NOTIFIED.";
         $_SESSION['msg_type'] = "success";
@@ -50,10 +49,21 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reject_product_final']
     exit();
 }
 
+// PAGINATION SETUP
+$limit = 6;
+$page = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
+$offset = ($page - 1) * $limit;
+
+// COUNT TOTAL RECORDS
+$count_sql = "SELECT COUNT(*) as total FROM products WHERE is_marketplace=1 AND is_approved=0";
+$count_res = $conn->query($count_sql);
+$total_records = $count_res->fetch_assoc()['total'];
+$total_pages = ceil($total_records / $limit);
+
 $pending_sql = "SELECT id, title, price, category, condition_badge, brand, description, image_url, seller_name, created_at 
                 FROM products 
                 WHERE is_marketplace = 1 AND is_approved = 0 
-                ORDER BY created_at ASC";
+                ORDER BY created_at ASC LIMIT $limit OFFSET $offset";
 $pending_result = $conn->query($pending_sql);
 
 $modals_html = [];
@@ -74,11 +84,7 @@ $modals_html = [];
 </head>
 <body>
 
-<header class="main-header">
-    <div class="container header-content">
-        <h1 class="logo"><a href="index.php">SKATE<span>SHOP</span> ADMIN</a></h1>
-    </div>
-</header>
+<?php require __DIR__ . '/admin_header.php'; ?>
 
 <section class="admin-layout container">
     
@@ -227,6 +233,27 @@ $modals_html = [];
                     <?php endif; ?>
                 </tbody>
             </table>
+
+            <?php if ($total_pages > 0): ?>
+            <div class="admin-pagination">
+                <?php
+                $query_string = $_GET;
+                if ($page > 1) {
+                    $query_string['page'] = $page - 1;
+                    echo '<a href="?' . http_build_query($query_string) . '" class="btn btn-outline">&laquo; PREV</a>';
+                }
+                for ($i = 1; $i <= $total_pages; $i++) {
+                    $query_string['page'] = $i;
+                    $active = ($i === $page) ? 'active' : '';
+                    echo '<a href="?' . http_build_query($query_string) . '" class="btn btn-outline ' . $active . '">' . $i . '</a>';
+                }
+                if ($page < $total_pages) {
+                    $query_string['page'] = $page + 1;
+                    echo '<a href="?' . http_build_query($query_string) . '" class="btn btn-outline">NEXT &raquo;</a>';
+                }
+                ?>
+            </div>
+            <?php endif; ?>
         </div>
     </main>
 </section>

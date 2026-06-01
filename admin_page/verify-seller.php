@@ -1,5 +1,8 @@
 <?php
-session_start();
+require_once 'admin_auth.php';
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 include '../db.php';
 
 // Fetch pending count for the sidebar notification badge
@@ -12,6 +15,8 @@ if ($count_result) {
     $pending_count = (int)$count_row['pending_count'];
 }
 
+
+
 // --- POST: VERIFY SELLER (Manual or Auto) ---
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['verify_seller'])) {
     $seller_id = (int)$_POST['seller_id'];
@@ -23,10 +28,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['verify_seller'])) {
         $msg = $is_manual 
             ? "Congratulations! An administrator has manually awarded you the VERIFIED SELLER badge!"
             : "Congratulations! You have been awarded the VERIFIED SELLER badge for maintaining a 5-star rating!";
-        
-        $notif = $conn->prepare("INSERT INTO notifications (user_id, message) VALUES (?, ?)");
-        $notif->bind_param("is", $seller_id, $msg);
-        $notif->execute();
+        sendAppNotification($conn, $seller_id, $msg);
 
         $_SESSION['msg'] = $is_manual ? "SELLER MANUALLY VERIFIED!" : "SELLER VERIFIED (AUTO CRITERIA)!";
         $_SESSION['msg_type'] = "success";
@@ -42,9 +44,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['revoke_seller'])) {
     $sql = "UPDATE users SET is_verified = 0 WHERE id = $seller_id";
     if ($conn->query($sql) === TRUE) {
         $msg = "Your VERIFIED SELLER badge has been revoked by an administrator.";
-        $notif = $conn->prepare("INSERT INTO notifications (user_id, message) VALUES (?, ?)");
-        $notif->bind_param("is", $seller_id, $msg);
-        $notif->execute();
+        sendAppNotification($conn, $seller_id, $msg);
 
         $_SESSION['msg'] = "VERIFICATION REVOKED & CLIENT NOTIFIED.";
         $_SESSION['msg_type'] = "success";
@@ -53,8 +53,50 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['revoke_seller'])) {
     exit();
 }
 
+// SEARCH LOGIC
+$search = isset($_GET['search']) ? trim($_GET['search']) : '';
+$status_filter = isset($_GET['status_filter']) ? $_GET['status_filter'] : '';
+$where_sql = "1=1";
+$params = [];
+$types = "";
+
+if ($search !== '') {
+    $where_sql .= " AND (username LIKE ? OR id = ?)";
+    $search_param = "%$search%";
+    $params[] = $search_param;
+    $params[] = $search; // exact ID match
+    $types .= "ss";
+}
+
+if ($status_filter === 'verified') {
+    $where_sql .= " AND is_verified = 1";
+} elseif ($status_filter === 'unverified') {
+    $where_sql .= " AND is_verified = 0";
+}
+
+// PAGINATION SETUP
+$limit = 6;
+$page = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
+$offset = ($page - 1) * $limit;
+
+// COUNT TOTAL RECORDS
+$count_sql = "SELECT COUNT(*) as total FROM users WHERE $where_sql";
+$count_stmt = $conn->prepare($count_sql);
+if ($types !== "") {
+    $count_stmt->bind_param($types, ...$params);
+}
+$count_stmt->execute();
+$total_records = $count_stmt->get_result()->fetch_assoc()['total'];
+$total_pages = ceil($total_records / $limit);
+
 // Fetch all users to display in the table
-$sellers_stmt = $conn->query("SELECT id, username, is_verified FROM users ORDER BY created_at DESC");
+$sellers_sql = "SELECT id, username, is_verified FROM users WHERE $where_sql ORDER BY created_at DESC LIMIT $limit OFFSET $offset";
+$sellers_stmt_query = $conn->prepare($sellers_sql);
+if ($types !== "") {
+    $sellers_stmt_query->bind_param($types, ...$params);
+}
+$sellers_stmt_query->execute();
+$sellers_result = $sellers_stmt_query->get_result();
 ?>
 
 <!DOCTYPE html>
@@ -72,11 +114,7 @@ $sellers_stmt = $conn->query("SELECT id, username, is_verified FROM users ORDER 
 </head>
 <body>
 
-<header class="main-header">
-    <div class="container header-content">
-        <h1 class="logo"><a href="index.php">SKATE<span>SHOP</span> ADMIN</a></h1>
-    </div>
-</header>
+<?php require __DIR__ . '/admin_header.php'; ?>
 
 <section class="admin-layout container">
     
@@ -104,6 +142,32 @@ $sellers_stmt = $conn->query("SELECT id, username, is_verified FROM users ORDER 
 
         <div class="grainy-card card-padding" style="padding: 20px;">
             <h3 class="admin-table-h3">SELLER <span class="header-span">STATUS</span></h3>
+
+            <div class="grainy-card filter-bar">
+                <form method="GET" action="verify-seller.php" class="search-filter-form">
+                    
+                    <div class="filter-group search-box">
+                        <label>SEARCH</label>
+                        <input type="text" name="search" placeholder="ID or Username..." value="<?php echo htmlspecialchars($search); ?>">
+                    </div>
+
+                    <div class="filter-group">
+                        <label>STATUS</label>
+                        <select name="status_filter" onchange="this.form.submit()">
+                            <option value="">ALL STATUSES</option>
+                            <option value="verified" <?php echo $status_filter === 'verified' ? 'selected' : ''; ?>>VERIFIED</option>
+                            <option value="unverified" <?php echo $status_filter === 'unverified' ? 'selected' : ''; ?>>NOT VERIFIED</option>
+                        </select>
+                    </div>
+
+                    <div class="filter-actions" style="margin-top:22px;">
+                        <button type="submit" class="btn-filter">FILTER</button>
+                        <a href="verify-seller.php" class="btn-reset">RESET</a>
+                    </div>
+                    
+                </form>
+            </div>
+
             <table class="recent-activity-table">
                 <thead>
                     <tr>
@@ -115,8 +179,8 @@ $sellers_stmt = $conn->query("SELECT id, username, is_verified FROM users ORDER 
                     </tr>
                 </thead>
                 <tbody>
-                    <?php if ($sellers_stmt->num_rows > 0): ?>
-                        <?php while($user = $sellers_stmt->fetch_assoc()): ?>
+                    <?php if ($sellers_result->num_rows > 0): ?>
+                        <?php while($user = $sellers_result->fetch_assoc()): ?>
                             <?php
                                 $uid = $user['id'];
                                 $r_stmt = $conn->query("SELECT rating FROM seller_ratings WHERE seller_id = $uid ORDER BY created_at DESC LIMIT 5");
@@ -131,7 +195,7 @@ $sellers_stmt = $conn->query("SELECT id, username, is_verified FROM users ORDER 
                             ?>
                             <tr>
                                 <td class="td-id">#<?php echo $user['id']; ?></td>
-                                <td><strong>@<?php echo htmlspecialchars($user['username']); ?></strong></td>
+                                <td><strong><?php echo htmlspecialchars($user['username']); ?></strong></td>
                                 <td>
                                     <?php 
                                         if (empty($ratings)) {
@@ -168,14 +232,14 @@ $sellers_stmt = $conn->query("SELECT id, username, is_verified FROM users ORDER 
                                             <form method="POST" action="verify-seller.php">
                                                 <input type="hidden" name="seller_id" value="<?php echo $uid; ?>">
                                                 <input type="hidden" name="manual_override" value="1">
-                                                <button type="submit" name="verify_seller" class="btn-mini btn-view" style="font-weight: 900; background-color: #3498db;">MANUAL VERIFY</button>
+                                                <button type="submit" name="verify_seller" class="btn-mini btn-view">MANUAL VERIFY</button>
                                             </form>
                                         <?php endif; ?>
 
                                     <?php else: ?>
                                         <form method="POST" action="verify-seller.php">
                                             <input type="hidden" name="seller_id" value="<?php echo $uid; ?>">
-                                            <button type="submit" name="revoke_seller" class="btn-mini btn-danger" onclick="return confirm('Revoke verification for @<?php echo htmlspecialchars($user['username']); ?>?')" style="font-weight: 900;">REVOKE</button>
+                                            <button type="submit" name="revoke_seller" class="btn-mini btn-danger" onclick="return confirm('Revoke verification for @<?php echo htmlspecialchars($user['username']); ?>?')">REVOKE</button>
                                         </form>
                                     <?php endif; ?>
                                     </div>
@@ -187,6 +251,28 @@ $sellers_stmt = $conn->query("SELECT id, username, is_verified FROM users ORDER 
                     <?php endif; ?>
                 </tbody>
             </table>
+
+            <?php if ($total_pages > 0): ?>
+            <div class="admin-pagination">
+                <?php
+                $query_string = $_GET;
+                if ($page > 1) {
+                    $query_string['page'] = $page - 1;
+                    echo '<a href="?' . http_build_query($query_string) . '" class="btn btn-outline">&laquo; PREV</a>';
+                }
+                for ($i = 1; $i <= $total_pages; $i++) {
+                    $query_string['page'] = $i;
+                    $active = ($i === $page) ? 'active' : '';
+                    echo '<a href="?' . http_build_query($query_string) . '" class="btn btn-outline ' . $active . '">' . $i . '</a>';
+                }
+                if ($page < $total_pages) {
+                    $query_string['page'] = $page + 1;
+                    echo '<a href="?' . http_build_query($query_string) . '" class="btn btn-outline">NEXT &raquo;</a>';
+                }
+                ?>
+            </div>
+            <?php endif; ?>
+
         </div>
     </main>
 </section>

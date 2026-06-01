@@ -48,6 +48,63 @@
     vertical-align: middle;
 }
 
+.user-profile-actions {
+    margin: 1.5rem 0;
+    display: block;
+    width: 100%;
+}
+
+.user-profile-follow-btn {
+    all: unset;
+    display: inline-block;
+    padding: 1rem 2.5rem;
+    background: var(--primary);
+    color: var(--textwhite);
+    border: 4px solid var(--charcoal);
+    font-family: 'Staatliches', sans-serif;
+    font-size: 1.8rem;
+    letter-spacing: 2px;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    box-shadow: 8px 8px 0px var(--charcoal);
+    vertical-align: middle;
+    line-height: 1;
+    font-style: normal !important;
+    text-transform: uppercase;
+    user-select: none;
+    text-align: center;
+}
+
+.user-profile-follow-btn:hover {
+    transform: translate(-4px, -4px);
+    box-shadow: 12px 12px 0px var(--charcoal);
+    background: var(--textwhite);
+    color: var(--charcoal);
+}
+
+.user-profile-follow-btn:active {
+    transform: translate(2px, 2px);
+    box-shadow: 4px 4px 0px var(--charcoal);
+}
+
+.user-profile-follow-btn.is-following {
+    background: var(--charcoal);
+    color: var(--textwhite);
+    border-color: var(--charcoal);
+}
+
+.user-profile-follow-btn.is-following:hover {
+    background: var(--primary);
+    color: var(--textwhite);
+    border-color: var(--charcoal);
+}
+
+.user-profile-follow-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
 .user-profile-meta {
     display: flex;
     gap: 1rem;
@@ -66,6 +123,24 @@
     letter-spacing: 1px;
     text-transform: uppercase;
     color: var(--charcoal);
+}
+
+.user-profile-meta-chip.is-clickable {
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border-color: var(--charcoal);
+}
+
+.user-profile-meta-chip.is-clickable:hover {
+    background: var(--primary);
+    color: var(--textwhite);
+    transform: translateY(-2px);
+    box-shadow: 4px 4px 0px var(--charcoal);
+}
+
+.user-profile-meta-chip.is-clickable:hover .user-profile-meta-value-primary {
+    color: var(--textwhite);
+    border-color: var(--textwhite);
 }
 
 .user-profile-meta-value {

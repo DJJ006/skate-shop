@@ -554,6 +554,12 @@ const MAG_POSTS = <?php echo json_encode($posts, JSON_HEX_TAG | JSON_HEX_APOS | 
 // Pre-fetch all full articles via AJAX
 const articleCache = {};
 
+<?php if ($article): ?>
+document.addEventListener('DOMContentLoaded', () => {
+    openMagArticle(<?php echo $article['id']; ?>);
+});
+<?php endif; ?>
+
 function openMagArticle(id) {
     const overlay = document.getElementById('articleOverlay');
     const content = document.getElementById('articleContent');

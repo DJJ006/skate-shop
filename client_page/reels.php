@@ -56,9 +56,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['submit_reel'])) {
             $_SESSION['msg'] = "CLIP SUBMITTED! PENDING ADMIN APPROVAL.";
             $_SESSION['msg_type'] = "success";
             $notif_msg = "Your reel \"" . $title . "\" will be checked by admin soon.";
-            $notif_stmt = $conn->prepare("INSERT INTO notifications (user_id, message) VALUES (?, ?)");
-            $notif_stmt->bind_param("is", $user_id, $notif_msg);
-            $notif_stmt->execute();
+            sendAppNotification($conn, $user_id, $notif_msg);
         } else {
             $_SESSION['msg'] = "ERROR ADDING CLIP: " . $conn->error;
             $_SESSION['msg_type'] = "error";

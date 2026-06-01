@@ -1,3 +1,46 @@
+window.toggleFollow = function (followedId) {
+    const btn = document.getElementById('followBtn');
+    const countDisplay = document.getElementById('followerCountDisplay');
+
+    if (!btn) return;
+
+    // Disable button during request
+    btn.disabled = true;
+    btn.style.opacity = '0.5';
+
+    const formData = new FormData();
+    formData.append('toggle_follow', '1');
+    formData.append('followed_id', followedId);
+
+    fetch('user-profile.php', {
+        method: 'POST',
+        body: formData
+    })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                if (data.action === 'followed') {
+                    btn.innerText = 'UNFOLLOW';
+                    btn.classList.add('is-following');
+                } else {
+                    btn.innerText = 'FOLLOW';
+                    btn.classList.remove('is-following');
+                }
+                if (countDisplay) countDisplay.innerText = data.new_count;
+            } else {
+                alert(data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error toggling follow:', error);
+            alert('Something went wrong. Try again.');
+        })
+        .finally(() => {
+            btn.disabled = false;
+            btn.style.opacity = '1';
+        });
+};
+
 document.addEventListener('DOMContentLoaded', () => {
 
     // --- 1. MOBILE HAMBURGER NAVIGATION ---

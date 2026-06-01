@@ -57,15 +57,11 @@ try {
             
             // 3. Notify seller
             $seller_msg = "Your funds have been automatically released! $" . number_format($seller_payout, 2) . " has been added to your Wallet because 10 days have passed since the order.";
-            $seller_notif_stmt = $conn->prepare("INSERT INTO notifications (user_id, message) VALUES (?, ?)");
-            $seller_notif_stmt->bind_param("is", $seller_id, $seller_msg);
-            $seller_notif_stmt->execute();
+            sendAppNotification($conn, $seller_id, $seller_msg);
             
             // 4. Notify buyer
             $buyer_msg = "Your order (ID: ORD-" . str_pad($order_id, 6, "0", STR_PAD_LEFT) . ") has been automatically marked as received because 10 days have passed.";
-            $buyer_notif_stmt = $conn->prepare("INSERT INTO notifications (user_id, message) VALUES (?, ?)");
-            $buyer_notif_stmt->bind_param("is", $buyer_id, $buyer_msg);
-            $buyer_notif_stmt->execute();
+            sendAppNotification($conn, $buyer_id, $buyer_msg);
             
             $conn->commit();
             $processed_count++;

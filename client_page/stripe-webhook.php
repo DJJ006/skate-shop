@@ -161,19 +161,17 @@ if ($event->type === 'checkout.session.completed') {
                 }
                 
                 $seller_msg = "Cha-ching! Your gear '{$product['title']}' sold for $" . number_format($amount, 2) . "!\nOrder Code: {$purchase_code}\nShip to: {$shipping_info}\nDelivery Notes: {$del_notes}\nThe payout of $" . number_format($seller_payout, 2) . " is currently held in escrow and will be released to your wallet once the buyer confirms delivery, or automatically after 10 days.";
-                
-                $seller_notif_stmt = $conn->prepare("INSERT INTO notifications (user_id, message) VALUES (?, ?)");
-                $seller_notif_stmt->bind_param("is", $seller_id, $seller_msg);
-                $seller_notif_stmt->execute();
+                sendAppNotification($conn, $seller_id, $seller_msg);
 
                 webhook_log("Seller notification updated for pending escrow payout with shipping address");
             }
 
             $purchase_code = "ORD-" . str_pad($order_id, 6, "0", STR_PAD_LEFT);
             $buyer_msg = "Order confirmed! Your payment was received and your gear is being prepared for shipping. Purchase Code: " . $purchase_code;
-            $buyer_notif_stmt = $conn->prepare("INSERT INTO notifications (user_id, message) VALUES (?, ?)");
-            $buyer_notif_stmt->bind_param("is", $buyer_id, $buyer_msg);
-            $buyer_notif_stmt->execute();
+            sendAppNotification($conn, $buyer_id, $buyer_msg);
+            
+            // Send email receipt
+            sendOrderReceiptEmail($conn, $order_id);
 
             $clear_cart_stmt = $conn->prepare("UPDATE users SET cart_data = '[]' WHERE id = ?");
             $clear_cart_stmt->bind_param("i", $buyer_id);

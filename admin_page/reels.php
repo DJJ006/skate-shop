@@ -1,11 +1,11 @@
 <?php
-session_start();
+require_once 'admin_auth.php';
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 include '../db.php';
 
-if (!isset($_SESSION['user_id'])) {
-    header("Location: ../client_page/login.php");
-    exit();
-}
+
 
 // Handle delete reel
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_reel'])) {
@@ -33,9 +33,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_reel'])) {
             
             // Send notification
             $msg = "Your reel '" . $title . "' was removed by an admin. Reason: " . $reason;
-            $notif_stmt = $conn->prepare("INSERT INTO notifications (user_id, message, is_read) VALUES (?, ?, 0)");
-            $notif_stmt->bind_param("is", $u_id, $msg);
-            $notif_stmt->execute();
+            sendAppNotification($conn, $u_id, $msg);
 
             $_SESSION['msg'] = "REEL DELETED PERMANENTLY AND USER NOTIFIED.";
             $_SESSION['msg_type'] = "success";
@@ -83,13 +81,24 @@ if ($sort_filter === 'oldest') {
 }
 
 // Fetch reels with counts
+// PAGINATION SETUP
+$limit = 6;
+$page = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
+$offset = ($page - 1) * $limit;
+
+// COUNT TOTAL RECORDS
+$count_sql = "SELECT COUNT(*) as total FROM reels r JOIN users u ON r.user_id = u.id WHERE $where_sql";
+$count_res = $conn->query($count_sql);
+$total_records = $count_res->fetch_assoc()['total'];
+$total_pages = ceil($total_records / $limit);
+
 $reels_sql = "SELECT r.*, u.username,
     (SELECT COUNT(*) FROM reel_likes WHERE reel_id = r.id) as like_count,
     (SELECT COUNT(*) FROM reel_comments WHERE reel_id = r.id) as comment_count
     FROM reels r 
     JOIN users u ON r.user_id = u.id
     WHERE $where_sql
-    ORDER BY $order_sql";
+    ORDER BY $order_sql LIMIT $limit OFFSET $offset";
 
 $reels_result = $conn->query($reels_sql);
 
@@ -168,11 +177,7 @@ $modals_html = [];
 </head>
 <body>
 
-<header class="main-header">
-    <div class="container header-content">
-        <h1 class="logo"><a href="index.php">SKATE<span>SHOP</span> ADMIN</a></h1>
-    </div>
-</header>
+<?php require __DIR__ . '/admin_header.php'; ?>
 
 <section class="admin-layout container">
     <?php include 'admin_sidebar.php'; ?>
@@ -332,6 +337,27 @@ $modals_html = [];
                     <?php endif; ?>
                 </tbody>
             </table>
+
+            <?php if ($total_pages > 0): ?>
+            <div class="admin-pagination">
+                <?php
+                $query_string = $_GET;
+                if ($page > 1) {
+                    $query_string['page'] = $page - 1;
+                    echo '<a href="?' . http_build_query($query_string) . '" class="btn btn-outline">&laquo; PREV</a>';
+                }
+                for ($i = 1; $i <= $total_pages; $i++) {
+                    $query_string['page'] = $i;
+                    $active = ($i === $page) ? 'active' : '';
+                    echo '<a href="?' . http_build_query($query_string) . '" class="btn btn-outline ' . $active . '">' . $i . '</a>';
+                }
+                if ($page < $total_pages) {
+                    $query_string['page'] = $page + 1;
+                    echo '<a href="?' . http_build_query($query_string) . '" class="btn btn-outline">NEXT &raquo;</a>';
+                }
+                ?>
+            </div>
+            <?php endif; ?>
         </div>
     </main>
 </section>
@@ -340,3 +366,4 @@ $modals_html = [];
 
 </body>
 </html>
+

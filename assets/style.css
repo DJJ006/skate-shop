@@ -250,6 +250,8 @@ body {
     border: 4px solid var(--charcoal);
     cursor: pointer;
     transition: var(--transition);
+    text-decoration: none;
+    color: inherit;
 }
 
 .btn-primary {
@@ -2048,4 +2050,94 @@ body {
         width: 100%;
         height: auto;
     }
+}
+
+/* ===== LEGAL PAGES (Shipping, Returns, Privacy, Terms) ===== */
+.legal-container {
+    max-width: 1400px;
+    margin: 40px auto;
+    padding: 0 20px;
+}
+
+.legal-card {
+    background: #fff;
+    border: 4px solid var(--charcoal);
+    box-shadow: 8px 8px 0px var(--primary);
+    padding: 40px;
+    margin-bottom: 40px;
+}
+
+.legal-section {
+    margin-bottom: 35px;
+}
+
+.legal-section:last-child {
+    margin-bottom: 0;
+}
+
+.legal-section h4 {
+    font-family: 'Staatliches', sans-serif;
+    font-size: 1.8rem;
+    color: var(--primary);
+    margin-bottom: 15px;
+    border-bottom: 2px solid var(--charcoal);
+    padding-bottom: 5px;
+    display: inline-block;
+}
+
+.legal-section p,
+.legal-section ul,
+.legal-section li {
+    font-family: 'Inter', sans-serif;
+    font-size: 1.1rem;
+    color: #333;
+    line-height: 1.6;
+}
+
+.legal-section p,
+.legal-section ul {
+    margin-bottom: 15px;
+}
+
+.legal-section p:last-child,
+.legal-section ul:last-child {
+    margin-bottom: 0;
+}
+
+.legal-section ul {
+    margin-left: 20px;
+    margin-top: 10px;
+    list-style-type: square;
+}
+
+.legal-section li {
+    margin-bottom: 8px;
+}
+
+.legal-section strong {
+    color: var(--charcoal);
+    font-weight: 700;
+}
+
+.legal-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 15px;
+    border: 2px solid var(--charcoal);
+}
+
+.legal-table th,
+.legal-table td {
+    border: 2px solid var(--charcoal);
+    padding: 12px;
+    text-align: left;
+    font-family: 'Inter', sans-serif;
+}
+
+.legal-table th {
+    background: var(--charcoal);
+    color: #fff;
+    font-family: 'Staatliches', sans-serif;
+    font-size: 1.2rem;
+    letter-spacing: 1px;
 }
