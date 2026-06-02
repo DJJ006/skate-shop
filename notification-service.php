@@ -220,4 +220,30 @@ function buildEmailTemplate($title, $content) {
     ";
 }
 
+/**
+ * Checks if a seller meets the criteria for automatic verification.
+ * Criteria: >= 5 total sales, >= 3 total reviews, >= 4.0 average rating.
+ */
+function checkAutoVerification($conn, $seller_id) {
+    if (!$conn || $seller_id <= 0) return;
+
+    // First check if already verified
+    $stmt = $conn->prepare("SELECT total_sales, average_seller_rating, total_seller_reviews, verified_status, is_verified FROM users WHERE id = ?");
+    if (!$stmt) return;
+    $stmt->bind_param("i", $seller_id);
+    $stmt->execute();
+    $seller = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    
+    if ($seller && $seller['verified_status'] === 'None' && $seller['is_verified'] == 0) {
+        if ($seller['total_sales'] >= 5 && $seller['total_seller_reviews'] >= 3 && $seller['average_seller_rating'] >= 4.0) {
+            $upd = $conn->prepare("UPDATE users SET is_verified = 1, verified_status = 'Verified', verification_type = 'Auto', verification_date = NOW() WHERE id = ?");
+            $upd->bind_param("i", $seller_id);
+            if ($upd->execute()) {
+                sendAppNotification($conn, $seller_id, "Congratulations! You have reached the required milestones (5+ sales, 4.0+ rating) and your seller account has been automatically verified.");
+            }
+        }
+    }
+}
+
 ?>

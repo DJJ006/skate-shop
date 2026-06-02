@@ -5,6 +5,7 @@ $pending_reels_count = 0;
 $pending_qna_count = 0;
 $pending_shoutouts_count = 0;
 $pending_tickets_count = 0;
+$pending_product_reviews_count = 0;
 
 if (isset($conn)) {
     // Count pending gear
@@ -41,6 +42,19 @@ if (isset($conn)) {
     if ($count_shoutouts_result) {
         $count_row = $count_shoutouts_result->fetch_assoc();
         $pending_shoutouts_count = (int)$count_row['pending_count'];
+    }
+
+    $count_reviews_result = @$conn->query("SELECT COUNT(*) as pending_count FROM product_reviews WHERE status = 'Pending Approval'");
+    if ($count_reviews_result) {
+        $count_row = $count_reviews_result->fetch_assoc();
+        $pending_product_reviews_count = (int)$count_row['pending_count'];
+    }
+
+    $pending_seller_reviews_count = 0;
+    $count_seller_reviews_result = @$conn->query("SELECT COUNT(*) as pending_count FROM seller_ratings WHERE status = 'Pending Approval'");
+    if ($count_seller_reviews_result) {
+        $count_row = $count_seller_reviews_result->fetch_assoc();
+        $pending_seller_reviews_count = (int)$count_row['pending_count'];
     }
 
     $t_check = @$conn->query("SHOW TABLES LIKE 'support_tickets'");
@@ -98,6 +112,22 @@ $current_page = basename($_SERVER['PHP_SELF']);
                 <span class="material-icons">rate_review</span> REVIEW SHOUTS
                 <?php if (!empty($pending_shoutouts_count)): ?>
                     <span class="notification-badge notification-badge--nav-two-line"><?php echo $pending_shoutouts_count; ?></span>
+                <?php endif; ?>
+            </a>
+        </li>
+        <li>
+            <a href="review-products.php" class="nav-relative <?php echo ($current_page == 'review-products.php') ? 'active' : ''; ?>" style="position: relative;">
+                <span class="material-icons">star_half</span> REVIEW GEAR
+                <?php if (!empty($pending_product_reviews_count)): ?>
+                    <span class="notification-badge notification-badge--nav-two-line"><?php echo $pending_product_reviews_count; ?></span>
+                <?php endif; ?>
+            </a>
+        </li>
+        <li>
+            <a href="review-sellers.php" class="nav-relative <?php echo ($current_page == 'review-sellers.php') ? 'active' : ''; ?>" style="position: relative;">
+                <span class="material-icons">verified_user</span> REVIEW SELLERS
+                <?php if (!empty($pending_seller_reviews_count)): ?>
+                    <span class="notification-badge notification-badge--nav-two-line"><?php echo $pending_seller_reviews_count; ?></span>
                 <?php endif; ?>
             </a>
         </li>

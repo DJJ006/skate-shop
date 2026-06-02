@@ -95,6 +95,10 @@ foreach ($_SESSION['cart'] as $id => $item) {
     $isMarketplace = (int)$db_prod['is_marketplace'] === 1;
     $available = $isMarketplace ? ((int)$db_prod['is_sold'] === 0) : ((int)$db_prod['quantity'] >= $item['qty']);
     
+    if ($isMarketplace && (int)$db_prod['seller_id'] === $buyer_id) {
+        $available = false;
+    }
+    
     if (!$available) {
         ?>
         <!DOCTYPE html>
@@ -259,6 +263,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['proceed_to_payment'])
         if ($latest_product) {
             if ((int)$latest_product['is_marketplace'] === 1) {
                 $still_available = ((int)$latest_product['is_sold'] === 0);
+                if ((int)$latest_product['seller_id'] === $buyer_id) {
+                    $still_available = false;
+                }
             } else {
                 $still_available = ((int)$latest_product['quantity'] >= $p['cart_qty']);
             }

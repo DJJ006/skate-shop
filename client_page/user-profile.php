@@ -57,24 +57,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['toggle_follow'])) {
 }
 
 // Rating Submission Logic (Intercepts POST requests before outputting HTML)
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_dummy_rating'])) {
-    $seller_id = (int)$_POST['seller_id'];
-    $seller_username = $_POST['seller_username'];
-    $return_product_id = (int)$_POST['return_product_id'];
-    
-    if (isset($_SESSION['user_id']) && $_SESSION['user_id'] != $seller_id) {
-        $buyer_id = (int)$_SESSION['user_id'];
-        $stars = isset($_POST['stars']) ? (int)$_POST['stars'] : 5;
-        $stars = max(1, min(5, $stars));
-
-        $insert_rating = $conn->prepare("INSERT INTO seller_ratings (seller_id, buyer_id, product_id, rating) VALUES (?, ?, ?, ?)");
-        $insert_rating->bind_param("iiii", $seller_id, $buyer_id, $return_product_id, $stars);
-        $insert_rating->execute();
-
-        header("Location: product.php?id=" . $return_product_id);
-        exit();
-    }
-}
+// Rating submission is now handled from the Buy History dashboard
 
 if (!isset($_GET['username']) || empty($_GET['username'])) {
     die("<h3 class='user-profile-error-title'>Invalid Request.</h3>");
@@ -84,7 +67,7 @@ $seller_username = trim($_GET['username']);
 $return_product_id = isset($_GET['product_id']) ? (int)$_GET['product_id'] : 0;
 
 // Fetch Seller Data
-$stmt = $conn->prepare("SELECT id, username, profile_pic, created_at, is_verified FROM users WHERE username = ?");
+$stmt = $conn->prepare("SELECT id, username, profile_pic, created_at, is_verified, total_sales, total_seller_reviews, average_seller_rating FROM users WHERE username = ?");
 $stmt->bind_param("s", $seller_username);
 $stmt->execute();
 $seller_result = $stmt->get_result();
@@ -126,21 +109,17 @@ $shoutout_stmt->bind_param("i", $seller_id);
 $shoutout_stmt->execute();
 $shoutouts_count = $shoutout_stmt->get_result()->fetch_assoc()['total_shoutouts'] ?? 0;
 
-// Ratings Data
-$rating_stmt = $conn->prepare("SELECT AVG(rating) as avg_rating, COUNT(*) as total_ratings FROM seller_ratings WHERE seller_id = ?");
-$rating_stmt->bind_param("i", $seller_id);
-$rating_stmt->execute();
-$rating_data = $rating_stmt->get_result()->fetch_assoc();
-
-$avg_rating = $rating_data['avg_rating'] ? round($rating_data['avg_rating'], 1) : 0;
-$total_ratings = $rating_data['total_ratings'] ?? 0;
+// Ratings Data is now cached in the users table
+$avg_rating = $seller['average_seller_rating'] ? round($seller['average_seller_rating'], 1) : 0;
+$total_ratings = $seller['total_seller_reviews'] ?? 0;
+$total_sales = $seller['total_sales'] ?? 0;
 
 // Reviews List
 $reviews_stmt = $conn->prepare("
-    SELECT sr.rating, sr.created_at, u.username AS buyer_username
+    SELECT sr.rating, sr.comment, sr.created_at, u.username AS buyer_username
     FROM seller_ratings sr
     LEFT JOIN users u ON sr.buyer_id = u.id
-    WHERE sr.seller_id = ?
+    WHERE sr.seller_id = ? AND sr.status = 'Approved'
     ORDER BY sr.created_at DESC LIMIT 5
 ");
 $reviews_stmt->bind_param("i", $seller_id);
@@ -259,31 +238,13 @@ $follower_count = $follower_stmt->get_result()->fetch_assoc()['followers'] ?? 0;
         <?php else: ?>
             <p class="user-profile-empty-text">No ratings dropped yet.</p>
         <?php endif; ?>
+        
+        <div style="margin-top: 15px; padding-top: 15px; border-top: 1px dashed #444; font-family: 'Staatliches', sans-serif; font-size: 1.2rem; letter-spacing: 1px; color: #000000ff;">
+            TOTAL MARKETPLACE SALES: <span style="color: var(--primary);"><?php echo $total_sales; ?></span>
+        </div>
     </div>
 
-    <?php if (isset($_SESSION['user_id']) && $_SESSION['user_id'] != $seller_id): ?>
-        <div class="user-profile-rate-box">
-            <h4 class="user-profile-section-title">RATE THIS TRANSACTION</h4>
-
-            <form action="user-profile.php" method="POST" class="user-profile-rate-form">
-                <input type="hidden" name="seller_id" value="<?php echo $seller_id; ?>">
-                <input type="hidden" name="seller_username" value="<?php echo htmlspecialchars($seller_username); ?>">
-                <input type="hidden" name="return_product_id" value="<?php echo $return_product_id; ?>">
-
-                <select name="stars" class="user-profile-select">
-                    <option value="5">5 STARS - PERFECT</option>
-                    <option value="4">4 STARS - GOOD</option>
-                    <option value="3">3 STARS - OKAY</option>
-                    <option value="2">2 STARS - BAD</option>
-                    <option value="1">1 STAR - TERRIBLE</option>
-                </select>
-
-                <button type="submit" name="submit_dummy_rating" class="btn btn-primary user-profile-submit">
-                    SUBMIT
-                </button>
-            </form>
-        </div>
-    <?php endif; ?>
+    <!-- Rating is now done from the buyer dashboard -->
 
     <h4 class="user-profile-reviews-heading">RECENT REVIEWS</h4>
 
@@ -301,9 +262,14 @@ $follower_count = $follower_stmt->get_result()->fetch_assoc()['followers'] ?? 0;
                         </span>
                     </div>
 
-                    <div class="user-profile-review-date">
+                    <div class="user-profile-review-date" style="margin-top: 5px;">
                         <?php echo date("M d, Y", strtotime($review['created_at'])); ?>
                     </div>
+                    <?php if (!empty($review['comment'])): ?>
+                        <div class="user-profile-review-comment" style="margin-top: 10px; font-family: 'Inter', sans-serif; font-size: 1.2rem; color: #000; word-break: break-word;">
+                            <?php echo nl2br(htmlspecialchars($review['comment'])); ?>
+                        </div>
+                    <?php endif; ?>
                 </div>
             <?php endwhile; ?>
         </div>

@@ -26,6 +26,45 @@ if ($check_o->num_rows == 0) {
     $conn->query("ALTER TABLE orders ADD COLUMN hidden_from_buyer TINYINT(1) DEFAULT 0");
 }
 
+// --- MIGRATION: Seller Verification and Marketplace Reputation ---
+$check_users = $conn->query("SHOW COLUMNS FROM users LIKE 'verified_status'");
+if ($check_users->num_rows == 0) {
+    $conn->query("ALTER TABLE users ADD COLUMN verification_type VARCHAR(20) DEFAULT NULL");
+    $conn->query("ALTER TABLE users ADD COLUMN verification_date DATETIME DEFAULT NULL");
+    $conn->query("ALTER TABLE users ADD COLUMN verification_admin_id INT DEFAULT NULL");
+    $conn->query("ALTER TABLE users ADD COLUMN total_sales INT DEFAULT 0");
+    $conn->query("ALTER TABLE users ADD COLUMN total_seller_reviews INT DEFAULT 0");
+    $conn->query("ALTER TABLE users ADD COLUMN average_seller_rating DECIMAL(3,2) DEFAULT 0.00");
+    $conn->query("ALTER TABLE users ADD COLUMN verified_status VARCHAR(20) DEFAULT 'None'");
+    
+    // Migrate is_verified to verified_status if it exists
+    $check_is_verified = $conn->query("SHOW COLUMNS FROM users LIKE 'is_verified'");
+    if ($check_is_verified->num_rows > 0) {
+        $conn->query("UPDATE users SET verified_status = 'Verified' WHERE is_verified = 1");
+    }
+}
+
+$conn->query("CREATE TABLE IF NOT EXISTS seller_ratings (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    seller_id INT NOT NULL,
+    buyer_id INT NOT NULL,
+    product_id INT DEFAULT NULL,
+    transaction_id INT DEFAULT NULL,
+    rating INT NOT NULL,
+    comment VARCHAR(100) DEFAULT NULL,
+    status VARCHAR(20) DEFAULT 'Pending Approval',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+)");
+
+$check_seller_ratings = $conn->query("SHOW COLUMNS FROM seller_ratings LIKE 'status'");
+if ($check_seller_ratings->num_rows == 0) {
+    $conn->query("ALTER TABLE seller_ratings ADD COLUMN comment VARCHAR(100) DEFAULT NULL");
+    $conn->query("ALTER TABLE seller_ratings ADD COLUMN status VARCHAR(20) DEFAULT 'Pending Approval'");
+    $conn->query("ALTER TABLE seller_ratings ADD COLUMN transaction_id INT DEFAULT NULL");
+    $conn->query("ALTER TABLE seller_ratings ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP");
+}
+
 if (!isset($_SESSION['user_id'])) {
     header("Location: login.php");
     exit();
@@ -135,7 +174,7 @@ $list_stmt->execute();
 $user_listings = $list_stmt->get_result();
 
 // Fetch Buy History
-$buy_history_stmt = $conn->prepare("SELECT o.id as order_id, o.amount, o.created_at, o.status, p.title, p.image_url FROM orders o JOIN products p ON o.product_id = p.id WHERE o.buyer_id = ? AND o.status IN ('PAID', 'CANCELLED', 'RECEIVED') AND o.hidden_from_buyer = 0 ORDER BY o.created_at DESC");
+$buy_history_stmt = $conn->prepare("SELECT o.id as order_id, o.amount, o.created_at, o.status, p.title, p.image_url, p.is_marketplace, p.seller_id, p.seller_name, (SELECT id FROM seller_ratings sr WHERE sr.transaction_id = o.id AND sr.status != 'Rejected' LIMIT 1) as has_seller_review FROM orders o JOIN products p ON o.product_id = p.id WHERE o.buyer_id = ? AND o.status IN ('PAID', 'CANCELLED', 'RECEIVED') AND o.hidden_from_buyer = 0 ORDER BY o.created_at DESC");
 $buy_history_stmt->bind_param("i", $user_id);
 $buy_history_stmt->execute();
 $buy_history_result = $buy_history_stmt->get_result();
@@ -198,6 +237,124 @@ if (@$conn->query("SELECT 1 FROM community_shoutouts LIMIT 1") !== false) {
     }
 }
 
+// Fetch My Reviews
+$my_reviews_stmt = $conn->prepare("
+    SELECT pr.*, p.title as product_title 
+    FROM product_reviews pr 
+    JOIN products p ON pr.product_id = p.id 
+    WHERE pr.user_id = ? 
+    ORDER BY pr.created_at DESC
+");
+$my_reviews_stmt->bind_param("i", $user_id);
+$my_reviews_stmt->execute();
+$my_reviews_result = $my_reviews_stmt->get_result();
+
+// --- POST: EDIT MY REVIEW ---
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_my_review'])) {
+    $r_id = (int)$_POST['review_id'];
+    $rating = (int)$_POST['rating'];
+    $comment = substr(trim($_POST['comment']), 0, 100);
+    
+    if ($rating >= 1 && $rating <= 5) {
+        $check_pr = $conn->query("SHOW COLUMNS FROM product_reviews LIKE 'previous_rating'");
+        if ($check_pr->num_rows == 0) {
+            $conn->query("ALTER TABLE product_reviews ADD COLUMN previous_rating INT DEFAULT NULL");
+            $conn->query("ALTER TABLE product_reviews ADD COLUMN previous_comment VARCHAR(100) DEFAULT NULL");
+        }
+
+        $curr = $conn->prepare("SELECT rating, comment, status FROM product_reviews WHERE id = ? AND user_id = ?");
+        $curr->bind_param("ii", $r_id, $user_id);
+        $curr->execute();
+        $curr_res = $curr->get_result()->fetch_assoc();
+        
+        if ($curr_res) {
+            if ($curr_res['status'] == 'Approved') {
+                $stmt = $conn->prepare("UPDATE product_reviews SET previous_rating = rating, previous_comment = comment, rating = ?, comment = ?, status = 'Pending Approval' WHERE id = ? AND user_id = ?");
+            } else {
+                $stmt = $conn->prepare("UPDATE product_reviews SET rating = ?, comment = ?, status = 'Pending Approval' WHERE id = ? AND user_id = ?");
+            }
+            $stmt->bind_param("isii", $rating, $comment, $r_id, $user_id);
+            if ($stmt->execute()) {
+                $_SESSION['msg'] = "REVIEW UPDATED AND PENDING APPROVAL.";
+                $_SESSION['msg_type'] = "success";
+            }
+        }
+    }
+    header("Location: client-profile.php");
+    exit();
+}
+
+// --- POST: DELETE MY REVIEW ---
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_my_review'])) {
+    $r_id = (int)$_POST['review_id'];
+    
+    $p_stmt = $conn->prepare("SELECT product_id FROM product_reviews WHERE id = ? AND user_id = ?");
+    $p_stmt->bind_param("ii", $r_id, $user_id);
+    $p_stmt->execute();
+    $p_res = $p_stmt->get_result()->fetch_assoc();
+    
+    if ($p_res) {
+        $p_id = $p_res['product_id'];
+        $del_stmt = $conn->prepare("DELETE FROM product_reviews WHERE id = ? AND user_id = ?");
+        $del_stmt->bind_param("ii", $r_id, $user_id);
+        if ($del_stmt->execute()) {
+            $conn->query("UPDATE products p SET p.average_rating = (SELECT IFNULL(AVG(rating), 0) FROM product_reviews WHERE product_id = $p_id AND status = 'Approved'), p.review_count = (SELECT COUNT(*) FROM product_reviews WHERE product_id = $p_id AND status = 'Approved') WHERE p.id = $p_id");
+            $_SESSION['msg'] = "REVIEW DELETED.";
+            $_SESSION['msg_type'] = "success";
+        }
+    }
+    header("Location: client-profile.php");
+    exit();
+}
+
+// --- POST: SUBMIT SELLER REVIEW ---
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['submit_seller_review'])) {
+    $seller_id = (int)$_POST['seller_id'];
+    $transaction_id = (int)$_POST['transaction_id'];
+    $rating = max(1, min(5, (int)$_POST['rating']));
+    $comment = substr(trim($_POST['comment']), 0, 100);
+    
+    // Validate that the transaction belongs to the buyer and seller, and is RECEIVED
+    $valid_stmt = $conn->prepare("SELECT id FROM orders WHERE id = ? AND buyer_id = ? AND seller_id = ? AND status = 'RECEIVED'");
+    $valid_stmt->bind_param("iii", $transaction_id, $user_id, $seller_id);
+    $valid_stmt->execute();
+    if ($valid_stmt->get_result()->num_rows > 0) {
+        
+        // Ensure only one active review per transaction (update if rejected)
+        $check_stmt = $conn->prepare("SELECT id FROM seller_ratings WHERE transaction_id = ?");
+        $check_stmt->bind_param("i", $transaction_id);
+        $check_stmt->execute();
+        
+        if ($check_stmt->get_result()->num_rows == 0) {
+            $insert_stmt = $conn->prepare("INSERT INTO seller_ratings (seller_id, buyer_id, transaction_id, rating, comment, status) VALUES (?, ?, ?, ?, ?, 'Pending Approval')");
+            $insert_stmt->bind_param("iiiis", $seller_id, $user_id, $transaction_id, $rating, $comment);
+            $success = $insert_stmt->execute();
+        } else {
+            $update_stmt = $conn->prepare("UPDATE seller_ratings SET rating = ?, comment = ?, status = 'Pending Approval' WHERE transaction_id = ?");
+            $update_stmt->bind_param("isi", $rating, $comment, $transaction_id);
+            $success = $update_stmt->execute();
+        }
+
+        if ($success) {
+            $_SESSION['msg'] = "SELLER REVIEW SUBMITTED AND PENDING APPROVAL.";
+            $_SESSION['msg_type'] = "success";
+            
+            // Notify seller
+            $seller_msg = "A buyer has submitted a review for a recent transaction. It is pending admin approval.";
+            sendAppNotification($conn, $seller_id, $seller_msg);
+        } else {
+            $_SESSION['msg'] = "FAILED TO SUBMIT SELLER REVIEW.";
+            $_SESSION['msg_type'] = "error";
+        }
+    } else {
+        $_SESSION['msg'] = "INVALID TRANSACTION FOR REVIEW.";
+        $_SESSION['msg_type'] = "error";
+    }
+    
+    header("Location: client-profile.php");
+    exit();
+}
+
 // --- POST: CONFIRM RECEIPT ---
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_receipt'])) {
     $order_id = (int)$_POST['order_id'];
@@ -230,7 +387,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_receipt'])) {
                 $amount = (float)$order['amount'];
                 $seller_payout = round($amount * 0.95, 2);
 
-                $wallet_stmt = $conn->prepare("UPDATE users SET wallet_balance = wallet_balance + ? WHERE id = ?");
+                $wallet_stmt = $conn->prepare("UPDATE users SET wallet_balance = wallet_balance + ?, total_sales = total_sales + 1 WHERE id = ?");
                 $wallet_stmt->bind_param("di", $seller_payout, $seller_id);
                 $wallet_stmt->execute();
 
@@ -240,6 +397,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['confirm_receipt'])) {
 
                 $seller_msg = "Your funds have been released! $" . number_format($seller_payout, 2) . " has been added to your Wallet for a confirmed delivery.";
                 sendAppNotification($conn, $seller_id, $seller_msg);
+                
+                checkAutoVerification($conn, $seller_id);
             }
         } else {
             // Official Shop Product
@@ -1119,6 +1278,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_user_ticket_bt
             <i class="fa-solid fa-circle-question"></i>
             <h3>MY QNAs</h3>
         </div>
+        <div class="option-card" onclick="openModal('myReviewsModal')">
+            <i class="fa-solid fa-star"></i>
+            <h3>MY REVIEWS</h3>
+        </div>
         <div class="option-card" onclick="openModal('myShoutoutModal')">
             <i class="fa-solid fa-bullhorn"></i>
             <h3>MY SHOUTOUTS</h3>
@@ -1673,9 +1836,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_user_ticket_bt
                             </button>
                         <?php elseif ($purchase['status'] === 'RECEIVED'): ?>
                             <span class="listing-status-badge status-received">RECEIVED</span>
-                            <button type="button" class="btn-mini btn-danger" style="position:absolute; bottom:12px; right:12px; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; font-size:1rem; z-index: 10;" onclick="openHideBuyHistoryModal(<?php echo $purchase['order_id']; ?>)">
-                                <i class="fas fa-trash"></i>
-                            </button>
+                            <?php if (!($purchase['is_marketplace'] == 1 && !$purchase['has_seller_review'])): ?>
+                                <button type="button" class="btn-mini btn-danger" style="position:absolute; bottom:12px; right:12px; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; font-size:1rem; z-index: 10;" onclick="openHideBuyHistoryModal(<?php echo $purchase['order_id']; ?>)">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            <?php endif; ?>
                         <?php else: ?>
                             <span class="listing-status-badge status-active">PAID</span>
                         <?php endif; ?>
@@ -1698,6 +1863,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_user_ticket_bt
                         
                         <?php if ($purchase['status'] === 'PAID'): ?>
                             <button type="button" class="btn-primary-brutal btn-full" style="margin-top: 10px; font-size:1rem; padding:8px;" onclick="openConfirmReceiptModal(<?php echo $purchase['order_id']; ?>)">CONFIRM RECEIPT</button>
+                        <?php elseif ($purchase['status'] === 'RECEIVED' && $purchase['is_marketplace'] == 1 && !$purchase['has_seller_review']): ?>
+                            <button type="button" class="btn-primary-brutal btn-full" style="margin-top: 10px; font-size:1rem; padding:8px; background:var(--primary); color:#fff;" onclick="openReviewSellerModal(<?php echo (int)$purchase['seller_id']; ?>, '<?php echo htmlspecialchars($purchase['seller_name']); ?>', <?php echo $purchase['order_id']; ?>)">REVIEW SELLER</button>
                         <?php endif; ?>
 
                     </div>
@@ -1950,6 +2117,83 @@ document.querySelectorAll('.modal-content').forEach(mc => {
             </form>
             <button type="button" class="btn-primary-brutal btn-full btn-hide-cancel" style="margin-top:0;" onclick="closeModal('confirmDeleteNotifModal')">CANCEL</button>
         </div>
+    </div>
+</div>
+
+<!-- === MY REVIEWS MODAL === -->
+<div id="myReviewsModal" class="modal-overlay">
+    <div class="modal-content" style="max-width: 860px;">
+        <span class="close-modal" onclick="closeModal('myReviewsModal')">&times;</span>
+        <h3 class="admin-table-h3">MY <span class="header-span">REVIEWS</span></h3>
+
+        <?php if ($my_reviews_result && $my_reviews_result->num_rows > 0): ?>
+            <div style="max-height: 60vh; overflow-y: auto; padding-right: 10px;">
+                <?php while ($rev = $my_reviews_result->fetch_assoc()): ?>
+                    <div class="my-qna-card" style="margin-bottom: 20px;">
+                        <div class="my-qna-info">
+                            <?php if ($rev['status'] == 'Approved'): ?>
+                                <span class="listing-status-badge status-active">APPROVED</span>
+                            <?php elseif ($rev['status'] == 'Rejected'): ?>
+                                <span class="listing-status-badge status-rejected">REJECTED</span>
+                            <?php else: ?>
+                                <span class="listing-status-badge status-pending">PENDING</span>
+                            <?php endif; ?>
+
+                            <h4 style="font-family: 'Staatliches', sans-serif; font-size: 1.4rem; margin: 25px 0 10px 0;"><?php echo htmlspecialchars($rev['product_title']); ?></h4>
+                            <div style="color: var(--primary); margin-bottom: 10px;">
+                                <?php 
+                                for ($i = 1; $i <= 5; $i++) {
+                                    echo ($i <= $rev['rating']) ? '<i class="fa-solid fa-star"></i>' : '<i class="fa-regular fa-star"></i>';
+                                }
+                                ?>
+                            </div>
+                            <?php if (!empty($rev['comment'])): ?>
+                                <p style="font-family: 'Inter', sans-serif; font-size: 0.95rem; color: #444; margin-bottom: 15px;"><?php echo nl2br(htmlspecialchars($rev['comment'])); ?></p>
+                            <?php endif; ?>
+                            <div class="my-qna-actions">
+                                <button type="button" class="btn-mini btn-view" onclick="openEditReviewModal(<?php echo $rev['id']; ?>, <?php echo $rev['rating']; ?>, '<?php echo htmlspecialchars(addslashes($rev['comment']), ENT_QUOTES); ?>')">EDIT</button>
+                                <form method="POST" action="client-profile.php" style="display:inline;" onsubmit="return confirm('Are you sure you want to delete this review?');">
+                                    <input type="hidden" name="review_id" value="<?php echo $rev['id']; ?>">
+                                    <button type="submit" name="delete_my_review" class="btn-mini btn-danger"><i class="fas fa-trash"></i> DELETE</button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                <?php endwhile; ?>
+            </div>
+        <?php else: ?>
+            <div class="empty-placeholder-box">
+                <p class="empty-placeholder-title">YOU HAVEN'T REVIEWED ANY GEAR YET.</p>
+                <button type="button" class="btn-primary-brutal" onclick="closeModal('myReviewsModal'); window.location.href='shop.php';">SHOP NOW</button>
+            </div>
+        <?php endif; ?>
+    </div>
+</div>
+
+<!-- === EDIT REVIEW MODAL === -->
+<div id="editReviewModal" class="modal-overlay">
+    <div class="modal-content" style="max-width: 600px;">
+        <span class="close-modal" onclick="closeModal('editReviewModal')">&times;</span>
+        <h3 class="admin-table-h3">EDIT <span class="header-span">REVIEW</span></h3>
+        <form method="POST" action="client-profile.php" class="admin-form">
+            <input type="hidden" name="review_id" id="edit_review_id">
+            
+            <label style="display: block; font-weight: bold; margin-bottom: 5px;">RATING (1-5)</label>
+            <div class="star-rating-input" id="edit-stars-container" style="font-size: 2rem; color: #555; cursor: pointer; margin-bottom: 20px;">
+                <i class="fa-solid fa-star" data-rating="1"></i>
+                <i class="fa-solid fa-star" data-rating="2"></i>
+                <i class="fa-solid fa-star" data-rating="3"></i>
+                <i class="fa-solid fa-star" data-rating="4"></i>
+                <i class="fa-solid fa-star" data-rating="5"></i>
+            </div>
+            <input type="hidden" name="rating" id="edit_review_rating" value="5" required>
+            
+            <label>COMMENT (OPTIONAL, MAX 100 CHARS)</label>
+            <textarea name="comment" id="edit_review_comment" class="review-textarea" rows="3" maxlength="100" placeholder="Tell us what you think..."></textarea>
+            <div id="edit-review-counter" style="font-family:'Staatliches',sans-serif; font-size:0.85rem; color:#777; text-align:right; margin-top:0.5rem; margin-bottom:0.8rem; letter-spacing:1px;">100 characters remaining</div>
+            
+            <button type="submit" name="edit_my_review" class="btn-primary-brutal btn-full">SUBMIT FOR REVIEW</button>
+        </form>
     </div>
 </div>
 
@@ -2538,7 +2782,57 @@ document.querySelectorAll('.modal-content').forEach(mc => {
 
     function backToNotifications() { closeModal('fullMessageModal'); openModal('notificationsModal'); }
 
+    function openEditReviewModal(id, rating, comment) {
+        document.getElementById('edit_review_id').value = id;
+        document.getElementById('edit_review_rating').value = rating;
+        document.getElementById('edit_review_comment').value = comment;
+        
+        const stars = document.querySelectorAll('#edit-stars-container i');
+        stars.forEach(star => {
+            if (parseInt(star.dataset.rating) <= rating) {
+                star.style.color = '#ff4b2b';
+            } else {
+                star.style.color = '#555';
+            }
+        });
+        const commentCounter = document.getElementById('edit-review-counter');
+        if (commentCounter) {
+            const remaining = 100 - (comment ? comment.length : 0);
+            commentCounter.textContent = remaining + ' characters remaining';
+        }
+        
+        closeModal('myReviewsModal');
+        openModal('editReviewModal');
+    }
+
     document.addEventListener("DOMContentLoaded", () => {
+        const editStars = document.querySelectorAll('#edit-stars-container i');
+        const editRatingInput = document.getElementById('edit_review_rating');
+        if(editStars) {
+            editStars.forEach(star => {
+                star.addEventListener('click', function() {
+                    const rating = parseInt(this.dataset.rating);
+                    editRatingInput.value = rating;
+                    editStars.forEach(s => {
+                        if (parseInt(s.dataset.rating) <= rating) {
+                            s.style.color = '#ff4b2b';
+                        } else {
+                            s.style.color = '#555';
+                        }
+                    });
+                });
+            });
+        }
+
+        const editCommentInput = document.getElementById('edit_review_comment');
+        const editCommentCounter = document.getElementById('edit-review-counter');
+        if (editCommentInput && editCommentCounter) {
+            editCommentInput.addEventListener('input', function() {
+                const remaining = 100 - this.value.length;
+                editCommentCounter.textContent = remaining + ' characters remaining';
+            });
+        }
+
         const alertBox = document.getElementById('alert-box');
         if (alertBox) { setTimeout(() => { alertBox.style.opacity = "0"; setTimeout(() => alertBox.remove(), 500); }, 4000); }
         
@@ -2550,7 +2844,86 @@ document.querySelectorAll('.modal-content').forEach(mc => {
         if (typeof updateListingPagination === 'function') updateListingPagination();
         if (typeof updateBuyPagination === 'function') updateBuyPagination();
     });
+
+    function openReviewSellerModal(sellerId, sellerName, transactionId) {
+        document.getElementById('seller_review_id_input').value = sellerId;
+        document.getElementById('seller_review_transaction_id').value = transactionId;
+        document.getElementById('seller_review_name_display').innerText = '@' + sellerName;
+        
+        // Reset stars and input
+        document.getElementById('seller_review_rating').value = 5;
+        const stars = document.querySelectorAll('#seller-stars-container i');
+        stars.forEach(s => s.style.color = 'var(--primary)');
+        
+        document.getElementById('seller_review_comment').value = '';
+        const counter = document.getElementById('seller-review-counter');
+        if (counter) counter.innerText = '100 characters remaining';
+        
+        openModal('reviewSellerModal');
+    }
+    
+    // Star interaction for Seller Review Modal
+    document.addEventListener("DOMContentLoaded", () => {
+        const sellerStars = document.querySelectorAll('#seller-stars-container i');
+        const sellerRatingInput = document.getElementById('seller_review_rating');
+        if(sellerStars) {
+            sellerStars.forEach(star => {
+                star.addEventListener('click', function() {
+                    const rating = parseInt(this.dataset.rating);
+                    sellerRatingInput.value = rating;
+                    sellerStars.forEach(s => {
+                        if (parseInt(s.dataset.rating) <= rating) {
+                            s.style.color = 'var(--primary)';
+                        } else {
+                            s.style.color = '#555';
+                        }
+                    });
+                });
+            });
+        }
+        
+        const sellerCommentInput = document.getElementById('seller_review_comment');
+        const sellerCommentCounter = document.getElementById('seller-review-counter');
+        if (sellerCommentInput && sellerCommentCounter) {
+            sellerCommentInput.addEventListener('input', function() {
+                const remaining = 100 - this.value.length;
+                sellerCommentCounter.textContent = remaining + ' characters remaining';
+            });
+        }
+    });
 </script>
+
+<!-- === SELLER REVIEW MODAL === -->
+<div id="reviewSellerModal" class="modal-overlay">
+    <div class="modal-content" style="max-width: 600px;">
+        <span class="close-modal" onclick="closeModal('reviewSellerModal')">&times;</span>
+        <h3 class="admin-table-h3">REVIEW <span class="header-span" id="seller_review_name_display">SELLER</span></h3>
+        <form action="client-profile.php" method="POST" class="admin-form">
+            <input type="hidden" name="seller_id" id="seller_review_id_input" value="">
+            <input type="hidden" name="transaction_id" id="seller_review_transaction_id" value="">
+            
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label style="display: block; font-weight: bold; margin-bottom: 5px;">RATING (1-5)</label>
+                <div id="seller-stars-container" style="font-size: 2rem; color: #555; cursor: pointer; text-align: left; margin: 10px 0;">
+                    <i class="fa-solid fa-star" data-rating="1" style="color: var(--primary);"></i>
+                    <i class="fa-solid fa-star" data-rating="2" style="color: var(--primary);"></i>
+                    <i class="fa-solid fa-star" data-rating="3" style="color: var(--primary);"></i>
+                    <i class="fa-solid fa-star" data-rating="4" style="color: var(--primary);"></i>
+                    <i class="fa-solid fa-star" data-rating="5" style="color: var(--primary);"></i>
+                </div>
+                <input type="hidden" name="rating" id="seller_review_rating" value="5" required>
+            </div>
+            
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label for="seller_review_comment" style="display: block; font-weight: bold; margin-bottom: 5px;">COMMENT (OPTIONAL, MAX 100 CHARS)</label>
+                <textarea name="comment" id="seller_review_comment" class="review-textarea" rows="3" maxlength="100" placeholder="Tell us about your experience..."></textarea>
+                <div id="seller-review-counter" style="font-family:'Staatliches',sans-serif; font-size:0.85rem; color:#777; text-align:right; margin-top:0.5rem; letter-spacing:1px;">100 characters remaining</div>
+            </div>
+            
+            <button type="submit" name="submit_seller_review" class="btn-primary-brutal btn-full" style="margin-top: 15px;">SUBMIT REVIEW</button>
+        </form>
+    </div>
+</div>
 
 <?php include 'footer.php'; ?>
 </body>

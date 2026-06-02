@@ -21,8 +21,11 @@ if ($count_result) {
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['verify_seller'])) {
     $seller_id = (int)$_POST['seller_id'];
     $is_manual = isset($_POST['manual_override']) ? true : false;
+    $admin_id = isset($_SESSION['admin_id']) ? (int)$_SESSION['admin_id'] : 0;
     
-    $sql = "UPDATE users SET is_verified = 1 WHERE id = $seller_id";
+    $v_type = $is_manual ? 'Manual' : 'Automatic';
+    
+    $sql = "UPDATE users SET is_verified = 1, verified_status = 'Verified', verification_type = '$v_type', verification_admin_id = $admin_id, verification_date = NOW() WHERE id = $seller_id";
     if ($conn->query($sql) === TRUE) {
         // Send Notification to the User
         $msg = $is_manual 
@@ -41,7 +44,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['verify_seller'])) {
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['revoke_seller'])) {
     $seller_id = (int)$_POST['seller_id'];
     
-    $sql = "UPDATE users SET is_verified = 0 WHERE id = $seller_id";
+    $sql = "UPDATE users SET is_verified = 0, verified_status = 'None', verification_type = NULL, verification_admin_id = NULL, verification_date = NULL WHERE id = $seller_id";
     if ($conn->query($sql) === TRUE) {
         $msg = "Your VERIFIED SELLER badge has been revoked by an administrator.";
         sendAppNotification($conn, $seller_id, $msg);
@@ -90,7 +93,7 @@ $total_records = $count_stmt->get_result()->fetch_assoc()['total'];
 $total_pages = ceil($total_records / $limit);
 
 // Fetch all users to display in the table
-$sellers_sql = "SELECT id, username, is_verified FROM users WHERE $where_sql ORDER BY created_at DESC LIMIT $limit OFFSET $offset";
+$sellers_sql = "SELECT id, username, is_verified, verification_type, verification_date FROM users WHERE $where_sql ORDER BY created_at DESC LIMIT $limit OFFSET $offset";
 $sellers_stmt_query = $conn->prepare($sellers_sql);
 if ($types !== "") {
     $sellers_stmt_query->bind_param($types, ...$params);
@@ -174,7 +177,7 @@ $sellers_result = $sellers_stmt_query->get_result();
                         <th>ID</th>
                         <th>USERNAME</th>
                         <th>LAST 5 RATINGS</th>
-                        <th>STATUS</th>
+                        <th>STATUS & SOURCE</th>
                         <th>ACTION</th>
                     </tr>
                 </thead>
@@ -213,6 +216,11 @@ $sellers_result = $sellers_stmt_query->get_result();
                                         <span class="badge-status status-active" style="background: #2ecc71; color: #fff;">
                                             <i class="fa-solid fa-check-circle"></i> VERIFIED
                                         </span>
+                                        <?php if (!empty($user['verification_type'])): ?>
+                                            <div style="font-size: 0.75rem; margin-top: 5px; color: #555;">
+                                                Via: <strong><?php echo htmlspecialchars($user['verification_type']); ?></strong>
+                                            </div>
+                                        <?php endif; ?>
                                     <?php elseif ($qualifies): ?>
                                         <span class="badge-status status-pending" style="background: #ffcc00; color: #000;">QUALIFIED</span>
                                     <?php else: ?>
