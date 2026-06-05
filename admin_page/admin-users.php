@@ -12,6 +12,69 @@ if (isset($_SESSION['msg'])) {
 }
 
 // Handle Admin Creation
+// Auto-migrate audit log table
+try {
+    $conn->query("CREATE TABLE IF NOT EXISTS admin_audit_logs (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        admin_id INT NOT NULL,
+        target_admin_id INT NOT NULL,
+        action VARCHAR(255) NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )");
+} catch (Exception $e) { /* ignore */ }
+
+// Handle Admin Password Change
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['admin_change_password'])) {
+    $target_id = (int)$_POST['target_admin_id'];
+    $new_pass = $_POST['new_password'];
+    $confirm_pass = $_POST['confirm_password'];
+    
+    // Server-side validation
+    if (strlen($new_pass) < 8 || !preg_match('/[^a-zA-Z0-9]/', $new_pass) || $new_pass !== $confirm_pass) {
+        $_SESSION['msg'] = "INVALID PASSWORD FORMAT OR PASSWORDS DO NOT MATCH.";
+        $_SESSION['msg_type'] = "error";
+    } else {
+        // Hash password
+        $hashed = password_hash($new_pass, PASSWORD_DEFAULT);
+        $upd = $conn->prepare("UPDATE users SET password = ?, reset_token = NULL, reset_token_expires = NULL WHERE id = ? AND role = 'admin'");
+        if ($upd) {
+            $upd->bind_param("si", $hashed, $target_id);
+            if ($upd->execute()) {
+                // Audit Log
+                $audit = $conn->prepare("INSERT INTO admin_audit_logs (admin_id, target_admin_id, action) VALUES (?, ?, 'Password Reset')");
+                if ($audit) {
+                    $audit->bind_param("ii", $_SESSION['admin_id'], $target_id);
+                    $audit->execute();
+                }
+                
+                // Email Notification
+                $t_stmt = $conn->prepare("SELECT email FROM users WHERE id = ?");
+                if ($t_stmt) {
+                    $t_stmt->bind_param("i", $target_id);
+                    $t_stmt->execute();
+                    $t_res = $t_stmt->get_result()->fetch_assoc();
+                    if ($t_res && !empty($t_res['email'])) {
+                        $email_content = "
+                            <p>Administrator,</p>
+                            <p>Your administrator account password has been changed by another administrator (Admin ID: {$_SESSION['admin_id']}).</p>
+                            <p>If you were not expecting this change, please contact the system administrator immediately.</p>
+                        ";
+                        $html_body = buildEmailTemplate("SECURITY ALERT", $email_content);
+                        sendEmail($t_res['email'], "Admin Password Changed", $html_body);
+                    }
+                }
+                
+                $_SESSION['msg'] = "ADMIN PASSWORD UPDATED SUCCESSFULLY.";
+                $_SESSION['msg_type'] = "success";
+            } else {
+                $_SESSION['msg'] = "FAILED TO UPDATE PASSWORD.";
+                $_SESSION['msg_type'] = "error";
+            }
+        }
+    }
+    header("Location: admin-users.php");
+    exit();
+}
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_admin'])) {
     $username = trim($_POST['username']);
     $email = trim($_POST['email']);
@@ -197,12 +260,13 @@ $admins_q = $conn->query("SELECT id, username, email, created_at, last_login, is
                                     <form method="POST" style="display:inline-block;" onsubmit="return confirm('Toggle status for this admin?');">
                                         <input type="hidden" name="admin_id" value="<?php echo $row['id']; ?>">
                                         <input type="hidden" name="new_status" value="<?php echo $row['is_blocked'] == 1 ? 0 : 1; ?>">
-                                        <button type="submit" name="toggle_admin" class="btn-mini" style="background: var(--charcoal); color: white;">TOGGLE</button>
+                                        <button type="submit" name="toggle_admin" class="btn-mini btn-danger">TOGGLE</button>
                                     </form>
                                     <form method="POST" style="display:inline-block;" onsubmit="return confirm('WARNING: Permanently delete this admin account?');">
                                         <input type="hidden" name="admin_id" value="<?php echo $row['id']; ?>">
                                         <button type="submit" name="delete_admin" class="btn-mini btn-danger"><i class="fas fa-trash"></i></button>
                                     </form>
+                                    <button type="button" class="btn-mini btn-danger" onclick="openChangePasswordModal(<?php echo $row['id']; ?>)" title="Change Password"><i class="fas fa-key"></i></button>
                                 <?php endif; ?>
                             </td>
                         </tr>
@@ -259,6 +323,109 @@ $admins_q = $conn->query("SELECT id, username, email, created_at, last_login, is
         </form>
     </div>
 </div>
+
+<!-- Change Password Modal -->
+<div id="change-password-modal" class="modal-overlay">
+    <div class="modal-content">
+        <span class="close-modal" onclick="closeModal('change-password-modal')">&times;</span>
+        <h3 class="admin-table-h3">CHANGE <span class="header-span">PASSWORD</span></h3>
+        <form method="POST" action="admin-users.php" class="admin-form">
+            <input type="hidden" name="target_admin_id" id="target_admin_id" value="">
+            
+            <label>NEW PASSWORD</label>
+            <input type="password" name="new_password" id="admin_new_password" required maxlength="50">
+            <div style="font-size: 0.8rem; color: #666; text-align: right; margin-top: -10px; margin-bottom: 10px; font-family: 'Inter', sans-serif;"><span id="adminCharCount">0</span> / 50 characters</div>
+            
+            <label>CONFIRM NEW PASSWORD</label>
+            <input type="password" name="confirm_password" id="admin_confirm_password" required maxlength="50">
+            
+            <div style="background: var(--textwhite); border: 2px solid var(--charcoal); padding: 15px; margin-bottom: 20px; font-family: 'Inter', sans-serif; font-size: 0.9rem;">
+                <div id="admin-req-length" style="margin-bottom: 8px; display: flex; align-items: center; gap: 10px; color: #d32f2f;">
+                    <i class="fa-solid fa-xmark" style="width: 16px;"></i> Minimum 8 characters
+                </div>
+                <div id="admin-req-special" style="margin-bottom: 8px; display: flex; align-items: center; gap: 10px; color: #d32f2f;">
+                    <i class="fa-solid fa-xmark" style="width: 16px;"></i> Contains a special character
+                </div>
+                <div id="admin-req-match" style="margin-bottom: 8px; display: flex; align-items: center; gap: 10px; color: #d32f2f;">
+                    <i class="fa-solid fa-xmark" style="width: 16px;"></i> Passwords match
+                </div>
+            </div>
+
+            <button type="submit" name="admin_change_password" id="adminSubmitBtn" class="btn-primary-brutal" style="width: 100%; margin-top: 20px; font-size: 1.5rem; padding: 15px;" disabled>UPDATE PASSWORD</button>
+        </form>
+    </div>
+</div>
+
+<script>
+function openChangePasswordModal(id) {
+    document.getElementById('target_admin_id').value = id;
+    document.getElementById('admin_new_password').value = '';
+    document.getElementById('admin_confirm_password').value = '';
+    if (typeof adminUpdateValidation === 'function') {
+        adminUpdateValidation();
+    }
+    
+    // Check if openModal exists from admin-script.js
+    if (typeof openModal === 'function') {
+        openModal('change-password-modal');
+    } else {
+        document.getElementById('change-password-modal').style.display = 'flex';
+    }
+}
+
+const apwd = document.getElementById('admin_new_password');
+const aconf = document.getElementById('admin_confirm_password');
+const achar = document.getElementById('adminCharCount');
+const abtn = document.getElementById('adminSubmitBtn');
+
+const areqL = document.getElementById('admin-req-length');
+const areqS = document.getElementById('admin-req-special');
+const areqM = document.getElementById('admin-req-match');
+
+function adminUpdateValidation() {
+    const val = apwd.value;
+    const confVal = aconf.value;
+
+    achar.textContent = val.length;
+
+    let isLength = val.length >= 8;
+    toggleValid(areqL, isLength);
+
+    let isSpecial = /[^a-zA-Z0-9]/.test(val);
+    toggleValid(areqS, isSpecial);
+
+    let isMatch = val.length > 0 && val === confVal;
+    toggleValid(areqM, isMatch);
+
+    if (isLength && isSpecial && isMatch) {
+        abtn.disabled = false;
+        abtn.style.opacity = '1';
+        abtn.style.cursor = 'pointer';
+    } else {
+        abtn.disabled = true;
+        abtn.style.opacity = '0.5';
+        abtn.style.cursor = 'not-allowed';
+    }
+}
+
+function toggleValid(element, isValid) {
+    const icon = element.querySelector('i');
+    if (isValid) {
+        element.style.color = '#2e7d32';
+        icon.classList.remove('fa-xmark');
+        icon.classList.add('fa-check');
+    } else {
+        element.style.color = '#d32f2f';
+        icon.classList.remove('fa-check');
+        icon.classList.add('fa-xmark');
+    }
+}
+
+if(apwd && aconf) {
+    apwd.addEventListener('input', adminUpdateValidation);
+    aconf.addEventListener('input', adminUpdateValidation);
+}
+</script>
 
 </body>
 </html>

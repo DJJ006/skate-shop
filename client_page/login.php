@@ -87,6 +87,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 1rem; font-size: 1.4rem;">ENTER THE VAULT</button>
                 
                 <p style="text-align: center; margin-top: 1.5rem; font-family: 'Staatliches', sans-serif; font-size: 1.1rem;">
+                    <a href="forgot-password.php" style="color: var(--primary); text-decoration: none;">FORGOT PASSWORD?</a>
+                </p>
+
+                <p style="text-align: center; margin-top: 0.5rem; font-family: 'Staatliches', sans-serif; font-size: 1.1rem;">
                     NEW HERE? <a href="register.php" style="color: var(--primary);">CREATE ACCOUNT</a>
                 </p>
             </form>

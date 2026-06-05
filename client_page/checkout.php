@@ -254,7 +254,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['proceed_to_payment'])
 
     // Re-check availability before creating order
     foreach ($cart_items as $p) {
-        $stock_stmt = $conn->prepare("SELECT is_marketplace, is_sold, quantity FROM products WHERE id = ?");
+        $stock_stmt = $conn->prepare("SELECT is_marketplace, is_sold, quantity, seller_id FROM products WHERE id = ?");
         $stock_stmt->bind_param("i", $p['id']);
         $stock_stmt->execute();
         $latest_product = $stock_stmt->get_result()->fetch_assoc();
@@ -370,25 +370,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['proceed_to_payment'])
             $order_ids = [];
             $total_stripe_paid = 0;
             
+            // SCHEMA MIGRATION: Ensure order_group_id and shipping_fee exist
+            try {
+                $conn->query("ALTER TABLE orders ADD COLUMN order_group_id VARCHAR(50) DEFAULT NULL");
+                $conn->query("ALTER TABLE orders ADD COLUMN shipping_fee DECIMAL(10,2) DEFAULT 0.00");
+            } catch (Exception $e) { /* Ignore if already exists */ }
+
+            $order_group_id = 'GRP-' . strtoupper(uniqid());
+            
             foreach ($cart_items as $index => $p) {
                 for ($i = 0; $i < $p['cart_qty']; $i++) {
                     $seller_id = ((int)$p['is_marketplace'] === 1) ? (int)$p['seller_id'] : 0;
-                    $unit_price = (float)$p['price'];
+                    $unit_price = (float)$p['effective_price'];
                     
+                    $item_shipping_fee = 0.00;
                     if ($index === 0 && $i === 0) {
-                        $unit_price += $shipping_fee; // Add shipping to first item order
+                        $item_shipping_fee = $shipping_fee;
                     }
                     
-                    $applied_wallet = min($unit_price, $remaining_wallet);
+                    $total_item_cost = $unit_price + $item_shipping_fee;
+                    
+                    $applied_wallet = min($total_item_cost, $remaining_wallet);
                     $remaining_wallet -= $applied_wallet;
-                    $applied_stripe = $unit_price - $applied_wallet;
+                    $applied_stripe = $total_item_cost - $applied_wallet;
                     $total_stripe_paid += $applied_stripe;
                     
                     $order_stmt = $conn->prepare("
-                        INSERT INTO orders (buyer_id, product_id, seller_id, amount, amount_paid_wallet, amount_paid_stripe, shipping_name, shipping_address, status) 
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING_PAYMENT')
+                        INSERT INTO orders (buyer_id, product_id, seller_id, amount, amount_paid_wallet, amount_paid_stripe, shipping_fee, order_group_id, shipping_name, shipping_address, status) 
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING_PAYMENT')
                     ");
-                    $order_stmt->bind_param("iiidddss", $buyer_id, $p['id'], $seller_id, $unit_price, $applied_wallet, $applied_stripe, $shipping_name, $final_address);
+                    $order_stmt->bind_param("iiiddddsss", $buyer_id, $p['id'], $seller_id, $unit_price, $applied_wallet, $applied_stripe, $item_shipping_fee, $order_group_id, $shipping_name, $final_address);
                     
                     if (!$order_stmt->execute()) {
                         throw new Exception("Could not create order in database.");
@@ -407,10 +418,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['proceed_to_payment'])
                             $update_prod->bind_param("i", $p['id']);
                             $update_prod->execute();
                             
-                            $purchase_code = "ORD-" . str_pad($order_id, 6, "0", STR_PAD_LEFT);
-                            $ship_addr = "{$shipping_payload['full_name']}, {$shipping_payload['address_line_1']}, {$shipping_payload['city']}, {$shipping_payload['country']}";
-                            $seller_notif_msg = "Your marketplace item '{$p['title']}' has been purchased!\nOrder Code: {$purchase_code}\nShip to: {$ship_addr}";
-                            sendAppNotification($conn, $seller_id, $seller_notif_msg);
+                            $ship_addr = "{$shipping_payload['full_name']}, {$shipping_payload['address_line_1']}";
+                            if (!empty($shipping_payload['address_line_2'])) $ship_addr .= ", {$shipping_payload['address_line_2']}";
+                            $ship_addr .= ", {$shipping_payload['city']}, {$shipping_payload['state_region']} {$shipping_payload['postal_code']}, {$shipping_payload['country']}";
+                            
+                            $del_notes = !empty($shipping_payload['delivery_notes']) ? $shipping_payload['delivery_notes'] : "None";
+                            $seller_payout = round($unit_price * 0.95, 2);
+                            sendSellerPayoutNotification($conn, $seller_id, $p['title'], $unit_price, $order_id, $seller_payout, $ship_addr, $del_notes);
                         } else {
                             $update_prod = $conn->prepare("UPDATE products SET quantity = quantity - 1 WHERE id = ?");
                             $update_prod->bind_param("i", $p['id']);
@@ -421,7 +435,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['proceed_to_payment'])
                         sendAppNotification($conn, $buyer_id, $buyer_msg);
                         
                         // Send email receipt
-                        sendOrderReceiptEmail($conn, $order_id);
+                        sendOrderReceiptEmail($conn, $buyer_id, [$order_id]);
                     }
                 }
             }

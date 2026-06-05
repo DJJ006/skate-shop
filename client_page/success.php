@@ -12,6 +12,94 @@ if (isset($_SESSION['user_id'])) {
         $clear_stmt = $conn->prepare("UPDATE users SET cart_data = '[]' WHERE id = ?");
         $clear_stmt->bind_param("i", $_SESSION['user_id']);
         $clear_stmt->execute();
+        
+        // FULFILLMENT FALLBACK FOR STRIPE (Locahost testing or delayed webhook)
+        if (strpos($session_id, 'WALLET_PAID_') !== 0 && $session_id !== 'unknown_session') {
+            require_once '../stripe-config.php';
+            try {
+                $session = \Stripe\Checkout\Session::retrieve($session_id);
+                if ($session->payment_status === 'paid' && isset($session->metadata->order_ids)) {
+                    $order_ids_array = explode(',', $session->metadata->order_ids);
+                    
+                    if (!function_exists('decryptShippingAddress')) {
+                        function decryptShippingAddress($base64_payload) {
+                            if (empty($base64_payload)) return null;
+                            $decoded = base64_decode($base64_payload);
+                            if (!$decoded || strpos($decoded, '::') === false) return null;
+                            list($encrypted_data, $iv) = explode('::', $decoded, 2);
+                            $encryption_key = "YOUR_SUPER_SECRET_KEY_MAKE_IT_LONG";
+                            $cipher = 'aes-256-cbc';
+                            $decrypted = openssl_decrypt($encrypted_data, $cipher, $encryption_key, 0, $iv);
+                            if ($decrypted) return json_decode($decrypted, true);
+                            return null;
+                        }
+                    }
+
+                    $conn->begin_transaction();
+                    foreach ($order_ids_array as $order_id_str) {
+                        $order_id = (int)$order_id_str;
+                        $order_stmt = $conn->prepare("SELECT * FROM orders WHERE id = ? FOR UPDATE");
+                        $order_stmt->bind_param("i", $order_id);
+                        $order_stmt->execute();
+                        $order = $order_stmt->get_result()->fetch_assoc();
+
+                        if ($order && $order['status'] === 'PENDING_PAYMENT') {
+                            $prod_id = (int)$order['product_id'];
+                            $seller_id = (int)$order['seller_id'];
+                            $buyer_id = (int)$order['buyer_id'];
+                            $amount = (float)$order['amount'];
+
+                            $prod_stmt = $conn->prepare("SELECT id, is_marketplace, is_sold, quantity, title FROM products WHERE id = ? FOR UPDATE");
+                            $prod_stmt->bind_param("i", $prod_id);
+                            $prod_stmt->execute();
+                            $product = $prod_stmt->get_result()->fetch_assoc();
+
+                            if ($product) {
+                                if ($seller_id > 0 && (int)$product['is_sold'] === 0) {
+                                    $update_product_stmt = $conn->prepare("UPDATE products SET is_sold = 1 WHERE id = ?");
+                                    $update_product_stmt->bind_param("i", $prod_id);
+                                    $update_product_stmt->execute();
+                                } elseif ($seller_id === 0 && (int)$product['quantity'] > 0) {
+                                    $update_product_stmt = $conn->prepare("UPDATE products SET quantity = GREATEST(0, quantity - 1) WHERE id = ?");
+                                    $update_product_stmt->bind_param("i", $prod_id);
+                                    $update_product_stmt->execute();
+                                }
+
+                                $update_order_stmt = $conn->prepare("UPDATE orders SET status = 'PAID' WHERE id = ?");
+                                $update_order_stmt->bind_param("i", $order_id);
+                                $update_order_stmt->execute();
+
+                                if ($seller_id > 0) {
+                                    $seller_payout = round($amount * 0.95, 2);
+                                    $shipping_info = "N/A";
+                                    $del_notes = "None";
+                                    
+                                    $shipping_payload = decryptShippingAddress($order['shipping_address']);
+                                    if ($shipping_payload) {
+                                        $ship_addr = "{$shipping_payload['full_name']}, {$shipping_payload['address_line_1']}";
+                                        if (!empty($shipping_payload['address_line_2'])) $ship_addr .= ", {$shipping_payload['address_line_2']}";
+                                        $ship_addr .= ", {$shipping_payload['city']}, {$shipping_payload['state_region']} {$shipping_payload['postal_code']}, {$shipping_payload['country']}";
+                                        $shipping_info = $ship_addr;
+                                        $del_notes = !empty($shipping_payload['delivery_notes']) ? $shipping_payload['delivery_notes'] : "None";
+                                    }
+                                    
+                                    sendSellerPayoutNotification($conn, $seller_id, $product['title'], $amount, $order_id, $seller_payout, $shipping_info, $del_notes);
+                                }
+
+                                $purchase_code = "ORD-" . str_pad($order_id, 6, "0", STR_PAD_LEFT);
+                                $buyer_msg = "Order confirmed! Your payment was received and your gear is being prepared for shipping. Purchase Code: " . $purchase_code;
+                                sendAppNotification($conn, $buyer_id, $buyer_msg);
+                                
+                                sendOrderReceiptEmail($conn, $buyer_id, [$order_id]);
+                            }
+                        }
+                    }
+                    $conn->commit();
+                }
+            } catch (Exception $e) {
+                if (isset($conn)) $conn->rollback();
+            }
+        }
     }
 }
 ?>

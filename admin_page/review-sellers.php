@@ -56,8 +56,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['review_approve'])) {
                 
                 $title = $row['seller_username'];
                 $uid = (int)$row['buyer_id'];
+                $seller_id = (int)$row['seller_id'];
+                
                 $msg = 'Your review for "' . $title . '" has been approved and is now live!';
                 review_notify_user($conn, $uid, $msg);
+                
+                $seller_msg = 'Great news! A new buyer review has been approved and published to your profile.';
+                review_notify_user($conn, $seller_id, $seller_msg);
                 $_SESSION['msg'] = 'REVIEW APPROVED & USER NOTIFIED.';
                 $_SESSION['msg_type'] = 'success';
             } else {
@@ -88,11 +93,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['review_reject_final']
             $_SESSION['msg'] = 'INVALID ITEM OR NOT PENDING.';
             $_SESSION['msg_type'] = 'error';
         } else {
-            $upd = $conn->prepare("UPDATE seller_ratings SET status = 'Rejected' WHERE id = ? AND status = 'Pending Approval'");
+            $check_prev = $conn->prepare("SELECT previous_rating, previous_comment FROM seller_ratings WHERE id = ?");
+            $check_prev->bind_param('i', $id);
+            $check_prev->execute();
+            $prev_row = $check_prev->get_result()->fetch_assoc();
+            
+            if ($prev_row && $prev_row['previous_rating'] !== null) {
+                // Restore previous state instead of rejecting completely
+                $upd = $conn->prepare("UPDATE seller_ratings SET status = 'Approved', rating = previous_rating, comment = previous_comment, previous_rating = NULL, previous_comment = NULL WHERE id = ? AND status = 'Pending Approval'");
+                $is_restore = true;
+            } else {
+                $upd = $conn->prepare("UPDATE seller_ratings SET status = 'Rejected' WHERE id = ? AND status = 'Pending Approval'");
+                $is_restore = false;
+            }
             $upd->bind_param('i', $id);
             if ($upd->execute() && $upd->affected_rows > 0) {
-                $msg = 'Your review for "' . $row['seller_username'] . '" was rejected. Reason: ' . $reason;
+                if ($is_restore) {
+                    recalculateSellerStats($conn, (int)$row['seller_id']);
+                    $msg = 'Your review edit for "' . $row['seller_username'] . '" was rejected. Reason: ' . $reason . '. The review has been restored to its previous approved state.';
+                    $seller_msg = 'An edit to a buyer review on your profile was rejected by the admin. Reason: ' . $reason;
+                } else {
+                    $msg = 'Your review for "' . $row['seller_username'] . '" was rejected. Reason: ' . $reason;
+                    $seller_msg = 'A pending buyer review for your profile was rejected by the admin. Reason: ' . $reason;
+                }
                 review_notify_user($conn, (int)$row['buyer_id'], $msg);
+                review_notify_user($conn, (int)$row['seller_id'], $seller_msg);
                 $_SESSION['msg'] = 'REVIEW REJECTED. CLIENT NOTIFIED.';
                 $_SESSION['msg_type'] = 'success';
             } else {
@@ -129,6 +154,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['review_delete'])) {
                 
                 $msg = 'Your review for "' . $row['seller_username'] . '" was removed by an administrator. Reason: ' . $reason;
                 review_notify_user($conn, (int)$row['buyer_id'], $msg);
+                
+                $seller_msg = 'A review on your profile was removed by an administrator. Reason: ' . $reason;
+                review_notify_user($conn, (int)$row['seller_id'], $seller_msg);
                 
                 $_SESSION['msg'] = 'REVIEW DELETED & USER NOTIFIED.';
                 $_SESSION['msg_type'] = 'success';

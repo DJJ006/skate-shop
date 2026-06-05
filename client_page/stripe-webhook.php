@@ -147,7 +147,6 @@ if ($event->type === 'checkout.session.completed') {
 
             if ($seller_id > 0) {
                 $seller_payout = round($amount * 0.95, 2);
-                $purchase_code = "ORD-" . str_pad($order_id, 6, "0", STR_PAD_LEFT);
                 $shipping_info = "N/A";
                 $del_notes = "None";
                 
@@ -160,8 +159,7 @@ if ($event->type === 'checkout.session.completed') {
                     $del_notes = !empty($shipping_payload['delivery_notes']) ? $shipping_payload['delivery_notes'] : "None";
                 }
                 
-                $seller_msg = "Cha-ching! Your gear '{$product['title']}' sold for $" . number_format($amount, 2) . "!\nOrder Code: {$purchase_code}\nShip to: {$shipping_info}\nDelivery Notes: {$del_notes}\nThe payout of $" . number_format($seller_payout, 2) . " is currently held in escrow and will be released to your wallet once the buyer confirms delivery, or automatically after 10 days.";
-                sendAppNotification($conn, $seller_id, $seller_msg);
+                sendSellerPayoutNotification($conn, $seller_id, $product['title'], $amount, $order_id, $seller_payout, $shipping_info, $del_notes);
 
                 webhook_log("Seller notification updated for pending escrow payout with shipping address");
             }
@@ -171,7 +169,7 @@ if ($event->type === 'checkout.session.completed') {
             sendAppNotification($conn, $buyer_id, $buyer_msg);
             
             // Send email receipt
-            sendOrderReceiptEmail($conn, $order_id);
+            sendOrderReceiptEmail($conn, $buyer_id, [$order_id]);
 
             $clear_cart_stmt = $conn->prepare("UPDATE users SET cart_data = '[]' WHERE id = ?");
             $clear_cart_stmt->bind_param("i", $buyer_id);

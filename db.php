@@ -15,7 +15,13 @@ if(!$conn){
 
 require_once __DIR__ . '/notification-service.php';
 
-
+if (!function_exists('sendSellerPayoutNotification')) {
+    function sendSellerPayoutNotification($conn, $seller_id, $product_title, $amount, $order_id, $seller_payout, $shipping_info, $del_notes) {
+        $purchase_code = "ORD-" . str_pad($order_id, 6, "0", STR_PAD_LEFT);
+        $seller_msg = "Cha-ching! Your gear '{$product_title}' sold for $" . number_format($amount, 2) . "!\nOrder Code: {$purchase_code}\nShip to: {$shipping_info}\nDelivery Notes: {$del_notes}\nThe payout of $" . number_format($seller_payout, 2) . " is currently held in escrow and will be released to your wallet once the buyer confirms delivery, or automatically after 10 days.";
+        sendAppNotification($conn, $seller_id, $seller_msg);
+    }
+}
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();

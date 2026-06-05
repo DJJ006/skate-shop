@@ -25,6 +25,10 @@ $check_o = $conn->query("SHOW COLUMNS FROM orders LIKE 'hidden_from_buyer'");
 if ($check_o->num_rows == 0) {
     $conn->query("ALTER TABLE orders ADD COLUMN hidden_from_buyer TINYINT(1) DEFAULT 0");
 }
+$check_o2 = $conn->query("SHOW COLUMNS FROM orders LIKE 'hidden_from_seller'");
+if ($check_o2->num_rows == 0) {
+    $conn->query("ALTER TABLE orders ADD COLUMN hidden_from_seller TINYINT(1) DEFAULT 0");
+}
 
 // --- MIGRATION: Seller Verification and Marketplace Reputation ---
 $check_users = $conn->query("SHOW COLUMNS FROM users LIKE 'verified_status'");
@@ -174,10 +178,39 @@ $list_stmt->execute();
 $user_listings = $list_stmt->get_result();
 
 // Fetch Buy History
-$buy_history_stmt = $conn->prepare("SELECT o.id as order_id, o.amount, o.created_at, o.status, p.title, p.image_url, p.is_marketplace, p.seller_id, p.seller_name, (SELECT id FROM seller_ratings sr WHERE sr.transaction_id = o.id AND sr.status != 'Rejected' LIMIT 1) as has_seller_review FROM orders o JOIN products p ON o.product_id = p.id WHERE o.buyer_id = ? AND o.status IN ('PAID', 'CANCELLED', 'RECEIVED') AND o.hidden_from_buyer = 0 ORDER BY o.created_at DESC");
+$buy_history_stmt = $conn->prepare("SELECT o.id as order_id, o.amount, o.amount_paid_wallet, o.amount_paid_stripe, o.shipping_fee, o.order_group_id, o.created_at, o.status, p.title, p.image_url, p.is_marketplace, p.seller_id, p.seller_name, (SELECT id FROM seller_ratings sr WHERE sr.transaction_id = o.id AND sr.status != 'Rejected' LIMIT 1) as has_seller_review FROM orders o JOIN products p ON o.product_id = p.id WHERE o.buyer_id = ? AND o.status IN ('PAID', 'CANCELLED', 'RECEIVED') AND o.hidden_from_buyer = 0 ORDER BY o.created_at DESC");
 $buy_history_stmt->bind_param("i", $user_id);
 $buy_history_stmt->execute();
 $buy_history_result = $buy_history_stmt->get_result();
+
+$grouped_buy_history = [];
+if ($buy_history_result) {
+    while ($row = $buy_history_result->fetch_assoc()) {
+        $group_id = !empty($row['order_group_id']) ? $row['order_group_id'] : 'INDIVIDUAL-' . $row['order_id'];
+        if (!isset($grouped_buy_history[$group_id])) {
+            $grouped_buy_history[$group_id] = [
+                'group_id' => $group_id,
+                'created_at' => $row['created_at'],
+                'items' => [],
+                'total_amount' => 0,
+                'total_shipping' => 0,
+                'total_wallet' => 0,
+                'total_stripe' => 0
+            ];
+        }
+        $grouped_buy_history[$group_id]['items'][] = $row;
+        $grouped_buy_history[$group_id]['total_amount'] += (float)$row['amount'];
+        $grouped_buy_history[$group_id]['total_shipping'] += (float)$row['shipping_fee'];
+        $grouped_buy_history[$group_id]['total_wallet'] += (float)$row['amount_paid_wallet'];
+        $grouped_buy_history[$group_id]['total_stripe'] += (float)$row['amount_paid_stripe'];
+    }
+}
+
+// Fetch Sales History
+$sales_history_stmt = $conn->prepare("SELECT o.id as order_id, o.amount, o.amount_paid_wallet, o.amount_paid_stripe, o.created_at, o.status, p.title, p.image_url, u.username as buyer_name, u.email as buyer_email FROM orders o JOIN products p ON o.product_id = p.id LEFT JOIN users u ON o.buyer_id = u.id WHERE o.seller_id = ? AND o.status IN ('PAID', 'RECEIVED') AND o.hidden_from_seller = 0 ORDER BY o.created_at DESC");
+$sales_history_stmt->bind_param("i", $user_id);
+$sales_history_stmt->execute();
+$sales_history_result = $sales_history_stmt->get_result();
 
 // Fetch My Reels
 $my_reels_stmt = $conn->prepare("
@@ -249,6 +282,18 @@ $my_reviews_stmt->bind_param("i", $user_id);
 $my_reviews_stmt->execute();
 $my_reviews_result = $my_reviews_stmt->get_result();
 
+// Fetch My Seller Reviews
+$my_seller_reviews_stmt = $conn->prepare("
+    SELECT sr.*, u.username as seller_username
+    FROM seller_ratings sr 
+    JOIN users u ON sr.seller_id = u.id 
+    WHERE sr.buyer_id = ? 
+    ORDER BY sr.created_at DESC
+");
+$my_seller_reviews_stmt->bind_param("i", $user_id);
+$my_seller_reviews_stmt->execute();
+$my_seller_reviews_result = $my_seller_reviews_stmt->get_result();
+
 // --- POST: EDIT MY REVIEW ---
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_my_review'])) {
     $r_id = (int)$_POST['review_id'];
@@ -300,6 +345,64 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_my_review'])) {
         if ($del_stmt->execute()) {
             $conn->query("UPDATE products p SET p.average_rating = (SELECT IFNULL(AVG(rating), 0) FROM product_reviews WHERE product_id = $p_id AND status = 'Approved'), p.review_count = (SELECT COUNT(*) FROM product_reviews WHERE product_id = $p_id AND status = 'Approved') WHERE p.id = $p_id");
             $_SESSION['msg'] = "REVIEW DELETED.";
+            $_SESSION['msg_type'] = "success";
+        }
+    }
+    header("Location: client-profile.php");
+    exit();
+}
+
+// --- POST: EDIT MY SELLER REVIEW ---
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_my_seller_review'])) {
+    $r_id = (int)$_POST['review_id'];
+    $rating = (int)$_POST['rating'];
+    $comment = substr(trim($_POST['comment']), 0, 100);
+    
+    if ($rating >= 1 && $rating <= 5) {
+        $check_sr = $conn->query("SHOW COLUMNS FROM seller_ratings LIKE 'previous_rating'");
+        if ($check_sr->num_rows == 0) {
+            $conn->query("ALTER TABLE seller_ratings ADD COLUMN previous_rating INT DEFAULT NULL");
+            $conn->query("ALTER TABLE seller_ratings ADD COLUMN previous_comment VARCHAR(100) DEFAULT NULL");
+        }
+
+        $curr = $conn->prepare("SELECT rating, comment, status FROM seller_ratings WHERE id = ? AND buyer_id = ?");
+        $curr->bind_param("ii", $r_id, $user_id);
+        $curr->execute();
+        $curr_res = $curr->get_result()->fetch_assoc();
+        
+        if ($curr_res) {
+            if ($curr_res['status'] == 'Approved') {
+                $stmt = $conn->prepare("UPDATE seller_ratings SET previous_rating = rating, previous_comment = comment, rating = ?, comment = ?, status = 'Pending Approval' WHERE id = ? AND buyer_id = ?");
+            } else {
+                $stmt = $conn->prepare("UPDATE seller_ratings SET rating = ?, comment = ?, status = 'Pending Approval' WHERE id = ? AND buyer_id = ?");
+            }
+            $stmt->bind_param("isii", $rating, $comment, $r_id, $user_id);
+            if ($stmt->execute()) {
+                $_SESSION['msg'] = "SELLER REVIEW UPDATED AND PENDING APPROVAL.";
+                $_SESSION['msg_type'] = "success";
+            }
+        }
+    }
+    header("Location: client-profile.php");
+    exit();
+}
+
+// --- POST: DELETE MY SELLER REVIEW ---
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_my_seller_review'])) {
+    $r_id = (int)$_POST['review_id'];
+    
+    $p_stmt = $conn->prepare("SELECT seller_id FROM seller_ratings WHERE id = ? AND buyer_id = ?");
+    $p_stmt->bind_param("ii", $r_id, $user_id);
+    $p_stmt->execute();
+    $p_res = $p_stmt->get_result()->fetch_assoc();
+    
+    if ($p_res) {
+        $s_id = $p_res['seller_id'];
+        $del_stmt = $conn->prepare("DELETE FROM seller_ratings WHERE id = ? AND buyer_id = ?");
+        $del_stmt->bind_param("ii", $r_id, $user_id);
+        if ($del_stmt->execute()) {
+            $conn->query("UPDATE users u SET u.average_seller_rating = (SELECT IFNULL(AVG(rating), 0) FROM seller_ratings WHERE seller_id = $s_id AND status = 'Approved'), u.total_seller_reviews = (SELECT COUNT(*) FROM seller_ratings WHERE seller_id = $s_id AND status = 'Approved') WHERE u.id = $s_id");
+            $_SESSION['msg'] = "SELLER REVIEW DELETED.";
             $_SESSION['msg_type'] = "success";
         }
     }
@@ -448,6 +551,23 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['hide_buy_history_item'
         $upd->bind_param("i", $order_id);
         $upd->execute();
         $_SESSION['msg'] = "ORDER REMOVED FROM VIEW.";
+        $_SESSION['msg_type'] = "success";
+    }
+    header("Location: client-profile.php");
+    exit();
+}
+
+// --- POST: HIDE SALE RECORD ---
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['hide_sale_record'])) {
+    $order_id = (int)$_POST['order_id'];
+    $check = $conn->prepare("SELECT id FROM orders WHERE id = ? AND seller_id = ? AND status IN ('PAID', 'RECEIVED')");
+    $check->bind_param("ii", $order_id, $user_id);
+    $check->execute();
+    if ($check->get_result()->num_rows > 0) {
+        $upd = $conn->prepare("UPDATE orders SET hidden_from_seller = 1 WHERE id = ?");
+        $upd->bind_param("i", $order_id);
+        $upd->execute();
+        $_SESSION['msg'] = "SALE RECORD REMOVED.";
         $_SESSION['msg_type'] = "success";
     }
     header("Location: client-profile.php");
@@ -1262,6 +1382,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_user_ticket_bt
             <i class="fa-solid fa-history"></i>
             <h3>BUY HISTORY</h3>
         </div>
+        <div class="option-card" onclick="openModal('salesHistory')">
+            <i class="fa-solid fa-hand-holding-dollar"></i>
+            <h3>SALES HISTORY</h3>
+        </div>
         <div class="option-card-long" onclick="openModal('notificationsModal')">
             <i class="fa-solid fa-bell"></i>
             <h3>NOTIFICATIONS</h3>
@@ -1822,53 +1946,63 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_user_ticket_bt
         <span class="close-modal" onclick="closeModal('buyHistory')">&times;</span>
         <h3 class="admin-table-h3">BUY <span class="header-span">HISTORY</span></h3>
         
-        <?php if ($buy_history_result && $buy_history_result->num_rows > 0): ?>
-            <div class="listings-grid">
-                <?php while ($purchase = $buy_history_result->fetch_assoc()): ?>
-                    <?php $purchase_code = "ORD-" . str_pad($purchase['order_id'], 6, "0", STR_PAD_LEFT); ?>
-                    
-                    <div class="mini-listing buy-history-page-item" style="cursor: default;">
-                        
-                        <?php if ($purchase['status'] === 'CANCELLED'): ?>
-                            <span class="listing-status-badge status-cancelled">CANCELLED</span>
-                            <button type="button" class="btn-mini btn-danger" style="position:absolute; bottom:12px; right:12px; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; font-size:1rem; z-index: 10;" onclick="openHideBuyHistoryModal(<?php echo $purchase['order_id']; ?>)">
-                                <i class="fas fa-trash"></i>
-                            </button>
-                        <?php elseif ($purchase['status'] === 'RECEIVED'): ?>
-                            <span class="listing-status-badge status-received">RECEIVED</span>
-                            <?php if (!($purchase['is_marketplace'] == 1 && !$purchase['has_seller_review'])): ?>
-                                <button type="button" class="btn-mini btn-danger" style="position:absolute; bottom:12px; right:12px; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; font-size:1rem; z-index: 10;" onclick="openHideBuyHistoryModal(<?php echo $purchase['order_id']; ?>)">
-                                    <i class="fas fa-trash"></i>
-                                </button>
-                            <?php endif; ?>
-                        <?php else: ?>
-                            <span class="listing-status-badge status-active">PAID</span>
-                        <?php endif; ?>
-
-                        <img src="<?php echo htmlspecialchars($purchase['image_url']); ?>" alt="Product">
-                        
-                        <div class="mini-listing-info">
-                            <h4 class="mini-listing-title"><?php echo strtoupper(htmlspecialchars($purchase['title'])); ?></h4>
-                            <p class="mini-listing-price">$<?php echo number_format($purchase['amount'], 2); ?></p>
+        <?php if (!empty($grouped_buy_history)): ?>
+            <div class="listings-grid" style="grid-template-columns: 1fr;">
+                <?php foreach ($grouped_buy_history as $group): ?>
+                    <div class="buy-history-page-item" style="border: 4px solid var(--charcoal); margin-bottom: 20px; padding: 20px; background: var(--textwhite); box-shadow: 4px 4px 0px var(--charcoal);">
+                        <div style="border-bottom: 2px dashed #000; padding-bottom: 10px; margin-bottom: 20px;">
+                            <h4 style="margin: 0; font-family: 'Staatliches', sans-serif; font-size: 1.5rem;">RECEIPT: <?php echo htmlspecialchars($group['group_id']); ?></h4>
+                            <span style="font-size: 0.9rem; color: #555;">DATE: <?php echo date("M d, Y", strtotime($group['created_at'])); ?></span>
+                            <div style="margin-top: 10px; font-size: 0.9rem; color: #000;">
+                                <strong>Items Total:</strong> $<?php echo number_format($group['total_amount'], 2); ?> | 
+                                <strong>Shipping Fee:</strong> $<?php echo number_format($group['total_shipping'], 2); ?> <br>
+                                <?php
+                                $w = $group['total_wallet'];
+                                $s = $group['total_stripe'];
+                                if ($w > 0 && $s <= 0) echo "<strong>Paid via:</strong> Wallet ($" . number_format($w, 2) . ")";
+                                elseif ($w <= 0 && $s > 0) echo "<strong>Paid via:</strong> Stripe ($" . number_format($s, 2) . ")";
+                                else echo "<strong>Paid via:</strong> Wallet ($" . number_format($w, 2) . ") + Stripe ($" . number_format($s, 2) . ")";
+                                ?>
+                            </div>
                         </div>
-                        
-                        <div style="margin-top: 10px; border-top: 2px dashed #000; padding-top: 10px;">
-                            <span class="mini-listing-id" style="display: block; font-weight: bold; color: #000;">
-                                CODE: <?php echo $purchase_code; ?>
-                            </span>
-                            <span class="mini-listing-id" style="display: block; margin-top: 5px;">
-                                DATE: <?php echo date("M d, Y", strtotime($purchase['created_at'])); ?>
-                            </span>
-                        </div>
-                        
-                        <?php if ($purchase['status'] === 'PAID'): ?>
-                            <button type="button" class="btn-primary-brutal btn-full" style="margin-top: 10px; font-size:1rem; padding:8px;" onclick="openConfirmReceiptModal(<?php echo $purchase['order_id']; ?>)">CONFIRM RECEIPT</button>
-                        <?php elseif ($purchase['status'] === 'RECEIVED' && $purchase['is_marketplace'] == 1 && !$purchase['has_seller_review']): ?>
-                            <button type="button" class="btn-primary-brutal btn-full" style="margin-top: 10px; font-size:1rem; padding:8px; background:var(--primary); color:#fff;" onclick="openReviewSellerModal(<?php echo (int)$purchase['seller_id']; ?>, '<?php echo htmlspecialchars($purchase['seller_name']); ?>', <?php echo $purchase['order_id']; ?>)">REVIEW SELLER</button>
-                        <?php endif; ?>
 
+                        <div class="listings-grid" style="gap: 15px;">
+                            <?php foreach ($group['items'] as $purchase): ?>
+                                <?php $purchase_code = "ORD-" . str_pad($purchase['order_id'], 6, "0", STR_PAD_LEFT); ?>
+                                
+                                <div class="mini-listing" style="cursor: default; box-shadow: 2px 2px 0px var(--charcoal); border-width: 2px; position: relative;">
+                                    <?php if ($purchase['status'] === 'CANCELLED'): ?>
+                                        <span class="listing-status-badge status-cancelled">CANCELLED</span>
+                                        <button type="button" class="btn-mini btn-danger" style="position:absolute; bottom:12px; right:12px; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; font-size:1rem; z-index: 10;" onclick="openHideBuyHistoryModal(<?php echo $purchase['order_id']; ?>)"><i class="fas fa-trash"></i></button>
+                                    <?php elseif ($purchase['status'] === 'RECEIVED'): ?>
+                                        <span class="listing-status-badge status-received">RECEIVED</span>
+                                        <?php if (!($purchase['is_marketplace'] == 1 && !$purchase['has_seller_review'])): ?>
+                                            <button type="button" class="btn-mini btn-danger" style="position:absolute; bottom:12px; right:12px; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; font-size:1rem; z-index: 10;" onclick="openHideBuyHistoryModal(<?php echo $purchase['order_id']; ?>)"><i class="fas fa-trash"></i></button>
+                                        <?php endif; ?>
+                                    <?php else: ?>
+                                        <span class="listing-status-badge status-active">PAID</span>
+                                    <?php endif; ?>
+
+                                    <img src="<?php echo htmlspecialchars($purchase['image_url']); ?>" alt="Product">
+                                    <div class="mini-listing-info">
+                                        <h4 class="mini-listing-title" style="font-size:1.1rem;"><?php echo strtoupper(htmlspecialchars($purchase['title'])); ?></h4>
+                                        <p class="mini-listing-price">$<?php echo number_format($purchase['amount'], 2); ?></p>
+                                    </div>
+
+                                    <div style="margin-top: 5px; border-top: 1px dashed #ccc; padding-top: 5px;">
+                                        <span class="mini-listing-id" style="display: block; font-weight: bold; color: #000; font-size: 0.8rem;">CODE: <?php echo $purchase_code; ?></span>
+                                    </div>
+                                    
+                                    <?php if ($purchase['status'] === 'PAID'): ?>
+                                        <button type="button" class="btn-primary-brutal btn-full" style="margin-top: 10px; font-size:0.9rem; padding:6px;" onclick="openConfirmReceiptModal(<?php echo $purchase['order_id']; ?>)">CONFIRM DELIVERY</button>
+                                    <?php elseif ($purchase['status'] === 'RECEIVED' && $purchase['is_marketplace'] == 1 && !$purchase['has_seller_review']): ?>
+                                        <button type="button" class="btn-primary-brutal btn-full" style="margin-top: 10px; font-size:0.9rem; padding:6px; background:var(--primary); color:#fff;" onclick="openReviewSellerModal(<?php echo (int)$purchase['seller_id']; ?>, '<?php echo htmlspecialchars($purchase['seller_name']); ?>', <?php echo $purchase['order_id']; ?>)">REVIEW SELLER</button>
+                                    <?php endif; ?>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
                     </div>
-                <?php endwhile; ?>
+                <?php endforeach; ?>
             </div>
 
             <div id="buy-history-pagination-controls" class="listing-pagination">
@@ -1890,6 +2024,83 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_user_ticket_bt
     </div>
 </div>
 
+<div id="salesHistory" class="modal-overlay">
+    <div class="modal-content" style="max-width: 900px;">
+        <span class="close-modal" onclick="closeModal('salesHistory')">&times;</span>
+        <h3 class="admin-table-h3">SALES <span class="header-span">HISTORY</span></h3>
+        
+        <?php if ($sales_history_result && $sales_history_result->num_rows > 0): ?>
+            <div class="listings-grid">
+                <?php while ($sale = $sales_history_result->fetch_assoc()): ?>
+                    <?php $sale_code = "ORD-" . str_pad($sale['order_id'], 6, "0", STR_PAD_LEFT); ?>
+                    
+                    <div class="mini-listing buy-history-page-item" style="cursor: default; position: relative;">
+                        
+                        <?php if ($sale['status'] === 'RECEIVED'): ?>
+                            <span class="listing-status-badge status-received">DELIVERED</span>
+                        <?php else: ?>
+                            <span class="listing-status-badge status-pending" style="background-color: #f39c12; color: #fff;">IN DELIVERY</span>
+                        <?php endif; ?>
+                        
+                        <button type="button" class="btn-mini btn-danger" style="position:absolute; bottom:12px; right:12px; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; font-size:1rem; z-index: 10;" onclick="event.stopPropagation(); openDeleteSaleModal(<?php echo $sale['order_id']; ?>)">
+                            <i class="fas fa-trash"></i>
+                        </button>
+
+                        <img src="<?php echo htmlspecialchars($sale['image_url']); ?>" alt="Product">
+                        
+                        <div class="mini-listing-info">
+                            <h4 class="mini-listing-title"><?php echo strtoupper(htmlspecialchars($sale['title'])); ?></h4>
+                            <p class="mini-listing-price">$<?php echo number_format($sale['amount'], 2); ?></p>
+                        </div>
+                        
+                        <div style="margin-top: 10px; border-top: 2px dashed #000; padding-top: 10px;">
+                            <span class="mini-listing-id" style="display: block; font-weight: bold; color: #000;">
+                                BUYER: @<?php echo htmlspecialchars($sale['buyer_name']); ?>
+                            </span>
+                            <span class="mini-listing-id" style="display: block; margin-top: 5px;">
+                                CODE: <?php echo $sale_code; ?>
+                            </span>
+                            <span class="mini-listing-id" style="display: block; margin-top: 5px;">
+                                DATE: <?php echo date("M d, Y", strtotime($sale['created_at'])); ?>
+                            </span>
+                            
+                            <div style="margin-top: 10px; font-size: 0.8rem; color: #555;">
+                                <?php
+                                $w = (float)$sale['amount_paid_wallet'];
+                                $s = (float)$sale['amount_paid_stripe'];
+                                if ($w > 0 && $s <= 0) {
+                                    echo "<strong>Payment Method:</strong> Wallet<br>";
+                                    echo "Paid from Wallet: $" . number_format($w, 2) . "<br>";
+                                    echo "Paid from Stripe: $0.00";
+                                } elseif ($w <= 0 && $s > 0) {
+                                    echo "<strong>Payment Method:</strong> Stripe<br>";
+                                    echo "Paid from Wallet: $0.00<br>";
+                                    echo "Paid from Stripe: $" . number_format($s, 2);
+                                } elseif ($w > 0 && $s > 0) {
+                                    echo "<strong>Payment Method:</strong> Wallet + Stripe<br>";
+                                    echo "Paid from Wallet: $" . number_format($w, 2) . "<br>";
+                                    echo "Paid from Stripe: $" . number_format($s, 2);
+                                } else {
+                                    echo "<strong>Payment Method:</strong> N/A";
+                                }
+                                ?>
+                            </div>
+                        </div>
+                    </div>
+                <?php endwhile; ?>
+            </div>
+            <div id="sales-history-pagination-controls" class="listing-pagination" style="margin-top: 20px;">
+                <p style="text-align:center; font-family:'Staatliches', sans-serif; color:#666;">ALL RECENT SALES</p>
+            </div>
+        <?php else: ?>
+            <div class="empty-placeholder-box">
+                <p class="empty-placeholder-title">NO SALES YET.</p>
+                <p style="font-family: 'Staatliches', sans-serif; color: #666; margin-bottom: 20px;">List some gear and spread the word!</p>
+                <button class="btn-primary-brutal" onclick="closeModal('salesHistory'); openModal('myListings')">MY INVENTORY</button>
+            </div>
+        <?php endif; ?>
+    </div>
+</div>
 
 <div id="myWallet" class="modal-overlay">
     <div class="modal-content">
@@ -2030,6 +2241,21 @@ document.querySelectorAll('.modal-content').forEach(mc => {
     </div>
 </div>
 
+<div id="confirmDeleteSaleModal" class="modal-overlay">
+    <div class="modal-content" style="max-width: 400px; text-align: center;">
+        <span class="close-modal" onclick="closeModal('confirmDeleteSaleModal')">&times;</span>
+        <h3 class="admin-table-h3" style="margin-top:0; font-size:2rem; padding-top:10px;">REMOVE <span class="header-span">SALE?</span></h3>
+        <p style="font-family:'Inter',sans-serif; margin-bottom:20px; color:#666;">Are you sure you want to remove this sale from your history list?</p>
+        <div style="display:flex; gap:10px;">
+            <form action="client-profile.php" method="POST" style="flex:1;">
+                <input type="hidden" name="order_id" id="hideSaleHistoryOrderId">
+                <button type="submit" name="hide_sale_record" class="btn-primary-brutal btn-full btn-receipt-yes" style="margin-top:0; padding:20px;">YES, REMOVE</button>
+            </form>
+            <button type="button" class="btn-primary-brutal btn-full btn-hide-cancel" style="margin-top:0;" onclick="closeModal('confirmDeleteSaleModal')">CANCEL</button>
+        </div>
+    </div>
+</div>
+
 <div id="confirmHideInventoryModal" class="modal-overlay">
     <div class="modal-content" style="max-width: 400px; text-align: center;">
         <span class="close-modal" onclick="closeModal('confirmHideInventoryModal')">&times;</span>
@@ -2126,8 +2352,9 @@ document.querySelectorAll('.modal-content').forEach(mc => {
         <span class="close-modal" onclick="closeModal('myReviewsModal')">&times;</span>
         <h3 class="admin-table-h3">MY <span class="header-span">REVIEWS</span></h3>
 
-        <?php if ($my_reviews_result && $my_reviews_result->num_rows > 0): ?>
-            <div style="max-height: 60vh; overflow-y: auto; padding-right: 10px;">
+        <div style="max-height: 60vh; overflow-y: auto; padding-right: 10px;">
+            <h4 class="admin-table-h3" style="font-size: 1.2rem; margin-bottom: 15px; color: #555;">GEAR REVIEWS</h4>
+            <?php if ($my_reviews_result && $my_reviews_result->num_rows > 0): ?>
                 <?php while ($rev = $my_reviews_result->fetch_assoc()): ?>
                     <div class="my-qna-card" style="margin-bottom: 20px;">
                         <div class="my-qna-info">
@@ -2160,13 +2387,50 @@ document.querySelectorAll('.modal-content').forEach(mc => {
                         </div>
                     </div>
                 <?php endwhile; ?>
-            </div>
-        <?php else: ?>
-            <div class="empty-placeholder-box">
-                <p class="empty-placeholder-title">YOU HAVEN'T REVIEWED ANY GEAR YET.</p>
-                <button type="button" class="btn-primary-brutal" onclick="closeModal('myReviewsModal'); window.location.href='shop.php';">SHOP NOW</button>
-            </div>
-        <?php endif; ?>
+            <?php else: ?>
+                <p class="user-profile-empty-text" style="margin-bottom: 30px;">NO GEAR REVIEWS WRITTEN YET.</p>
+            <?php endif; ?>
+
+            <div style="width: 100%; height: 2px; background: #eee; margin: 30px 0;"></div>
+
+            <h4 class="admin-table-h3" style="font-size: 1.2rem; margin-bottom: 15px; color: #555;">SELLER REVIEWS</h4>
+            <?php if ($my_seller_reviews_result && $my_seller_reviews_result->num_rows > 0): ?>
+                <?php while ($s_rev = $my_seller_reviews_result->fetch_assoc()): ?>
+                    <div class="my-qna-card" style="margin-bottom: 20px;">
+                        <div class="my-qna-info">
+                            <?php if ($s_rev['status'] == 'Approved'): ?>
+                                <span class="listing-status-badge status-active">APPROVED</span>
+                            <?php elseif ($s_rev['status'] == 'Rejected'): ?>
+                                <span class="listing-status-badge status-rejected">REJECTED</span>
+                            <?php else: ?>
+                                <span class="listing-status-badge status-pending">PENDING</span>
+                            <?php endif; ?>
+
+                            <h4 style="font-family: 'Staatliches', sans-serif; font-size: 1.4rem; margin: 25px 0 10px 0;">SELLER: @<?php echo htmlspecialchars($s_rev['seller_username']); ?></h4>
+                            <div style="color: var(--primary); margin-bottom: 10px;">
+                                <?php 
+                                for ($i = 1; $i <= 5; $i++) {
+                                    echo ($i <= $s_rev['rating']) ? '<i class="fa-solid fa-star"></i>' : '<i class="fa-regular fa-star"></i>';
+                                }
+                                ?>
+                            </div>
+                            <?php if (!empty($s_rev['comment'])): ?>
+                                <p style="font-family: 'Inter', sans-serif; font-size: 0.95rem; color: #444; margin-bottom: 15px;"><?php echo nl2br(htmlspecialchars($s_rev['comment'])); ?></p>
+                            <?php endif; ?>
+                            <div class="my-qna-actions">
+                                <button type="button" class="btn-mini btn-view" onclick="openEditSellerReviewModal(<?php echo $s_rev['id']; ?>, <?php echo $s_rev['rating']; ?>, '<?php echo htmlspecialchars(addslashes($s_rev['comment']), ENT_QUOTES); ?>')">EDIT</button>
+                                <form method="POST" action="client-profile.php" style="display:inline;" onsubmit="return confirm('Are you sure you want to delete this seller review? It will recalculate their reputation score.');">
+                                    <input type="hidden" name="review_id" value="<?php echo $s_rev['id']; ?>">
+                                    <button type="submit" name="delete_my_seller_review" class="btn-mini btn-danger"><i class="fas fa-trash"></i> DELETE</button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                <?php endwhile; ?>
+            <?php else: ?>
+                <p class="user-profile-empty-text">NO SELLER REVIEWS WRITTEN YET.</p>
+            <?php endif; ?>
+        </div>
     </div>
 </div>
 
@@ -2193,6 +2457,33 @@ document.querySelectorAll('.modal-content').forEach(mc => {
             <div id="edit-review-counter" style="font-family:'Staatliches',sans-serif; font-size:0.85rem; color:#777; text-align:right; margin-top:0.5rem; margin-bottom:0.8rem; letter-spacing:1px;">100 characters remaining</div>
             
             <button type="submit" name="edit_my_review" class="btn-primary-brutal btn-full">SUBMIT FOR REVIEW</button>
+        </form>
+    </div>
+</div>
+
+<!-- === EDIT SELLER REVIEW MODAL === -->
+<div id="editSellerReviewModal" class="modal-overlay">
+    <div class="modal-content" style="max-width: 600px;">
+        <span class="close-modal" onclick="closeModal('editSellerReviewModal')">&times;</span>
+        <h3 class="admin-table-h3">EDIT <span class="header-span">SELLER REVIEW</span></h3>
+        <form method="POST" action="client-profile.php" class="admin-form">
+            <input type="hidden" name="review_id" id="edit_seller_review_id">
+            
+            <label style="display: block; font-weight: bold; margin-bottom: 5px;">RATING (1-5)</label>
+            <div class="star-rating-input" id="edit-seller-stars-container" style="font-size: 2rem; color: #555; cursor: pointer; margin-bottom: 20px;">
+                <i class="fa-solid fa-star" data-rating="1"></i>
+                <i class="fa-solid fa-star" data-rating="2"></i>
+                <i class="fa-solid fa-star" data-rating="3"></i>
+                <i class="fa-solid fa-star" data-rating="4"></i>
+                <i class="fa-solid fa-star" data-rating="5"></i>
+            </div>
+            <input type="hidden" name="rating" id="edit_seller_review_rating" value="5" required>
+            
+            <label>COMMENT (OPTIONAL, MAX 100 CHARS)</label>
+            <textarea name="comment" id="edit_seller_review_comment" class="review-textarea" rows="3" maxlength="100" placeholder="Tell us what you think..."></textarea>
+            <div id="edit-seller-review-counter" style="font-family:'Staatliches',sans-serif; font-size:0.85rem; color:#777; text-align:right; margin-top:0.5rem; margin-bottom:0.8rem; letter-spacing:1px;">100 characters remaining</div>
+            
+            <button type="submit" name="edit_my_seller_review" class="btn-primary-brutal btn-full">SUBMIT FOR REVIEW</button>
         </form>
     </div>
 </div>
@@ -2316,6 +2607,11 @@ document.querySelectorAll('.modal-content').forEach(mc => {
         document.getElementById('hideInventoryProductId').value = productId;
         openModal('confirmHideInventoryModal');
     }
+    function openDeleteSaleModal(orderId) {
+        document.getElementById('hideSaleHistoryOrderId').value = orderId;
+        openModal('confirmDeleteSaleModal');
+    }
+
     function openHideBuyHistoryModal(orderId) {
         document.getElementById('hideBuyHistoryOrderId').value = orderId;
         openModal('confirmHideBuyHistoryModal');
@@ -2805,6 +3101,29 @@ document.querySelectorAll('.modal-content').forEach(mc => {
         openModal('editReviewModal');
     }
 
+    function openEditSellerReviewModal(id, rating, comment) {
+        document.getElementById('edit_seller_review_id').value = id;
+        document.getElementById('edit_seller_review_rating').value = rating;
+        document.getElementById('edit_seller_review_comment').value = comment;
+        
+        const stars = document.querySelectorAll('#edit-seller-stars-container i');
+        stars.forEach(star => {
+            if (parseInt(star.dataset.rating) <= rating) {
+                star.style.color = 'var(--primary)';
+            } else {
+                star.style.color = '#555';
+            }
+        });
+        const commentCounter = document.getElementById('edit-seller-review-counter');
+        if (commentCounter) {
+            const remaining = 100 - (comment ? comment.length : 0);
+            commentCounter.textContent = remaining + ' characters remaining';
+        }
+        
+        closeModal('myReviewsModal');
+        openModal('editSellerReviewModal');
+    }
+
     document.addEventListener("DOMContentLoaded", () => {
         const editStars = document.querySelectorAll('#edit-stars-container i');
         const editRatingInput = document.getElementById('edit_review_rating');
@@ -2823,6 +3142,24 @@ document.querySelectorAll('.modal-content').forEach(mc => {
                 });
             });
         }
+        
+        const editSellerStars = document.querySelectorAll('#edit-seller-stars-container i');
+        const editSellerRatingInput = document.getElementById('edit_seller_review_rating');
+        if(editSellerStars) {
+            editSellerStars.forEach(star => {
+                star.addEventListener('click', function() {
+                    const rating = parseInt(this.dataset.rating);
+                    editSellerRatingInput.value = rating;
+                    editSellerStars.forEach(s => {
+                        if (parseInt(s.dataset.rating) <= rating) {
+                            s.style.color = 'var(--primary)';
+                        } else {
+                            s.style.color = '#555';
+                        }
+                    });
+                });
+            });
+        }
 
         const editCommentInput = document.getElementById('edit_review_comment');
         const editCommentCounter = document.getElementById('edit-review-counter');
@@ -2830,6 +3167,15 @@ document.querySelectorAll('.modal-content').forEach(mc => {
             editCommentInput.addEventListener('input', function() {
                 const remaining = 100 - this.value.length;
                 editCommentCounter.textContent = remaining + ' characters remaining';
+            });
+        }
+        
+        const editSellerCommentInput = document.getElementById('edit_seller_review_comment');
+        const editSellerCommentCounter = document.getElementById('edit-seller-review-counter');
+        if (editSellerCommentInput && editSellerCommentCounter) {
+            editSellerCommentInput.addEventListener('input', function() {
+                const remaining = 100 - this.value.length;
+                editSellerCommentCounter.textContent = remaining + ' characters remaining';
             });
         }
 

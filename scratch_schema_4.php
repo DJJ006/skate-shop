@@ -1,13 +1,7 @@
 <?php
-$conn = mysqli_connect('localhost', 'root', '', 'phplogin');
-if (!$conn) die('Connection failed');
-$res = $conn->query('SHOW TABLES');
-$output = '';
-while ($row = $res->fetch_row()) {
-    $output .= "Table: " . $row[0] . "\n";
-    $res2 = $conn->query('DESCRIBE ' . $row[0]);
-    while ($row2 = $res2->fetch_assoc()) {
-        $output .= "  - " . $row2['Field'] . " (" . $row2['Type'] . ")\n";
-    }
-}
-file_put_contents('schema_dump_phplogin.txt', $output);
+$conn = mysqli_connect('localhost', 'root', '', 'skateshop');
+$res=$conn->query('SHOW CREATE TABLE orders');
+print_r($res->fetch_assoc());
+$res2=$conn->query('SHOW CREATE TABLE products');
+print_r($res2->fetch_assoc());
+?>
