@@ -65,12 +65,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     <link rel="stylesheet" href="../assets/style.css"> 
     <link rel="stylesheet" href="../assets/admin.css">
     <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
+    <link rel="icon" href="../assets/images/skateshop_favicon.png" type="image/png">
 </head>
-<body>
+<body style="background-color: #f7f7f7; background-image: linear-gradient(45deg, transparent 50%, rgba(0,0,0,0.03) 50%), linear-gradient(135deg, rgba(0,0,0,0.03) 50%, transparent 50%); background-size: 10px 10px; background-position: 0 0, 5px 0;">
     <?php include 'header.php'; ?>
 
     <main class="container" style="display: flex; justify-content: center; margin-top: 5rem; min-height: 60vh;">
-        <div class="grainy-card" style="width: 100%; max-width: 500px; padding: 2.5rem;">
+        <div class="grainy-card auth-card" style="width: 100%; max-width: 500px;">
             <h2 class="glitch-text-admin" style="font-size: 3rem; text-align: center;">LOG<span class="text-primary">IN</span></h2>
             
             <?php if ($error): ?>

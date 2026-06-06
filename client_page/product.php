@@ -83,6 +83,7 @@ $approved_reviews = $reviews_stmt->get_result();
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SkateShop | <?php echo htmlspecialchars($product['title']); ?></title>
+    <link rel="icon" href="../assets/images/skateshop_favicon.png" type="image/png">
     <link rel="stylesheet" href="../assets/style.css"> 
     <link rel="stylesheet" href="../assets/shop.css">
     <link rel="stylesheet" href="../assets/user-profile.css"> 
@@ -205,12 +206,7 @@ $approved_reviews = $reviews_stmt->get_result();
             <img id="main-product-img" src="<?php echo htmlspecialchars($product['image_url']); ?>" alt="<?php echo htmlspecialchars($product['title']); ?>">
         </div>
 
-        <div class="thumbnail-row">
-            <div class="thumb active-thumb"><img src="<?php echo htmlspecialchars($product['image_url']); ?>" alt="Thumb 1"></div>
-            <div class="thumb"><i class="fa-solid fa-camera" style="font-size: 2rem; color: #ccc;"></i></div>
-            <div class="thumb"><i class="fa-solid fa-camera" style="font-size: 2rem; color: #ccc;"></i></div>
-            <div class="thumb"><i class="fa-solid fa-camera" style="font-size: 2rem; color: #ccc;"></i></div>
-        </div>
+
     </div>
 
     <div class="product-info-panel">

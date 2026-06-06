@@ -83,6 +83,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['review_reject_final']
     if ($id <= 0 || $reason === '') {
         $_SESSION['msg'] = 'REJECTION REASON IS REQUIRED.';
         $_SESSION['msg_type'] = 'error';
+    } elseif (mb_strlen($reason) > 500) {
+        $_SESSION['msg'] = 'REJECTION REASON CANNOT EXCEED 500 CHARACTERS.';
+        $_SESSION['msg_type'] = 'error';
     } else {
         $info = $conn->prepare('SELECT r.buyer_id, r.seller_id, u_seller.username as seller_username, r.status FROM seller_ratings r JOIN users u_seller ON r.seller_id = u_seller.id WHERE r.id = ?');
         $info->bind_param('i', $id);
@@ -138,6 +141,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['review_delete'])) {
     if ($id <= 0 || $reason === '') {
         $_SESSION['msg'] = 'DELETION REASON IS REQUIRED.';
         $_SESSION['msg_type'] = 'error';
+    } elseif (mb_strlen($reason) > 500) {
+        $_SESSION['msg'] = 'DELETION REASON CANNOT EXCEED 500 CHARACTERS.';
+        $_SESSION['msg_type'] = 'error';
     } else {
         $info = $conn->prepare('SELECT r.buyer_id, r.seller_id, u_seller.username as seller_username, r.status FROM seller_ratings r JOIN users u_seller ON r.seller_id = u_seller.id WHERE r.id = ?');
         $info->bind_param('i', $id);
@@ -175,17 +181,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['review_delete'])) {
 
 // --- List query ---
 $status_filter = isset($_GET['status']) && in_array($_GET['status'], $review_redirect_allowed, true) ? $_GET['status'] : 'all';
-$search_q = isset($_GET['q']) ? trim($_GET['q']) : '';
+$search_q = isset($_GET['q']) ? mb_substr(trim($_GET['q']), 0, 100) : '';
 $sort_filter = $_GET['sort'] ?? 'newest';
 
 $where = ['1=1'];
+$types = "";
+$params = [];
+
 if ($status_filter !== 'all') {
-    $sf = $conn->real_escape_string($status_filter);
-    $where[] = "pr.status = '$sf'";
+    $where[] = "pr.status = ?";
+    $params[] = $status_filter;
+    $types .= "s";
 }
 if ($search_q !== '') {
-    $s = $conn->real_escape_string($search_q);
-    $where[] = "(pr.id = '" . (int)$s . "' OR u_seller.username LIKE '%$s%' OR pr.comment LIKE '%$s%' OR u.username LIKE '%$s%')";
+    $where[] = "(pr.id = ? OR u_seller.username LIKE ? OR pr.comment LIKE ? OR u.username LIKE ?)";
+    $s_id = (int)$search_q;
+    $like = "%$search_q%";
+    $params[] = $s_id;
+    $params[] = $like;
+    $params[] = $like;
+    $params[] = $like;
+    $types .= "isss";
 }
 $where_sql = implode(' AND ', $where);
 
@@ -205,7 +221,17 @@ $page = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
 $offset = ($page - 1) * $limit;
 
 // COUNT TOTAL RECORDS
-$count_res = @$conn->query("SELECT COUNT(*) as total FROM seller_ratings pr JOIN users u_seller ON pr.seller_id = u_seller.id JOIN users u ON pr.buyer_id = u.id WHERE $where_sql");
+$count_res = null;
+$count_sql = "SELECT COUNT(*) as total FROM seller_ratings pr JOIN users u_seller ON pr.seller_id = u_seller.id JOIN users u ON pr.buyer_id = u.id WHERE $where_sql";
+$stmt_count = $conn->prepare($count_sql);
+if ($stmt_count) {
+    if ($types) {
+        $stmt_count->bind_param($types, ...$params);
+    }
+    $stmt_count->execute();
+    $count_res = $stmt_count->get_result();
+}
+
 if ($count_res) {
     $total_records = $count_res->fetch_assoc()['total'];
     $total_pages = ceil($total_records / $limit);
@@ -213,8 +239,16 @@ if ($count_res) {
     $total_pages = 0;
 }
 
-$list_sql = "SELECT pr.*, u_seller.username as seller_username, u_seller.profile_pic as profile_pic, u.username as buyer_username FROM seller_ratings pr JOIN users u_seller ON pr.seller_id = u_seller.id JOIN users u ON pr.buyer_id = u.id WHERE $where_sql $order_sql LIMIT $limit OFFSET $offset";
-$list_result = @$conn->query($list_sql);
+$list_sql = "SELECT pr.*, u_seller.username as seller_username, u_seller.profile_pic as profile_pic, u.username as buyer_username FROM seller_ratings pr JOIN users u_seller ON pr.seller_id = u_seller.id JOIN users u ON pr.buyer_id = u.id WHERE $where_sql $order_sql LIMIT ? OFFSET ?";
+$stmt_data = $conn->prepare($list_sql);
+$types_data = $types . "ii";
+$params_data = $params;
+$params_data[] = $limit;
+$params_data[] = $offset;
+$stmt_data->bind_param($types_data, ...$params_data);
+$stmt_data->execute();
+$list_result = $stmt_data->get_result();
+
 $rows = [];
 if ($list_result) {
     while ($r = $list_result->fetch_assoc()) {
@@ -306,6 +340,7 @@ function review_status_badge_class(string $status): string {
             float: left;
         }
     </style>
+    <link rel="icon" href="../assets/images/skateshop_favicon.png" type="image/png">
 </head>
 <body>
 
@@ -340,7 +375,7 @@ function review_status_badge_class(string $status): string {
             <form method="get" action="review-sellers.php" class="search-filter-form" id="review-filter-form">
                 <div class="filter-group search-box">
                     <label>SEARCH REVIEWS</label>
-                    <input type="text" name="q" id="review-search-input" placeholder="ID, product, comment, username..." value="<?php echo htmlspecialchars($search_q); ?>" autocomplete="off">
+                    <input type="text" name="q" id="review-search-input" placeholder="ID, product, comment, username..." value="<?php echo htmlspecialchars($search_q, ENT_QUOTES, 'UTF-8'); ?>" autocomplete="off">
                 </div>
 
                 <div class="filter-group" style="flex: 1;">
@@ -372,7 +407,7 @@ function review_status_badge_class(string $status): string {
             </form>
         </div>
         
-            <table class="recent-activity-table">
+            <div class="table-responsive"><table class="recent-activity-table">
                 <thead>
                     <tr>
                         <th>ID</th>
@@ -475,7 +510,7 @@ function review_status_badge_class(string $status): string {
                                             <input type="hidden" name="review_id" value="<?php echo (int)$item['id']; ?>">
                                             
                                             <label>WHY ARE YOU REJECTING THIS REVIEW?</label>
-                                            <textarea name="rejection_reason" rows="4" placeholder="E.g. Inappropriate language, spam..." required></textarea>
+                                            <textarea name="rejection_reason" rows="4" placeholder="E.g. Inappropriate language, spam..." required maxlength="500"></textarea>
                                             
                                             <button type="submit" name="review_reject_final" class="btn btn-danger" style="width:100%; margin-top: 1rem; font-size: 1.2rem;">SEND REJECTION</button>
                                         </form>
@@ -492,7 +527,7 @@ function review_status_badge_class(string $status): string {
                                         <input type="hidden" name="review_id" value="<?php echo (int)$item['id']; ?>">
                                         
                                         <label>WHY ARE YOU DELETING THIS REVIEW?</label>
-                                        <textarea name="deletion_reason" rows="4" placeholder="E.g. Inappropriate content, duplicate, spam..." required></textarea>
+                                        <textarea name="deletion_reason" rows="4" placeholder="E.g. Inappropriate content, duplicate, spam..." required maxlength="500"></textarea>
                                         
                                         <p style="margin-top: 1rem; color: var(--primary); font-family: 'Staatliches', sans-serif; font-size: 0.9rem;">* THIS WILL PERMANENTLY REMOVE THE REVIEW FROM THE DATABASE.</p>
                                         
@@ -506,7 +541,7 @@ function review_status_badge_class(string $status): string {
                         <?php endforeach; ?>
                     <?php endif; ?>
                 </tbody>
-            </table>
+            </table></div>
 
             <?php if ($total_pages > 0): ?>
             <div class="admin-pagination">
@@ -564,3 +599,4 @@ document.addEventListener('DOMContentLoaded', () => {
 </script>
 </body>
 </html>
+

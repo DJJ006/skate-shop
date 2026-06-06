@@ -86,7 +86,7 @@ $seller = $seller_result->fetch_assoc();
 $seller_id = (int)$seller['id'];
 
 // Active Listings Count
-$active_stmt = $conn->prepare("SELECT COUNT(*) as active FROM products WHERE seller_id = ? AND is_marketplace = 1 AND is_approved = 1");
+$active_stmt = $conn->prepare("SELECT COUNT(*) as active FROM products WHERE seller_id = ? AND is_marketplace = 1 AND is_approved = 1 AND id NOT IN (SELECT product_id FROM orders WHERE status IN ('PAID', 'RECEIVED')) AND seller_id IN (SELECT id FROM users WHERE is_blocked = 0)");
 $active_stmt->bind_param("i", $seller_id);
 $active_stmt->execute();
 $active_count = $active_stmt->get_result()->fetch_assoc()['active'] ?? 0;
@@ -188,6 +188,13 @@ $follower_count = $follower_stmt->get_result()->fetch_assoc()['followers'] ?? 0;
                     </span>
                 </span>
 
+                <span class="user-profile-meta-chip <?php echo $is_own_profile ? 'is-clickable' : ''; ?>" <?php echo $is_own_profile ? 'onclick="if(typeof openModal === \'function\') { openModal(\'salesHistory\'); }"' : ''; ?>>
+                    GEAR SOLD:
+                    <span class="user-profile-meta-value user-profile-meta-value-primary">
+                        <?php echo (int)$total_sales; ?>
+                    </span>
+                </span>
+
                 <span class="user-profile-meta-chip <?php echo $is_own_profile ? 'is-clickable' : ''; ?>" <?php echo $is_own_profile ? 'onclick="if(typeof openModal === \'function\') { openModal(\'myReels\'); }"' : ''; ?>>
                     REELS:
                     <span class="user-profile-meta-value user-profile-meta-value-primary">
@@ -277,4 +284,5 @@ $follower_count = $follower_stmt->get_result()->fetch_assoc()['followers'] ?? 0;
         <p class="user-profile-empty-text">No written feedback available.</p>
     <?php endif; ?>
 </div>
+
 

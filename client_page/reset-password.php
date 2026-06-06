@@ -113,6 +113,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && $user_id) {
             box-shadow: none !important;
         }
     </style>
+    <link rel="icon" href="../assets/images/skateshop_favicon.png" type="image/png">
 </head>
 <body>
     <?php include 'header.php'; ?>
@@ -215,3 +216,4 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && $user_id) {
     <?php include 'footer.php'; ?>
 </body>
 </html>
+

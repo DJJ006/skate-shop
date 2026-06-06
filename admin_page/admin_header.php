@@ -45,6 +45,28 @@ document.addEventListener('click', function(e) {
             dropdown.classList.remove('active');
         }
     }
+
+    const menuBtn = document.getElementById('menu-btn');
+    const sidebar = document.querySelector('.admin-sidebar');
+    const overlay = document.querySelector('.sidebar-overlay');
+    
+    if (menuBtn && sidebar && overlay) {
+        if (menuBtn.contains(e.target) || menuBtn === e.target) {
+            sidebar.classList.toggle('active');
+            overlay.classList.toggle('active');
+            const icon = menuBtn.querySelector('.material-icons');
+            if (icon) {
+                icon.textContent = sidebar.classList.contains('active') ? 'close' : 'menu';
+            }
+        } else if (overlay.contains(e.target) || overlay === e.target) {
+            sidebar.classList.remove('active');
+            overlay.classList.remove('active');
+            const icon = menuBtn.querySelector('.material-icons');
+            if (icon) {
+                icon.textContent = 'menu';
+            }
+        }
+    }
 });
 </script>
 <style>
@@ -81,3 +103,4 @@ document.addEventListener('click', function(e) {
         color: var(--primary); 
     }
 </style>
+

@@ -143,7 +143,8 @@ foreach ($_SESSION['cart'] as $id => $item) {
                     line-height: 1.5;
                 }
             </style>
-        </head>
+            <link rel="icon" href="../assets/images/skateshop_favicon.png" type="image/png">
+</head>
         <body>
             <?php include 'header.php'; ?>
             
@@ -240,6 +241,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['proceed_to_payment'])
 
     if (!$agree_terms) {
         $errors[] = "You must agree to the Terms and Conditions before continuing.";
+    }
+
+    if (mb_strlen($delivery_notes) > 200) {
+        $errors[] = "Delivery notes must not exceed 200 characters.";
     }
 
     if ($wallet_amount_to_use < 0) {
@@ -837,6 +842,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['proceed_to_payment'])
             }
         }
     </style>
+    <link rel="icon" href="../assets/images/skateshop_favicon.png" type="image/png">
 </head>
 <body>
 <?php include 'header.php'; ?>
@@ -1000,7 +1006,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['proceed_to_payment'])
                             name="delivery_notes"
                             class="checkout-textarea"
                             placeholder="Gate code, delivery instructions, preferred drop-off note"
+                            maxlength="200"
                         ><?php echo e(old('delivery_notes')); ?></textarea>
+                        <p id="delivery-notes-counter" style="text-align: right; font-size: 0.8rem; margin-top: 5px; font-family: 'Inter', sans-serif; color: #777;">200 characters remaining</p>
                     </div>
 
                     <div class="checkout-checkbox-wrap">
@@ -1123,7 +1131,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['proceed_to_payment'])
     }
     
     // Initialize on load
-    document.addEventListener('DOMContentLoaded', updateCheckoutTotal);
+    document.addEventListener('DOMContentLoaded', () => {
+        updateCheckoutTotal();
+        
+        const deliveryNotes = document.getElementById('delivery_notes');
+        const deliveryNotesCounter = document.getElementById('delivery-notes-counter');
+        if (deliveryNotes && deliveryNotesCounter) {
+            deliveryNotes.addEventListener('input', () => {
+                const remaining = 200 - deliveryNotes.value.length;
+                deliveryNotesCounter.textContent = remaining + ' characters remaining';
+                if (remaining <= 20) {
+                    deliveryNotesCounter.style.color = 'var(--primary)';
+                } else if (remaining <= 50) {
+                    deliveryNotesCounter.style.color = '#e6b800'; // Darker yellow
+                } else {
+                    deliveryNotesCounter.style.color = '#777';
+                }
+            });
+        }
+    });
 </script>
 
 </body>

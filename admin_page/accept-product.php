@@ -29,7 +29,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['accept_product'])) {
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reject_product_final'])) {
     $id = (int)$_POST['product_id'];
-    $reason = $conn->real_escape_string($_POST['rejection_reason']);
+    $reason = trim($_POST['rejection_reason']);
+
+    if (mb_strlen($reason) > 500) {
+        $_SESSION['msg'] = "REJECTION REASON CANNOT EXCEED 500 CHARACTERS.";
+        $_SESSION['msg_type'] = "error";
+        header("Location: accept-product.php");
+        exit();
+    }
+    
+    $reason = $conn->real_escape_string($reason);
 
     $info_stmt = $conn->prepare("SELECT title, seller_id FROM products WHERE id = ?");
     $info_stmt->bind_param("i", $id);
@@ -81,6 +90,7 @@ $modals_html = [];
     <script src="../assets/admin-script.js" defer></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link rel="icon" href="../assets/images/skateshop_favicon.png" type="image/png">
 </head>
 <body>
 
@@ -114,7 +124,7 @@ $modals_html = [];
 
         <div class="grainy-card card-padding" style="padding: 20px;">
         <h3 class="admin-table-h3">PENDING <span class="header-span">ITEMS</span></h3>
-            <table class="recent-activity-table">
+            <div class="table-responsive"><table class="recent-activity-table">
                 <thead>
                     <tr>
                         <th>ID</th>
@@ -216,7 +226,7 @@ $modals_html = [];
                                                     rows="4" 
                                                     class="admin-input-dark" 
                                                     placeholder="E.g. Photos are too blurry..." 
-                                                    required></textarea>
+                                                    required maxlength="500"></textarea>
                                             </div>
                                             
                                             <button type="submit" name="reject_product_final" class="btn btn-danger btn-full btn-heavy-font">
@@ -232,7 +242,7 @@ $modals_html = [];
                         <tr><td colspan="5" style="text-align: center; font-weight:700; font-style: italic;">NO PENDING LISTINGS TO REVIEW.</td></tr>
                     <?php endif; ?>
                 </tbody>
-            </table>
+            </table></div>
 
             <?php if ($total_pages > 0): ?>
             <div class="admin-pagination">
@@ -268,3 +278,4 @@ $modals_html = [];
 
 </body>
 </html>
+

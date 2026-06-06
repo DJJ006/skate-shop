@@ -47,9 +47,7 @@ if (isset($_SESSION['user_id'])) {
                 
                 session_unset();
                 session_destroy();
-                
-                
-                
+                echo "<!DOCTYPE html><html><head><title>Account Blocked</title><meta name='viewport' content='width=device-width, initial-scale=1.0'><style>body{background:#1a1a1a;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center;} .box{border:4px solid #E11D48;padding:40px;background:#2d2d2d;box-shadow:8px 8px 0px #000;max-width:500px;} h1{color:#E11D48;margin-top:0;} a{color:#fff;text-decoration:underline;}</style></head><body><div class='box'><h1>ACCOUNT BLOCKED</h1><p>Your account has been suspended by an administrator.</p><p><a href='#' onclick='window.history.back(); return false;'>Go Back</a></p></div></body></html>";
                 exit();
             }
         }

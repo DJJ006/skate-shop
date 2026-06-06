@@ -53,3 +53,4 @@ if ($auth_stmt->get_result()->num_rows === 0) {
     exit();
 }
 ?>
+

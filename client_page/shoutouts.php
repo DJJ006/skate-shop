@@ -2,8 +2,8 @@
 session_start();
 include '../db.php';
 
-define('QNA_TITLE_MAX', 50);
-define('QNA_BODY_MAX', 350);
+define('QNA_TITLE_MAX', 40);
+define('QNA_BODY_MAX', 100);
 
 $msg = '';
 $msg_type = '';
@@ -13,14 +13,14 @@ if (isset($_SESSION['msg'])) {
     unset($_SESSION['msg'], $_SESSION['msg_type']);
 }
 
-$table_ok = true;
-$chk = @$conn->query("SELECT 1 FROM community_shoutouts LIMIT 1");
-if ($chk === false) {
-    $table_ok = false;
-}
+
+
+
+
+
 
 // --- Submit shoutout ---
-if ($table_ok && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_shoutout'])) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_shoutout'])) {
     if (!isset($_SESSION['user_id'])) {
         header('Location: login.php');
         exit();
@@ -61,7 +61,7 @@ if ($table_ok && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_s
 $page = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
 $limit = 6;
 $offset = ($page - 1) * $limit;
-$search = isset($_GET['search']) ? trim($_GET['search']) : '';
+$search = isset($_GET['search']) ? mb_substr(trim($_GET['search']), 0, 100) : '';
 $sort = isset($_GET['sort']) && $_GET['sort'] === 'oldest' ? 'oldest' : 'newest';
 
 $published = [];
@@ -69,28 +69,43 @@ $total_published = 0;
 $my_pending = [];
 $total_pages = 1;
 
-if ($table_ok) {
+if (true) {
     $where = "status = 'published'";
+    $params = [];
+    $types = '';
+
     if ($search !== '') {
-        $s = $conn->real_escape_string($search);
-        // Search by title, body content, or username
-        $where .= " AND (title LIKE '%$s%' OR body LIKE '%$s%' OR username LIKE '%$s%')";
+        $where .= " AND (title LIKE ? OR body LIKE ? OR username LIKE ?)";
+        $like_search = "%$search%";
+        $params = [$like_search, $like_search, $like_search];
+        $types = "sss";
     }
+
     $order = $sort === 'oldest'
         ? 'ORDER BY COALESCE(published_at, created_at) ASC'
         : 'ORDER BY COALESCE(published_at, created_at) DESC';
 
-    $cr = $conn->query("SELECT COUNT(*) AS c FROM community_shoutouts WHERE $where");
-    if ($cr) {
-        $total_published = (int)$cr->fetch_assoc()['c'];
+    $stmt_count = $conn->prepare("SELECT COUNT(*) AS c FROM community_shoutouts WHERE $where");
+    if ($types) {
+        $stmt_count->bind_param($types, ...$params);
     }
+    $stmt_count->execute();
+    $total_published = (int)$stmt_count->get_result()->fetch_assoc()['c'];
+
     $total_pages = max(1, (int)ceil($total_published / $limit));
     if ($page > $total_pages) {
         $page = $total_pages;
         $offset = ($page - 1) * $limit;
     }
 
-    $pq = $conn->query("SELECT id, user_id, title, body, username, published_at, created_at FROM community_shoutouts WHERE $where $order LIMIT $limit OFFSET $offset");
+    $stmt_pq = $conn->prepare("SELECT id, user_id, title, body, username, published_at, created_at FROM community_shoutouts WHERE $where $order LIMIT ? OFFSET ?");
+    $pq_types = $types . "ii";
+    $pq_params = $params;
+    $pq_params[] = $limit;
+    $pq_params[] = $offset;
+    $stmt_pq->bind_param($pq_types, ...$pq_params);
+    $stmt_pq->execute();
+    $pq = $stmt_pq->get_result();
     if ($pq) {
         while ($r = $pq->fetch_assoc()) {
             $published[] = $r;
@@ -725,6 +740,7 @@ function get_shoutouts_url($params) {
             letter-spacing: 1px;
         }
     </style>
+    <link rel="icon" href="../assets/images/skateshop_favicon.png" type="image/png">
 </head>
 <body>
 
@@ -757,7 +773,7 @@ function get_shoutouts_url($params) {
             <div class="system-alert <?php echo htmlspecialchars($msg_type); ?>" id="form-alert"><?php echo htmlspecialchars($msg); ?></div>
         <?php endif; ?>
 
-        <?php if (!$table_ok): ?>
+        <?php if (false): ?>
             <div class="not-found" style="border-style: solid;">
                 <h3>SETUP REQUIRED</h3>
                 <p>The shoutouts database table is not set up yet. Ask your admin to run <code>sql/community_shoutouts.sql</code>.</p>
@@ -773,7 +789,7 @@ function get_shoutouts_url($params) {
                     <form action="shoutouts.php" method="GET" class="mag-filter-controls">
                         <div class="mag-search-section">
                             <div class="mag-search-field">
-                                <input type="text" name="search" id="mag-search" placeholder="SEARCH BY TITLE, CONTENT OR USERNAME..." value="<?php echo htmlspecialchars($search); ?>" autocomplete="off">
+                                <input type="text" name="search" id="mag-search" placeholder="SEARCH BY TITLE, CONTENT OR USERNAME..." value="<?php echo htmlspecialchars($search, ENT_QUOTES, 'UTF-8'); ?>" autocomplete="off">
                                 <button type="submit" style="display:none;"></button> <!-- Hidden submit for enter key -->
                             </div>
                         </div>
@@ -898,6 +914,28 @@ function get_shoutouts_url($params) {
 <?php include 'footer.php'; ?>
 
 <script>
+// Character counters for the Shoutout Modal
+document.addEventListener('DOMContentLoaded', () => {
+    const shoutoutTitle = document.getElementById('shoutout-modal-title');
+    const shoutoutTitleCounter = document.getElementById('shoutout-title-counter');
+    if (shoutoutTitle && shoutoutTitleCounter) {
+        shoutoutTitle.addEventListener('input', () => {
+            const remaining = <?php echo QNA_TITLE_MAX; ?> - shoutoutTitle.value.length;
+            shoutoutTitleCounter.textContent = remaining + ' characters remaining';
+            shoutoutTitleCounter.className = 'modal-char-counter' + (remaining <= 5 ? ' danger' : (remaining <= 10 ? ' warning' : ''));
+        });
+    }
+
+    const shoutoutBody = document.getElementById('shoutout-modal-body');
+    const shoutoutBodyCounter = document.getElementById('shoutout-body-counter');
+    if (shoutoutBody && shoutoutBodyCounter) {
+        shoutoutBody.addEventListener('input', () => {
+            const remaining = <?php echo QNA_BODY_MAX; ?> - shoutoutBody.value.length;
+            shoutoutBodyCounter.textContent = remaining + ' characters remaining';
+            shoutoutBodyCounter.className = 'modal-char-counter' + (remaining <= 10 ? ' danger' : (remaining <= 25 ? ' warning' : ''));
+        });
+    }
+});
 const SHOUTOUT_POSTS = <?php echo json_encode($published, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>;
 
 function openShoutoutView(id) {
@@ -1008,3 +1046,4 @@ document.getElementById('userProfileModal').addEventListener('click', (e) => {
 
 </body>
 </html>
+

@@ -234,8 +234,8 @@ $my_qna_result = $my_qna_stmt->get_result();
 
 // Fetch Support Tickets
 $my_tickets = null;
-$t_check = @$conn->query("SHOW TABLES LIKE 'support_tickets'");
-if ($t_check && $t_check->num_rows > 0) {
+$t_check = true;
+if (true) {
     $tickets_stmt = $conn->prepare("SELECT * FROM support_tickets WHERE user_id = ? ORDER BY updated_at DESC");
     $tickets_stmt->bind_param("i", $user_id);
     $tickets_stmt->execute();
@@ -254,9 +254,9 @@ $followers_stmt->bind_param("i", $user_id);
 $followers_stmt->execute();
 $followers_list = $followers_stmt->get_result();
 
-// Fetch My Shoutouts (empty if table missing)
+// Fetch My Shoutouts
 $my_shoutouts_rows = [];
-if (@$conn->query("SELECT 1 FROM community_shoutouts LIMIT 1") !== false) {
+if (true) {
     $my_shoutouts_stmt = $conn->prepare("SELECT * FROM community_shoutouts WHERE user_id = ? ORDER BY created_at DESC");
     if ($my_shoutouts_stmt) {
         $my_shoutouts_stmt->bind_param("i", $user_id);
@@ -587,8 +587,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_profile'])) {
     $username_changed = false;
 
     if (!empty($new_username) && $new_username !== $user_data['username']) {
-        if (!preg_match('/^[a-zA-Z0-9_]{3,20}$/', $new_username)) {
-            $_SESSION['msg'] = "USERNAME MUST BE 3-20 CHARACTERS (ALPHANUMERIC & UNDERSCORES ONLY).";
+        if (!preg_match('/^[a-zA-Z0-9_]{3,25}$/', $new_username)) {
+            $_SESSION['msg'] = "USERNAME MUST BE 3-25 CHARACTERS (ALPHANUMERIC & UNDERSCORES ONLY).";
             $_SESSION['msg_type'] = "error";
             header("Location: client-profile.php");
             exit();
@@ -680,7 +680,17 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_profile'])) {
             exit();
         }
 
-        if ($new_password === $confirm_password) {
+        if (strlen($new_password) < 8) {
+            $_SESSION['msg'] = "PASSWORD MUST BE AT LEAST 8 CHARACTERS LONG.";
+            $_SESSION['msg_type'] = "error";
+            header("Location: client-profile.php");
+            exit();
+        } elseif (!preg_match('/[^a-zA-Z0-9]/', $new_password)) {
+            $_SESSION['msg'] = "PASSWORD MUST CONTAIN AT LEAST ONE SPECIAL CHARACTER.";
+            $_SESSION['msg_type'] = "error";
+            header("Location: client-profile.php");
+            exit();
+        } elseif ($new_password === $confirm_password) {
             $update_query_parts[] = "password = ?";
             $types .= "s";
             $params[] = password_hash($new_password, PASSWORD_DEFAULT);
@@ -693,9 +703,21 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_profile'])) {
     }
 
     if (isset($_FILES['profile_pic']) && $_FILES['profile_pic']['error'] == 0) {
+        $ext = strtolower(pathinfo($_FILES["profile_pic"]["name"], PATHINFO_EXTENSION));
+        $allowed_exts = ['jpg', 'jpeg', 'png', 'webp'];
+        $mime = mime_content_type($_FILES["profile_pic"]["tmp_name"]);
+        $allowed_mimes = ['image/jpeg', 'image/png', 'image/webp'];
+        
+        if (!in_array($ext, $allowed_exts) || !in_array($mime, $allowed_mimes)) {
+            $_SESSION['msg'] = "INVALID IMAGE FORMAT. ALLOWED: JPG, PNG, WEBP.";
+            $_SESSION['msg_type'] = "error";
+            header("Location: client-profile.php");
+            exit();
+        }
+
         $target_dir = "../assets/uploads/avatars/";
         if (!is_dir($target_dir)) mkdir($target_dir, 0777, true);
-        $new_filename = 'user_' . $user_id . '_' . time() . '.' . pathinfo($_FILES["profile_pic"]["name"], PATHINFO_EXTENSION);
+        $new_filename = 'user_' . $user_id . '_' . time() . '.' . $ext;
         $target_file = $target_dir . $new_filename;
         if (move_uploaded_file($_FILES["profile_pic"]["tmp_name"], $target_file)) {
             $update_query_parts[] = "profile_pic = ?";
@@ -747,15 +769,51 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_profile'])) {
 
 // --- POST: SUBMIT NEW GEAR ---
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_market_item'])) {
-    $title = $conn->real_escape_string($_POST['title']);
-    $brand = $conn->real_escape_string($_POST['brand']);
+    $title = trim($_POST['title']);
+    $brand = trim($_POST['brand']);
     $price = (float)$_POST['price'];
+    
+    if (mb_strlen($brand) > 15) {
+        $_SESSION['msg'] = "BRAND MUST BE 15 CHARACTERS OR LESS.";
+        $_SESSION['msg_type'] = "error";
+        header("Location: client-profile.php");
+        exit();
+    }
+    
+    if (mb_strlen($title) > 20) {
+        $_SESSION['msg'] = "TITLE MUST BE 20 CHARACTERS OR LESS.";
+        $_SESSION['msg_type'] = "error";
+        header("Location: client-profile.php");
+        exit();
+    }
+    
+    if ($price > 5000 || $price < 0) {
+        $_SESSION['msg'] = "MAXIMUM ALLOWED PRICE IS $5,000.";
+        $_SESSION['msg_type'] = "error";
+        header("Location: client-profile.php");
+        exit();
+    }
+    
+    $title = $conn->real_escape_string($title);
+    $brand = $conn->real_escape_string($brand);
     $category = $conn->real_escape_string($_POST['category']);
     $condition = $conn->real_escape_string($_POST['condition_badge']);
     $description = $conn->real_escape_string($_POST['description']);
     
     if (isset($_FILES['item_image']) && $_FILES['item_image']['error'] == 0){
-        $target_file = "../assets/uploads/" . uniqid('market_') . '.' . pathinfo($_FILES["item_image"]["name"], PATHINFO_EXTENSION);
+        $ext = strtolower(pathinfo($_FILES["item_image"]["name"], PATHINFO_EXTENSION));
+        $allowed_exts = ['jpg', 'jpeg', 'png', 'webp'];
+        $mime = mime_content_type($_FILES["item_image"]["tmp_name"]);
+        $allowed_mimes = ['image/jpeg', 'image/png', 'image/webp'];
+        
+        if (!in_array($ext, $allowed_exts) || !in_array($mime, $allowed_mimes)) {
+            $_SESSION['msg'] = "INVALID IMAGE FORMAT. ALLOWED: JPG, PNG, WEBP.";
+            $_SESSION['msg_type'] = "error";
+            header("Location: client-profile.php");
+            exit();
+        }
+        
+        $target_file = "../assets/uploads/" . uniqid('market_') . '.' . $ext;
         if (move_uploaded_file($_FILES["item_image"]["tmp_name"], $target_file)) {
             $stmt = $conn->prepare("INSERT INTO products (title, brand, price, category, condition_badge, description, image_url, is_marketplace, is_approved, seller_id, seller_name) VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)");
             $stmt->bind_param("ssdssssis", $title, $brand, $price, $category, $condition, $description, $target_file, $user_id, $username);
@@ -771,9 +829,33 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_market_item'])) {
 // --- POST: UPDATE EXISTING LISTING ---
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_listing'])) {
     $p_id = (int)$_POST['product_id'];
-    $title = $conn->real_escape_string($_POST['title']);
-    $brand = $conn->real_escape_string($_POST['brand']);
+    $title = trim($_POST['title']);
+    $brand = trim($_POST['brand']);
     $price = (float)$_POST['price'];
+    
+    if (mb_strlen($brand) > 15) {
+        $_SESSION['msg'] = "BRAND MUST BE 15 CHARACTERS OR LESS.";
+        $_SESSION['msg_type'] = "error";
+        header("Location: client-profile.php");
+        exit();
+    }
+    
+    if (mb_strlen($title) > 20) {
+        $_SESSION['msg'] = "TITLE MUST BE 20 CHARACTERS OR LESS.";
+        $_SESSION['msg_type'] = "error";
+        header("Location: client-profile.php");
+        exit();
+    }
+    
+    if ($price > 5000 || $price < 0) {
+        $_SESSION['msg'] = "MAXIMUM ALLOWED PRICE IS $5,000.";
+        $_SESSION['msg_type'] = "error";
+        header("Location: client-profile.php");
+        exit();
+    }
+    
+    $title = $conn->real_escape_string($title);
+    $brand = $conn->real_escape_string($brand);
     $category = $conn->real_escape_string($_POST['category']);
     $condition = $conn->real_escape_string($_POST['condition_badge']);
     $description = $conn->real_escape_string($_POST['description']);
@@ -783,7 +865,19 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_listing'])) {
     $params = [$title, $brand, $price, $category, $condition, $description];
 
     if (isset($_FILES['item_image']) && $_FILES['item_image']['error'] == 0) {
-        $target_file = "../assets/uploads/" . uniqid('market_') . '.' . pathinfo($_FILES["item_image"]["name"], PATHINFO_EXTENSION);
+        $ext = strtolower(pathinfo($_FILES["item_image"]["name"], PATHINFO_EXTENSION));
+        $allowed_exts = ['jpg', 'jpeg', 'png', 'webp'];
+        $mime = mime_content_type($_FILES["item_image"]["tmp_name"]);
+        $allowed_mimes = ['image/jpeg', 'image/png', 'image/webp'];
+        
+        if (!in_array($ext, $allowed_exts) || !in_array($mime, $allowed_mimes)) {
+            $_SESSION['msg'] = "INVALID IMAGE FORMAT. ALLOWED: JPG, PNG, WEBP.";
+            $_SESSION['msg_type'] = "error";
+            header("Location: client-profile.php");
+            exit();
+        }
+        
+        $target_file = "../assets/uploads/" . uniqid('market_') . '.' . $ext;
         if (move_uploaded_file($_FILES["item_image"]["tmp_name"], $target_file)) {
             $sql .= ", image_url=?";
             $types .= "s";
@@ -974,15 +1068,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_account'])) {
         // Delete dependencies
         $conn->query("DELETE FROM user_follows WHERE follower_id = " . (int)$user_id . " OR followed_id = " . (int)$user_id);
         
-        $sr_check = $conn->query("SHOW TABLES LIKE 'seller_ratings'");
-        if ($sr_check && $sr_check->num_rows > 0) {
+        if (true) {
             $conn->query("DELETE FROM seller_ratings WHERE buyer_id = " . (int)$user_id . " OR seller_id = " . (int)$user_id);
         }
         
         $conn->query("DELETE FROM notifications WHERE user_id = " . (int)$user_id);
         
-        $ec_check = $conn->query("SHOW TABLES LIKE 'email_change_requests'");
-        if ($ec_check && $ec_check->num_rows > 0) {
+        if (true) {
             $conn->query("DELETE FROM email_change_requests WHERE user_id = " . (int)$user_id);
         }
         
@@ -992,8 +1084,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_account'])) {
         $conn->query("DELETE FROM reels WHERE user_id = " . (int)$user_id);
         $conn->query("DELETE FROM community_qna WHERE user_id = " . (int)$user_id);
         
-        $cs_check = $conn->query("SHOW TABLES LIKE 'community_shoutouts'");
-        if ($cs_check && $cs_check->num_rows > 0) {
+        if (true) {
             $conn->query("DELETE FROM community_shoutouts WHERE user_id = " . (int)$user_id);
         }
         
@@ -1028,7 +1119,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['user_ticket_reply'])) 
     $reply_message = trim($_POST['reply_message']);
     
     // Verify ticket belongs to user
-    $chk = $conn->query("SELECT id, status FROM support_tickets WHERE id = $ticket_id AND user_id = $user_id");
+    $chk_stmt = $conn->prepare("SELECT id, status FROM support_tickets WHERE id = ? AND user_id = ?");
+    $chk_stmt->bind_param("ii", $ticket_id, $user_id);
+    $chk_stmt->execute();
+    $chk = $chk_stmt->get_result();
+    
     if ($chk && $chk->num_rows > 0) {
         $t_data = $chk->fetch_assoc();
         
@@ -1043,7 +1138,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['user_ticket_reply'])) 
             $stmt->bind_param("iis", $ticket_id, $user_id, $reply_message);
             $stmt->execute();
             
-            $conn->query("UPDATE support_tickets SET status = 'Open' WHERE id = $ticket_id AND status != 'Open'");
+            $upd = $conn->prepare("UPDATE support_tickets SET status = 'Open' WHERE id = ? AND status != 'Open'");
+            $upd->bind_param("i", $ticket_id);
+            $upd->execute();
             
             $_SESSION['msg'] = "REPLY SENT.";
             $_SESSION['msg_type'] = "success";
@@ -1080,7 +1177,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_user_ticket_bt
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SkateShop | DASHBOARD</title>
     <link rel="stylesheet" href="../assets/style.css"> 
-    <link rel="stylesheet" href="../assets/admin.css">
+<link rel="stylesheet" href="../assets/admin.css"> <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+<style>
+    .validation-panel { background: var(--textwhite); border: 2px solid var(--charcoal); padding: 15px; margin-bottom: 20px; font-family: 'Inter', sans-serif; font-size: 0.9rem; }
+    .validation-item { margin-bottom: 8px; display: flex; align-items: center; gap: 10px; color: #d32f2f; }
+    .validation-item i { width: 16px; }
+    .validation-item.valid { color: #2e7d32; }
+    .char-counter { font-size: 0.8rem; color: #666; text-align: right; margin-top: -10px; margin-bottom: 10px; font-family: 'Inter', sans-serif; }
+    button:disabled { background-color: #ccc !important; border-color: #999 !important; color: #666 !important; cursor: not-allowed; transform: none !important; box-shadow: none !important; }
+</style>
     <link rel="stylesheet" href="../assets/user-profile.css">
     <script src="../assets/script.js" defer></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
@@ -1132,6 +1238,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_user_ticket_bt
             line-height: 1.6;
             white-space: pre-wrap;
             color: #111;
+            word-wrap: break-word;
+            word-break: break-word;
         }
 
         .mini-listing {
@@ -1141,6 +1249,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_user_ticket_bt
             padding: 15px;
             display: flex;
             flex-direction: column;
+            align-items: stretch;
             transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
             cursor: pointer;
             overflow: hidden;
@@ -1343,6 +1452,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_user_ticket_bt
         .custom-checkbox .checkmark:after { content: ""; position: absolute; display: none; left: 6px; top: 2px; width: 6px; height: 11px; border: solid #fff; border-width: 0 3px 3px 0; transform: rotate(45deg); }
         .custom-checkbox input[type="checkbox"]:checked ~ .checkmark:after { display: block; }
     </style>
+    <link rel="icon" href="../assets/images/skateshop_favicon.png" type="image/png">
 </head>
 <body>
 
@@ -1466,22 +1576,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_user_ticket_bt
             <label>CHANGE AVATAR</label>
             <input type="file" name="profile_pic" accept="image/*">
             <label>USERNAME</label>
-            <input type="text" name="new_username" placeholder="<?php echo htmlspecialchars($user_data['username'] ?? ''); ?>">
+            <input type="text" name="new_username" id="edit-profile-username" placeholder="<?php echo htmlspecialchars($user_data['username'] ?? ''); ?>" maxlength="25">
+            <p id="edit-profile-username-counter" style="text-align: right; font-size: 0.8rem; margin-top: -10px; font-family: 'Inter', sans-serif; color: #777;">25 characters remaining</p>
             <label>EMAIL</label>
-            <input type="email" name="new_email" value="<?php echo htmlspecialchars($user_data['email'] ?? ''); ?>" required>
+            <input type="email" name="new_email" value="<?php echo htmlspecialchars($user_data['email'] ?? ''); ?>" pattern="[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}$" title="Please enter a valid email address (e.g., user@example.com)" required>
             <label>CURRENT PASSWORD</label>
             <input type="password" name="current_password" placeholder="REQUIRED IF CHANGING PASSWORD">
             <label>NEW PASSWORD</label>
-            <input type="password" name="new_password" placeholder="LEAVE BLANK TO KEEP CURRENT">
+            <input type="password" name="new_password" id="edit_new_password" placeholder="LEAVE BLANK TO KEEP CURRENT" maxlength="50">
+            <div class="char-counter"><span id="editCharCount">0</span> / 50 characters</div>
+            
             <label>CONFIRM PASSWORD</label>
-            <input type="password" name="confirm_password" placeholder="REPEAT NEW PASSWORD" style="margin-bottom: 20px;">
+            <input type="password" name="confirm_password" id="edit_confirm_password" placeholder="REPEAT NEW PASSWORD" maxlength="50">
+            
+            <div class="validation-panel" id="edit-validation-panel" style="display: none; margin-top: 10px;">
+                <div class="validation-item" id="edit-req-length">
+                    <i class="fa-solid fa-xmark"></i> Minimum 8 characters
+                </div>
+                <div class="validation-item" id="edit-req-special">
+                    <i class="fa-solid fa-xmark"></i> Contains a special character
+                </div>
+                <div class="validation-item" id="edit-req-match">
+                    <i class="fa-solid fa-xmark"></i> Passwords match
+                </div>
+            </div>
 
             <label class="custom-checkbox">
                 <input type="checkbox" name="email_notifications" value="1" <?php echo (($user_data['email_notifications'] ?? 1) == 1) ? 'checked' : ''; ?>>
                 <span class="checkmark"></span>
                 RECEIVE EMAIL NOTIFICATIONS
             </label>
-            <button type="submit" name="update_profile" class="btn-primary-brutal btn-full">SAVE CHANGES</button>
+            <button type="submit" name="update_profile" id="editProfileSubmitBtn" class="btn-primary-brutal btn-full">SAVE CHANGES</button>
         </form>
     </div>
 </div>
@@ -1494,17 +1619,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_user_ticket_bt
             <div class="form-grid-2-1">
                 <div>
                     <label>TITLE</label>
-                    <input type="text" name="title" placeholder="E.G. INDEPENDENT 149" required>
+                    <input type="text" name="title" id="sell-gear-title" placeholder="E.G. INDEPENDENT 149" maxlength="20" required>
+                    <p id="sell-gear-title-counter" style="text-align: right; font-size: 0.8rem; margin-top: -10px; margin-bottom: 10px; font-family: 'Inter', sans-serif; color: #777;">20 characters remaining</p>
                 </div>
                 <div>
                     <label>BRAND</label>
-                    <input type="text" name="brand" placeholder="E.G. INDY" required>
+                    <input type="text" name="brand" id="sell-gear-brand" placeholder="E.G. INDY" maxlength="15" required>
+                    <p id="sell-gear-brand-counter" style="text-align: right; font-size: 0.8rem; margin-top: -10px; margin-bottom: 10px; font-family: 'Inter', sans-serif; color: #777;">15 characters remaining</p>
                 </div>
             </div>
             <div class="form-grid-3">
                 <div>
                     <label>PRICE ($)</label>
-                    <input type="number" name="price" step="0.01" placeholder="0.00" required>
+                    <input type="number" name="price" step="0.01" max="5000" placeholder="0.00" required>
                 </div>
                 <div>
                     <label>CATEGORY</label>
@@ -1521,7 +1648,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_user_ticket_bt
                 </div>
             </div>
             <label>DESCRIPTION</label>
-            <textarea name="description" rows="3" placeholder="DESCRIBE YOUR GEAR..." required></textarea>
+            <textarea name="description" id="sell-gear-desc" rows="3" placeholder="DESCRIBE YOUR GEAR..." maxlength="100" required></textarea>
+            <p id="sell-gear-desc-counter" style="text-align: right; font-size: 0.8rem; margin-top: -10px; margin-bottom: 10px; font-family: 'Inter', sans-serif; color: #777;">100 characters remaining</p>
             <label>IMAGE</label>
             <input type="file" name="item_image" required>
             <button type="submit" name="add_market_item" class="btn-primary-brutal btn-full">SUBMIT FOR REVIEW</button>
@@ -1720,18 +1848,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_user_ticket_bt
             <div class="form-grid-2-1">
                 <div>
                     <label>TITLE</label>
-                    <input type="text" name="title" id="edit-p-title" required>
+                    <input type="text" name="title" id="edit-p-title" maxlength="20" required>
+                    <p id="edit-gear-title-counter" style="text-align: right; font-size: 0.8rem; margin-top: -10px; margin-bottom: 10px; font-family: 'Inter', sans-serif; color: #777;">20 characters remaining</p>
                 </div>
                 <div>
                     <label>BRAND</label>
-                    <input type="text" name="brand" id="edit-p-brand" required>
+                    <input type="text" name="brand" id="edit-p-brand" maxlength="15" required>
+                    <p id="edit-gear-brand-counter" style="text-align: right; font-size: 0.8rem; margin-top: -10px; margin-bottom: 10px; font-family: 'Inter', sans-serif; color: #777;">15 characters remaining</p>
                 </div>
             </div>
 
             <div class="form-grid-3">
                 <div>
                     <label>PRICE ($)</label>
-                    <input type="number" name="price" id="edit-p-price" step="0.01" required>
+                    <input type="number" name="price" id="edit-p-price" step="0.01" max="5000" required>
                 </div>
                 <div>
                     <label>CATEGORY</label>
@@ -1749,7 +1879,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_user_ticket_bt
             </div>
 
             <label>DESCRIPTION</label>
-            <textarea name="description" id="edit-p-desc" rows="3" required></textarea>
+            <textarea name="description" id="edit-p-desc" rows="3" maxlength="100" required></textarea>
+            <p id="edit-gear-desc-counter" style="text-align: right; font-size: 0.8rem; margin-top: -10px; margin-bottom: 10px; font-family: 'Inter', sans-serif; color: #777;">100 characters remaining</p>
 
             <label>REPLACE IMAGE (LEAVE BLANK TO KEEP CURRENT)</label>
             <input type="file" name="item_image">
@@ -1950,10 +2081,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_user_ticket_bt
             <div class="listings-grid" style="grid-template-columns: 1fr;">
                 <?php foreach ($grouped_buy_history as $group): ?>
                     <div class="buy-history-page-item" style="border: 4px solid var(--charcoal); margin-bottom: 20px; padding: 20px; background: var(--textwhite); box-shadow: 4px 4px 0px var(--charcoal);">
-                        <div style="border-bottom: 2px dashed #000; padding-bottom: 10px; margin-bottom: 20px;">
-                            <h4 style="margin: 0; font-family: 'Staatliches', sans-serif; font-size: 1.5rem;">RECEIPT: <?php echo htmlspecialchars($group['group_id']); ?></h4>
-                            <span style="font-size: 0.9rem; color: #555;">DATE: <?php echo date("M d, Y", strtotime($group['created_at'])); ?></span>
-                            <div style="margin-top: 10px; font-size: 0.9rem; color: #000;">
+                        <div style="border-bottom: 3px dashed var(--charcoal); padding-bottom: 15px; margin-bottom: 20px;">
+                            <h4 style="margin: 0; font-family: 'Staatliches', sans-serif; font-size: 2rem; letter-spacing: 1px; color: var(--primary);">RECEIPT #<?php echo htmlspecialchars($group['group_id']); ?></h4>
+                            <span style="font-size: 1rem; color: #555; font-family: 'Inter', sans-serif; font-weight: bold;">DATE: <?php echo date("M d, Y", strtotime($group['created_at'])); ?></span>
+                            <div style="margin-top: 12px; font-size: 1.15rem; color: #111; font-family: 'Inter', sans-serif; line-height: 1.5;">
                                 <strong>Items Total:</strong> $<?php echo number_format($group['total_amount'], 2); ?> | 
                                 <strong>Shipping Fee:</strong> $<?php echo number_format($group['total_shipping'], 2); ?> <br>
                                 <?php
@@ -1984,12 +2115,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_user_ticket_bt
                                     <?php endif; ?>
 
                                     <img src="<?php echo htmlspecialchars($purchase['image_url']); ?>" alt="Product">
-                                    <div class="mini-listing-info">
+                                    <div class="mini-listing-info" style="text-align: left; width: 100%; box-sizing: border-box;">
                                         <h4 class="mini-listing-title" style="font-size:1.1rem;"><?php echo strtoupper(htmlspecialchars($purchase['title'])); ?></h4>
                                         <p class="mini-listing-price">$<?php echo number_format($purchase['amount'], 2); ?></p>
                                     </div>
 
-                                    <div style="margin-top: 5px; border-top: 1px dashed #ccc; padding-top: 5px;">
+                                    <div style="margin-top: 5px; border-top: 1px dashed #ccc; padding-top: 5px; text-align: left; width: 100%; box-sizing: border-box;">
                                         <span class="mini-listing-id" style="display: block; font-weight: bold; color: #000; font-size: 0.8rem;">CODE: <?php echo $purchase_code; ?></span>
                                     </div>
                                     
@@ -2195,7 +2326,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_user_ticket_bt
         
         <form action="client-profile.php" method="POST" class="admin-form" style="margin-top: 0;">
             <input type="hidden" name="ticket_id" id="reply_t_id">
-            <textarea name="reply_message" rows="3" required placeholder="Type your reply..." style="width:100%; border:3px solid #000; padding:10px; font-family:'Inter',sans-serif; margin-bottom:10px; outline:none;"></textarea>
+            <textarea name="reply_message" id="ticket_reply_message" rows="3" required maxlength="250" placeholder="Type your reply..." style="width:100%; border:3px solid #000; padding:10px; font-family:'Inter',sans-serif; outline:none;"></textarea>
+            <p id="ticket-reply-counter" style="text-align: right; font-size: 0.8rem; margin-top: 5px; margin-bottom: 15px; font-family: 'Inter', sans-serif; color: #777;">250 characters remaining</p>
             <button type="submit" name="user_ticket_reply" class="btn-primary-brutal" style="width:100%;">SEND REPLY</button>
         </form>
     </div>
@@ -2355,8 +2487,9 @@ document.querySelectorAll('.modal-content').forEach(mc => {
         <div style="max-height: 60vh; overflow-y: auto; padding-right: 10px;">
             <h4 class="admin-table-h3" style="font-size: 1.2rem; margin-bottom: 15px; color: #555;">GEAR REVIEWS</h4>
             <?php if ($my_reviews_result && $my_reviews_result->num_rows > 0): ?>
+                <div id="my-gear-reviews-list">
                 <?php while ($rev = $my_reviews_result->fetch_assoc()): ?>
-                    <div class="my-qna-card" style="margin-bottom: 20px;">
+                    <div class="my-qna-card my-gear-review-item" style="margin-bottom: 20px;">
                         <div class="my-qna-info">
                             <?php if ($rev['status'] == 'Approved'): ?>
                                 <span class="listing-status-badge status-active">APPROVED</span>
@@ -2387,6 +2520,12 @@ document.querySelectorAll('.modal-content').forEach(mc => {
                         </div>
                     </div>
                 <?php endwhile; ?>
+                </div>
+                <div id="my-gear-reviews-pagination-controls" class="listing-pagination">
+                    <button type="button" class="btn-pagination" id="prevGearReviewBtn" onclick="changeMyGearReviewsPage(-1)"><i class="fas fa-chevron-left"></i></button>
+                    <span id="myGearReviewsPageIndicator" class="page-number">PAGE 1 / 1</span>
+                    <button type="button" class="btn-pagination" id="nextGearReviewBtn" onclick="changeMyGearReviewsPage(1)"><i class="fas fa-chevron-right"></i></button>
+                </div>
             <?php else: ?>
                 <p class="user-profile-empty-text" style="margin-bottom: 30px;">NO GEAR REVIEWS WRITTEN YET.</p>
             <?php endif; ?>
@@ -2395,8 +2534,9 @@ document.querySelectorAll('.modal-content').forEach(mc => {
 
             <h4 class="admin-table-h3" style="font-size: 1.2rem; margin-bottom: 15px; color: #555;">SELLER REVIEWS</h4>
             <?php if ($my_seller_reviews_result && $my_seller_reviews_result->num_rows > 0): ?>
+                <div id="my-seller-reviews-list">
                 <?php while ($s_rev = $my_seller_reviews_result->fetch_assoc()): ?>
-                    <div class="my-qna-card" style="margin-bottom: 20px;">
+                    <div class="my-qna-card my-seller-review-item" style="margin-bottom: 20px;">
                         <div class="my-qna-info">
                             <?php if ($s_rev['status'] == 'Approved'): ?>
                                 <span class="listing-status-badge status-active">APPROVED</span>
@@ -2427,8 +2567,14 @@ document.querySelectorAll('.modal-content').forEach(mc => {
                         </div>
                     </div>
                 <?php endwhile; ?>
+                </div>
+                <div id="my-seller-reviews-pagination-controls" class="listing-pagination">
+                    <button type="button" class="btn-pagination" id="prevSellerReviewBtn" onclick="changeMySellerReviewsPage(-1)"><i class="fas fa-chevron-left"></i></button>
+                    <span id="mySellerReviewsPageIndicator" class="page-number">PAGE 1 / 1</span>
+                    <button type="button" class="btn-pagination" id="nextSellerReviewBtn" onclick="changeMySellerReviewsPage(1)"><i class="fas fa-chevron-right"></i></button>
+                </div>
             <?php else: ?>
-                <p class="user-profile-empty-text">NO SELLER REVIEWS WRITTEN YET.</p>
+                <p class="user-profile-empty-text" style="margin-bottom: 30px;">NO SELLER REVIEWS WRITTEN YET.</p>
             <?php endif; ?>
         </div>
     </div>
@@ -2513,6 +2659,7 @@ document.querySelectorAll('.modal-content').forEach(mc => {
             if (id === 'myReels') { currentMyReelsPage = 1; updateMyReelsPagination(); }
             if (id === 'myQnaModal') { currentMyQnaPage = 1; updateMyQnaPagination(); }
             if (id === 'myShoutoutModal') { currentMyShoutoutPage = 1; updateMyShoutoutPagination(); }
+            if (id === 'myReviewsModal') { currentMyGearReviewsPage = 1; currentMySellerReviewsPage = 1; updateMyGearReviewsPagination(); updateMySellerReviewsPagination(); }
         },
 
         close: function(id) {
@@ -2721,6 +2868,9 @@ document.querySelectorAll('.modal-content').forEach(mc => {
             document.getElementById('edit-p-category').value = data.category;
             document.getElementById('edit-p-condition').value = data.condition_badge;
             document.getElementById('edit-p-desc').value = data.description;
+            
+            // Update counters manually
+            if (typeof updateEditGearCounters === 'function') updateEditGearCounters();
             
             closeModal('myListings');
             openModal('editListingModal');
@@ -2973,7 +3123,7 @@ document.querySelectorAll('.modal-content').forEach(mc => {
         openModal('ticketViewModal');
         
         // Fetch ticket details via AJAX
-        fetch('../admin_page/get-ticket.php?id=' + ticketId)
+        fetch('get-ticket.php?id=' + ticketId)
             .then(response => response.text())
             .then(html => {
                 document.getElementById('u_ticket_content').innerHTML = html;
@@ -3055,6 +3205,70 @@ document.querySelectorAll('.modal-content').forEach(mc => {
     function changePage(step) {
         currentNotifPage += step;
         updatePagination();
+    }
+
+    // --- GEAR REVIEWS PAGINATION ---
+    let currentMyGearReviewsPage = 1;
+    const myGearReviewsPerPage = 5;
+
+    function updateMyGearReviewsPagination() {
+        const items = document.querySelectorAll('.my-gear-review-item');
+        const totalPages = Math.ceil(items.length / myGearReviewsPerPage);
+        const prevBtn = document.getElementById('prevGearReviewBtn');
+        const nextBtn = document.getElementById('nextGearReviewBtn');
+        const indicator = document.getElementById('myGearReviewsPageIndicator');
+
+        if (items.length === 0) {
+            const controls = document.getElementById('my-gear-reviews-pagination-controls');
+            if (controls) controls.style.display = 'none';
+            return;
+        }
+
+        items.forEach(item => item.style.display = 'none');
+        let start = (currentMyGearReviewsPage - 1) * myGearReviewsPerPage;
+        let end = start + myGearReviewsPerPage;
+        for (let i = start; i < end; i++) { if (items[i]) items[i].style.display = 'flex'; }
+
+        if (indicator) indicator.innerText = `PAGE ${currentMyGearReviewsPage} / ${totalPages}`;
+        if (prevBtn) prevBtn.disabled = currentMyGearReviewsPage === 1;
+        if (nextBtn) nextBtn.disabled = currentMyGearReviewsPage === totalPages || totalPages === 0;
+    }
+
+    function changeMyGearReviewsPage(step) {
+        currentMyGearReviewsPage += step;
+        updateMyGearReviewsPagination();
+    }
+
+    // --- SELLER REVIEWS PAGINATION ---
+    let currentMySellerReviewsPage = 1;
+    const mySellerReviewsPerPage = 5;
+
+    function updateMySellerReviewsPagination() {
+        const items = document.querySelectorAll('.my-seller-review-item');
+        const totalPages = Math.ceil(items.length / mySellerReviewsPerPage);
+        const prevBtn = document.getElementById('prevSellerReviewBtn');
+        const nextBtn = document.getElementById('nextSellerReviewBtn');
+        const indicator = document.getElementById('mySellerReviewsPageIndicator');
+
+        if (items.length === 0) {
+            const controls = document.getElementById('my-seller-reviews-pagination-controls');
+            if (controls) controls.style.display = 'none';
+            return;
+        }
+
+        items.forEach(item => item.style.display = 'none');
+        let start = (currentMySellerReviewsPage - 1) * mySellerReviewsPerPage;
+        let end = start + mySellerReviewsPerPage;
+        for (let i = start; i < end; i++) { if (items[i]) items[i].style.display = 'flex'; }
+
+        if (indicator) indicator.innerText = `PAGE ${currentMySellerReviewsPage} / ${totalPages}`;
+        if (prevBtn) prevBtn.disabled = currentMySellerReviewsPage === 1;
+        if (nextBtn) nextBtn.disabled = currentMySellerReviewsPage === totalPages || totalPages === 0;
+    }
+
+    function changeMySellerReviewsPage(step) {
+        currentMySellerReviewsPage += step;
+        updateMySellerReviewsPagination();
     }
 
     function openFullMessage(el) {
@@ -3167,6 +3381,9 @@ document.querySelectorAll('.modal-content').forEach(mc => {
             editCommentInput.addEventListener('input', function() {
                 const remaining = 100 - this.value.length;
                 editCommentCounter.textContent = remaining + ' characters remaining';
+                if (remaining <= 10) editCommentCounter.style.color = 'var(--primary)';
+                else if (remaining <= 25) editCommentCounter.style.color = '#e6b800';
+                else editCommentCounter.style.color = '#777';
             });
         }
         
@@ -3176,8 +3393,97 @@ document.querySelectorAll('.modal-content').forEach(mc => {
             editSellerCommentInput.addEventListener('input', function() {
                 const remaining = 100 - this.value.length;
                 editSellerCommentCounter.textContent = remaining + ' characters remaining';
+                if (remaining <= 10) editSellerCommentCounter.style.color = 'var(--primary)';
+                else if (remaining <= 25) editSellerCommentCounter.style.color = '#e6b800';
+                else editSellerCommentCounter.style.color = '#777';
             });
         }
+        
+        function setupCounter(inputId, counterId, max) {
+            const input = document.getElementById(inputId);
+            const counter = document.getElementById(counterId);
+            if (!input || !counter) return;
+            const update = () => {
+                const remaining = max - input.value.length;
+                counter.textContent = remaining + ' characters remaining';
+                if (remaining <= max * 0.2) counter.style.color = 'var(--primary)';
+                else if (remaining <= max * 0.4) counter.style.color = '#e6b800';
+                else counter.style.color = '#777';
+            };
+            update();
+            input.addEventListener('input', update);
+        }
+        
+        setupCounter('sell-gear-title', 'sell-gear-title-counter', 20);
+        setupCounter('sell-gear-desc', 'sell-gear-desc-counter', 100);
+        setupCounter('sell-gear-brand', 'sell-gear-brand-counter', 15);
+        setupCounter('edit-p-title', 'edit-gear-title-counter', 20);
+        setupCounter('edit-p-desc', 'edit-gear-desc-counter', 100);
+        setupCounter('edit-p-brand', 'edit-gear-brand-counter', 15);
+        setupCounter('ticket_reply_message', 'ticket-reply-counter', 250);
+        setupCounter('edit-profile-username', 'edit-profile-username-counter', 25);
+        
+        const editPwd = document.getElementById('edit_new_password');
+        const editConfirmPwd = document.getElementById('edit_confirm_password');
+        const editCharCount = document.getElementById('editCharCount');
+        const editSubmitBtn = document.getElementById('editProfileSubmitBtn');
+        const editValPanel = document.getElementById('edit-validation-panel');
+
+        const editReqLength = document.getElementById('edit-req-length');
+        const editReqSpecial = document.getElementById('edit-req-special');
+        const editReqMatch = document.getElementById('edit-req-match');
+
+        function toggleValid(element, isValid) {
+            const icon = element.querySelector('i');
+            if (isValid) {
+                element.classList.add('valid');
+                icon.classList.remove('fa-xmark');
+                icon.classList.add('fa-check');
+            } else {
+                element.classList.remove('valid');
+                icon.classList.remove('fa-check');
+                icon.classList.add('fa-xmark');
+            }
+        }
+
+        function updateEditPwdValidation() {
+            if (!editPwd) return;
+            const val = editPwd.value;
+            const confVal = editConfirmPwd.value;
+
+            editCharCount.textContent = val.length;
+
+            if (val.length > 0) {
+                editValPanel.style.display = 'block';
+                let isLength = val.length >= 8;
+                toggleValid(editReqLength, isLength);
+
+                let isSpecial = /[^a-zA-Z0-9]/.test(val);
+                toggleValid(editReqSpecial, isSpecial);
+
+                let isMatch = val.length > 0 && val === confVal;
+                toggleValid(editReqMatch, isMatch);
+
+                editSubmitBtn.disabled = !(isLength && isSpecial && isMatch);
+            } else {
+                editValPanel.style.display = 'none';
+                editSubmitBtn.disabled = false;
+            }
+        }
+
+        if (editPwd && editConfirmPwd) {
+            editPwd.addEventListener('input', updateEditPwdValidation);
+            editConfirmPwd.addEventListener('input', updateEditPwdValidation);
+        }
+        
+        window.updateEditGearCounters = function() {
+            const titleInput = document.getElementById('edit-p-title');
+            if (titleInput) { titleInput.dispatchEvent(new Event('input')); }
+            const descInput = document.getElementById('edit-p-desc');
+            if (descInput) { descInput.dispatchEvent(new Event('input')); }
+            const brandInput = document.getElementById('edit-p-brand');
+            if (brandInput) { brandInput.dispatchEvent(new Event('input')); }
+        };
 
         const alertBox = document.getElementById('alert-box');
         if (alertBox) { setTimeout(() => { alertBox.style.opacity = "0"; setTimeout(() => alertBox.remove(), 500); }, 4000); }
@@ -3189,6 +3495,8 @@ document.querySelectorAll('.modal-content').forEach(mc => {
         if (typeof updateMyShoutoutPagination === 'function') updateMyShoutoutPagination();
         if (typeof updateListingPagination === 'function') updateListingPagination();
         if (typeof updateBuyPagination === 'function') updateBuyPagination();
+        if (typeof updateMyGearReviewsPagination === 'function') updateMyGearReviewsPagination();
+        if (typeof updateMySellerReviewsPagination === 'function') updateMySellerReviewsPagination();
     });
 
     function openReviewSellerModal(sellerId, sellerName, transactionId) {
@@ -3234,9 +3542,20 @@ document.querySelectorAll('.modal-content').forEach(mc => {
             sellerCommentInput.addEventListener('input', function() {
                 const remaining = 100 - this.value.length;
                 sellerCommentCounter.textContent = remaining + ' characters remaining';
+                if (remaining <= 10) sellerCommentCounter.style.color = 'var(--primary)';
+                else if (remaining <= 25) sellerCommentCounter.style.color = '#e6b800';
+                else sellerCommentCounter.style.color = '#777';
             });
         }
     });
+
+    // Auto-open sellGear modal if requested via URL
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('action') === 'sellGear') {
+        openModal('sellGear');
+        // Clean up the URL so refreshing doesn't keep opening it
+        window.history.replaceState({}, document.title, window.location.pathname);
+    }
 </script>
 
 <!-- === SELLER REVIEW MODAL === -->
@@ -3274,3 +3593,4 @@ document.querySelectorAll('.modal-content').forEach(mc => {
 <?php include 'footer.php'; ?>
 </body>
 </html>
+

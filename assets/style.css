@@ -120,6 +120,11 @@ body {
     width: 100%;
 }
 
+.nav-item.active-nav::after {
+    width: 100%;
+    background-color: var(--primary);
+}
+
 .login-btn {
     text-decoration: none;
     background: var(--primary);
@@ -383,6 +388,8 @@ body {
     background: var(--textwhite);
     transition: var(--transition);
     min-height: 500px;
+    word-wrap: break-word;
+    word-break: break-word;
 }
 
 .product-card:hover {
@@ -435,6 +442,7 @@ body {
     font-size: 2rem;
     color: var(--primary);
     font-weight: 600;
+    white-space: nowrap;
 }
 
 .grainy-card {
@@ -1478,6 +1486,13 @@ body {
         height: 70px;
     }
 
+    .modal-content {
+        width: 95% !important;
+        max-height: 90vh !important;
+        padding: 1.5rem !important;
+        overflow-y: auto !important;
+    }
+
 
     .main-header {
         padding: 1rem 0;
@@ -1658,8 +1673,7 @@ body {
         position: fixed;
         top: 0;
         right: -100%;
-        width: 85%;
-        max-width: 400px;
+        width: 100%;
         height: 100vh;
         background: var(--bg-light);
         border-left: 8px solid var(--charcoal);
@@ -1669,6 +1683,7 @@ body {
         transition: right 0.5s cubic-bezier(0.85, 0, 0.15, 1);
         z-index: 1000;
         box-shadow: -20px 0 50px rgba(0, 0, 0, 0.3);
+        overflow-y: auto;
     }
 
     .desktop-nav::before {
@@ -1815,6 +1830,14 @@ body {
         width: 100%;
         display: block;
         margin-top: 0.5rem;
+        min-height: 44px;
+    }
+
+    button,
+    .btn,
+    input,
+    select {
+        min-height: 44px;
     }
 
     .marquee-content {
@@ -1875,19 +1898,23 @@ body {
 
     .product-grid {
         grid-template-columns: 1fr;
-        gap: 1.5rem;
+        gap: 2rem;
     }
 
     .card-img {
-        height: 300px;
+        height: 350px;
     }
 
     .price {
-        font-size: 1.6rem;
+        font-size: 1.2rem;
     }
 
     .card-info h4 {
         font-size: 1.3rem;
+    }
+
+    .product-title {
+        font-size: 1.3rem !important;
     }
 
     .monitor-screen {

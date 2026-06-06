@@ -16,7 +16,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $password = $_POST['password'];
     $confirm_password = $_POST['confirm_password'];
 
-    if ($password !== $confirm_password) {
+    if (!preg_match('/^[a-zA-Z0-9_]{3,25}$/', $username)) {
+        $error = "USERNAME MUST BE 3-25 CHARACTERS (ALPHANUMERIC & UNDERSCORES ONLY).";
+    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $error = "INVALID EMAIL FORMAT.";
+    } elseif (strlen($password) < 8) {
+        $error = "PASSWORD MUST BE AT LEAST 8 CHARACTERS LONG.";
+    } elseif (!preg_match('/[^a-zA-Z0-9]/', $password)) {
+        $error = "PASSWORD MUST CONTAIN AT LEAST ONE SPECIAL CHARACTER.";
+    } elseif ($password !== $confirm_password) {
         $error = "PASSWORDS DO NOT MATCH.";
     } else {
         // Check if username or email already exists
@@ -49,12 +57,22 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     <title>SkateShop | REGISTER</title>
     <link rel="stylesheet" href="../assets/style.css"> 
     <link rel="stylesheet" href="../assets/admin.css"> <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .validation-panel { background: var(--textwhite); border: 2px solid var(--charcoal); padding: 15px; margin-bottom: 20px; font-family: 'Inter', sans-serif; font-size: 0.9rem; }
+        .validation-item { margin-bottom: 8px; display: flex; align-items: center; gap: 10px; color: #d32f2f; }
+        .validation-item i { width: 16px; }
+        .validation-item.valid { color: #2e7d32; }
+        .char-counter { font-size: 0.8rem; color: #666; text-align: right; margin-top: -10px; margin-bottom: 10px; font-family: 'Inter', sans-serif; }
+        button:disabled { background-color: #ccc !important; border-color: #999 !important; color: #666 !important; cursor: not-allowed; transform: none !important; box-shadow: none !important; }
+    </style>
+    <link rel="icon" href="../assets/images/skateshop_favicon.png" type="image/png">
 </head>
-<body>
+<body style="background-color: #f7f7f7; background-image: linear-gradient(45deg, transparent 50%, rgba(0,0,0,0.03) 50%), linear-gradient(135deg, rgba(0,0,0,0.03) 50%, transparent 50%); background-size: 10px 10px; background-position: 0 0, 5px 0;">
     <?php include 'header.php'; ?>
 
     <main class="container" style="display: flex; justify-content: center; margin-top: 5rem; min-height: 60vh;">
-        <div class="grainy-card" style="width: 100%; max-width: 500px; padding: 2.5rem;">
+        <div class="grainy-card auth-card" style="width: 100%; max-width: 500px;">
             <h2 class="glitch-text-admin" style="font-size: 3rem; text-align: center;">JOIN <span class="text-primary">CREW</span></h2>
             
             <?php if ($error): ?>
@@ -66,18 +84,32 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
             <form action="register.php" method="POST" class="admin-form">
                 <label>USERNAME</label>
-                <input type="text" name="username" required>
+                <input type="text" name="username" id="register-username" maxlength="25" required>
+                <p id="register-username-counter" style="text-align: right; font-size: 0.8rem; margin-top: 5px; font-family: 'Inter', sans-serif; color: #777;">25 characters remaining</p>
                 
                 <label>EMAIL</label>
-                <input type="email" name="email" required>
+                <input type="email" name="email" pattern="[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}$" title="Please enter a valid email address (e.g., user@example.com)" required>
                 
                 <label>PASSWORD</label>
-                <input type="password" name="password" required>
+                <input type="password" name="password" id="reg_password" maxlength="50" required>
+                <div class="char-counter"><span id="charCount">0</span> / 50 characters</div>
                 
                 <label>CONFIRM PASSWORD</label>
-                <input type="password" name="confirm_password" required>
+                <input type="password" name="confirm_password" id="reg_confirm_password" maxlength="50" required>
                 
-                <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 1rem; font-size: 1.4rem;">REGISTER</button>
+                <div class="validation-panel">
+                    <div class="validation-item" id="req-length">
+                        <i class="fa-solid fa-xmark"></i> Minimum 8 characters
+                    </div>
+                    <div class="validation-item" id="req-special">
+                        <i class="fa-solid fa-xmark"></i> Contains a special character
+                    </div>
+                    <div class="validation-item" id="req-match">
+                        <i class="fa-solid fa-xmark"></i> Passwords match
+                    </div>
+                </div>
+                
+                <button type="submit" id="reg_submitBtn" class="btn btn-primary" style="width: 100%; margin-top: 1rem; font-size: 1.4rem;" disabled>REGISTER</button>
                 
                 <p style="text-align: center; margin-top: 1.5rem; font-family: 'Staatliches', sans-serif; font-size: 1.1rem;">
                     ALREADY HAVE AN ACCOUNT? <a href="login.php" style="color: var(--primary);">LOGIN HERE</a>
@@ -85,5 +117,69 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             </form>
         </div>
     </main>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const input = document.getElementById('register-username');
+        const counter = document.getElementById('register-username-counter');
+        if (input && counter) {
+            const update = () => {
+                const remaining = 25 - input.value.length;
+                counter.textContent = remaining + ' characters remaining';
+                if (remaining <= 5) counter.style.color = 'var(--primary)';
+                else if (remaining <= 10) counter.style.color = '#e6b800';
+                else counter.style.color = '#777';
+            };
+            update();
+            input.addEventListener('input', update);
+        }
+
+        const pwd = document.getElementById('reg_password');
+        const confirmPwd = document.getElementById('reg_confirm_password');
+        const charCount = document.getElementById('charCount');
+        const submitBtn = document.getElementById('reg_submitBtn');
+
+        const reqLength = document.getElementById('req-length');
+        const reqSpecial = document.getElementById('req-special');
+        const reqMatch = document.getElementById('req-match');
+
+        function updateValidation() {
+            const val = pwd.value;
+            const confVal = confirmPwd.value;
+
+            charCount.textContent = val.length;
+
+            let isLength = val.length >= 8;
+            toggleValid(reqLength, isLength);
+
+            let isSpecial = /[^a-zA-Z0-9]/.test(val);
+            toggleValid(reqSpecial, isSpecial);
+
+            let isMatch = val.length > 0 && val === confVal;
+            toggleValid(reqMatch, isMatch);
+
+            submitBtn.disabled = !(isLength && isSpecial && isMatch);
+        }
+
+        function toggleValid(element, isValid) {
+            const icon = element.querySelector('i');
+            if (isValid) {
+                element.classList.add('valid');
+                icon.classList.remove('fa-xmark');
+                icon.classList.add('fa-check');
+            } else {
+                element.classList.remove('valid');
+                icon.classList.remove('fa-check');
+                icon.classList.add('fa-xmark');
+            }
+        }
+
+        if (pwd && confirmPwd) {
+            pwd.addEventListener('input', updateValidation);
+            confirmPwd.addEventListener('input', updateValidation);
+            updateValidation();
+        }
+    });
+    </script>
 </body>
 </html>

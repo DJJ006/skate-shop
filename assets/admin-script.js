@@ -98,4 +98,36 @@ document.addEventListener('DOMContentLoaded', () => {
             if (wrapper) wrapper.classList.remove("active");
         }
     });
+
+    // 3. Global Character Counter for Admin Forms
+    document.querySelectorAll('input[maxlength], textarea[maxlength]').forEach(input => {
+        // Skip hidden inputs or search bars
+        if (input.type === 'hidden' || input.id === 'search' || input.id === 'admin-search') return;
+
+        // Create the counter element
+        const counter = document.createElement('div');
+        counter.className = 'admin-char-counter';
+        counter.style.cssText = "font-family:'Staatliches',sans-serif; font-size:0.85rem; text-align:right; margin-top:-0.5rem; margin-bottom:1rem; letter-spacing:1px;";
+
+        // Insert counter right after the input
+        input.parentNode.insertBefore(counter, input.nextSibling);
+
+        const updateCounter = () => {
+            const max = parseInt(input.getAttribute('maxlength'), 10);
+            const remaining = max - input.value.length;
+            counter.textContent = remaining + ' characters remaining';
+
+            // Color logic matching client system
+            if (remaining <= 10) {
+                counter.style.color = 'var(--primary)'; // red
+            } else if (remaining <= 25) {
+                counter.style.color = '#e6b800'; // yellow/warning
+            } else {
+                counter.style.color = '#777'; // gray
+            }
+        };
+
+        input.addEventListener('input', updateCounter);
+        updateCounter(); // Initialize immediately
+    });
 });

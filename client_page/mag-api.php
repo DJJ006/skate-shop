@@ -9,7 +9,11 @@ $action = $_GET['action'] ?? '';
 
 if ($action === 'get_article') {
     $id = (int)($_GET['id'] ?? 0);
-    $res = $conn->query("SELECT * FROM magazine_posts WHERE id=$id AND status='published' LIMIT 1");
+    $stmt = $conn->prepare("SELECT * FROM magazine_posts WHERE id=? AND status='published' LIMIT 1");
+    $stmt->bind_param("i", $id);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    
     if ($res && $res->num_rows > 0) {
         $a = $res->fetch_assoc();
         echo json_encode(['success' => true, 'article' => $a]);
@@ -20,3 +24,4 @@ if ($action === 'get_article') {
 }
 
 echo json_encode(['success' => false, 'error' => 'Invalid action']);
+

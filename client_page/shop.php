@@ -1,8 +1,71 @@
 <?php 
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 include '../db.php'; 
+require_once '../notification-service.php';
+
+// Ensure table exists
+try {
+    $conn->query("CREATE TABLE IF NOT EXISTS newsletter_subscribers (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        email VARCHAR(255) UNIQUE NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )");
+} catch (Exception $e) {}
+
+// Handle Newsletter
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['newsletter_email'])) {
+    $email = filter_var($_POST['newsletter_email'], FILTER_SANITIZE_EMAIL);
+    if (filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        
+        $check = $conn->prepare("SELECT id FROM newsletter_subscribers WHERE email = ?");
+        $check->bind_param("s", $email);
+        $check->execute();
+        $res = $check->get_result();
+        
+        if ($res->num_rows > 0) {
+            $_SESSION['newsletter_msg'] = "YOU ARE ALREADY SIGNED UP!";
+            $_SESSION['newsletter_type'] = "error";
+        } else {
+            $ins = $conn->prepare("INSERT INTO newsletter_subscribers (email) VALUES (?)");
+            $ins->bind_param("s", $email);
+            if ($ins->execute()) {
+                $subject = "Welcome to the SkateShop Crew!";
+                $html_body = buildEmailTemplate("STAY IN TOUCH", "<p>Thank you for applying to our newsletter. You're now officially part of the SkateShop crew. Stay tuned for exclusive drops, rare marketplace finds, and fresh clips.</p>");
+                if (sendEmail($email, $subject, $html_body)) {
+                    $_SESSION['newsletter_msg'] = "THANKS FOR JOINING THE CREW!";
+                    $_SESSION['newsletter_type'] = "success";
+                } else {
+                    $_SESSION['newsletter_msg'] = "ERROR SENDING EMAIL. PLEASE TRY AGAIN.";
+                    $_SESSION['newsletter_type'] = "error";
+                }
+            } else {
+                $_SESSION['newsletter_msg'] = "DATABASE ERROR. PLEASE TRY AGAIN.";
+                $_SESSION['newsletter_type'] = "error";
+            }
+        }
+    } else {
+        $_SESSION['newsletter_msg'] = "PLEASE ENTER A VALID EMAIL.";
+        $_SESSION['newsletter_type'] = "error";
+    }
+    
+    // Prevent resubmission on refresh
+    $redirect_url = "shop.php";
+    if (!empty($_GET)) {
+        $redirect_url .= "?" . http_build_query($_GET);
+    }
+    $redirect_url .= "#newsletter-anchor";
+    header("Location: " . $redirect_url);
+    exit();
+}
+
+$newsletter_msg = $_SESSION['newsletter_msg'] ?? '';
+$newsletter_type = $_SESSION['newsletter_type'] ?? '';
+unset($_SESSION['newsletter_msg'], $_SESSION['newsletter_type']);
 
 // 1. Collect and Sanitize Inputs
-$search = isset($_GET['search']) ? $conn->real_escape_string($_GET['search']) : '';
+$search = isset($_GET['search']) ? mb_substr(trim($_GET['search']), 0, 100) : '';
 $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
 $sort = isset($_GET['sort']) ? $_GET['sort'] : 'newest';
 $selected_categories = isset($_GET['category']) ? $_GET['category'] : [];
@@ -17,16 +80,25 @@ $offset = ($page - 1) * $limit;
 // 2. Build the WHERE Clause
 $whereClause = "WHERE is_marketplace = 0";
 
+$types = "";
+$params = [];
+
 if ($search != '') {
-    $whereClause .= " AND (title LIKE '%$search%' OR brand LIKE '%$search%')";
+    $whereClause .= " AND (title LIKE ? OR brand LIKE ?)";
+    $like = "%$search%";
+    $params[] = $like;
+    $params[] = $like;
+    $types .= "ss";
 }
 
 if (!empty($selected_categories)) {
     // Escaping array values for the IN() clause
-    $escaped_cats = array_map(function($cat) use ($conn) {
-        return "'" . $conn->real_escape_string($cat) . "'";
-    }, $selected_categories);
-    $whereClause .= " AND category IN (" . implode(',', $escaped_cats) . ")";
+    $placeholders = implode(',', array_fill(0, count($selected_categories), '?'));
+    $whereClause .= " AND category IN ($placeholders)";
+    foreach ($selected_categories as $c) {
+        $params[] = $c;
+        $types .= "s";
+    }
 }
 
 if ($price_range === 'under_50') {
@@ -49,12 +121,23 @@ if ($sort === 'price_asc') {
 
 // 4. Execution
 $count_query = "SELECT COUNT(*) as total FROM products $whereClause";
-$count_result = $conn->query($count_query);
-$total_items = $count_result->fetch_assoc()['total'];
+$stmt_count = $conn->prepare($count_query);
+if ($types) {
+    $stmt_count->bind_param($types, ...$params);
+}
+$stmt_count->execute();
+$total_items = $stmt_count->get_result()->fetch_assoc()['total'];
 $total_pages = ceil($total_items / $limit);
 
-$sql = "SELECT * FROM products $whereClause $orderClause LIMIT $limit OFFSET $offset";
-$result = $conn->query($sql);
+$sql = "SELECT * FROM products $whereClause $orderClause LIMIT ? OFFSET ?";
+$stmt_data = $conn->prepare($sql);
+$types_data = $types . "ii";
+$params_data = $params;
+$params_data[] = $limit;
+$params_data[] = $offset;
+$stmt_data->bind_param($types_data, ...$params_data);
+$stmt_data->execute();
+$result = $stmt_data->get_result();
 
 $start_item = ($total_items > 0) ? $offset + 1 : 0;
 $end_item = min($offset + $limit, $total_items);
@@ -121,7 +204,7 @@ function get_filter_url($params) {
 <section class="shop-layout container">
 <aside class="shop-sidebar">
     <form action="shop.php" method="GET" id="filterForm">
-        <input type="hidden" name="search" value="<?php echo htmlspecialchars($search); ?>">
+        <input type="hidden" name="search" value="<?php echo htmlspecialchars($search, ENT_QUOTES, 'UTF-8'); ?>">
         <input type="hidden" name="sort" value="<?php echo htmlspecialchars($sort); ?>">
 
         <div class="mobile-filter-wrapper">
@@ -166,7 +249,7 @@ function get_filter_url($params) {
                 <div class="search-section">
 
                 <form class="search-wrapper" action="shop.php" method="GET">
-                    <input type="text" name="search" placeholder="SEARCH GEAR..." id="shop-search" value="<?php echo htmlspecialchars($search); ?>">
+                    <input type="text" name="search" placeholder="SEARCH GEAR..." id="shop-search" value="<?php echo htmlspecialchars($search, ENT_QUOTES, 'UTF-8'); ?>">
                     <?php foreach($selected_categories as $cat): ?>
                         <input type="hidden" name="category[]" value="<?php echo htmlspecialchars($cat); ?>">
                     <?php endforeach; ?>
@@ -343,13 +426,29 @@ function get_filter_url($params) {
     </div>
 </section>
 
-<section class="newsletter-section">
+<section id="newsletter-anchor" class="newsletter-section">
     <div class="newsletter-box grainy-card">
         <div class="newsletter-content container">
             <h2 class="glitch-text">STAY IN <span class="text-primary">TOUCH</span></h2>
             <p>JOIN THE CREW FOR EXCLUSIVE DROPS, CLIPS, AND SALES.</p>
-            <form class="newsletter-form">
-                <input type="email" placeholder="ENTER YOUR EMAIL..." required>
+            
+            <?php if (!empty($newsletter_msg)): ?>
+                <div id="newsletter-msg-box" style="margin-bottom: 15px; font-size: 1.2rem; font-weight: bold; font-family: 'Staatliches', sans-serif; letter-spacing: 1px; color: <?php echo $newsletter_type === 'success' ? '#4ADE80' : 'var(--primary)'; ?>; transition: opacity 0.5s ease;">
+                    <?php echo htmlspecialchars($newsletter_msg); ?>
+                </div>
+                <script>
+                    setTimeout(() => {
+                        const msgBox = document.getElementById('newsletter-msg-box');
+                        if (msgBox) {
+                            msgBox.style.opacity = '0';
+                            setTimeout(() => msgBox.remove(), 500);
+                        }
+                    }, 5000);
+                </script>
+            <?php endif; ?>
+            
+            <form class="newsletter-form" method="POST" action="shop.php#newsletter-anchor">
+                <input type="email" name="newsletter_email" placeholder="ENTER YOUR EMAIL..." required>
                 <button type="submit" class="btn btn-primary">SIGN ME UP +</button>
             </form>
         </div>

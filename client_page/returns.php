@@ -10,6 +10,9 @@ include '../db.php';
     <title>SkateShop | RETURNS & REFUNDS</title>
     <link rel="stylesheet" href="../assets/style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link rel="icon" href="../assets/images/skateshop_favicon.png" type="image/png">
+    <script src="../assets/script.js" defer></script>
 </head>
 <body>
 
@@ -73,3 +76,4 @@ include '../db.php';
 
 </body>
 </html>
+

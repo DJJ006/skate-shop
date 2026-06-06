@@ -100,6 +100,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['verify_email'])) {
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Staatliches&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
+    <link rel="icon" href="../assets/images/skateshop_favicon.png" type="image/png">
 </head>
 <body style="background-color: var(--textwhite); display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; font-family: 'Staatliches', sans-serif; font-weight: normal;">
 
@@ -161,3 +162,4 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['verify_email'])) {
 
 </body>
 </html>
+

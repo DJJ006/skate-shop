@@ -67,6 +67,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             header("Location: mag.php"); exit();
         }
 
+        if (mb_strlen($title) > 255 || mb_strlen($short) > 500 || mb_strlen($content) > 10000 || mb_strlen($author) > 50 || mb_strlen($cover) > 500) {
+            $_SESSION['msg'] = 'INPUT TOO LONG. PLEASE CHECK CHARACTER LIMITS.'; $_SESSION['msg_type'] = 'error';
+            header("Location: mag.php"); exit();
+        }
+
         $slug = unique_slug($conn, make_slug($title));
         $stmt = $conn->prepare("INSERT INTO magazine_posts (title, slug, short_description, content, cover_image, author, status, published_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
         $stmt->bind_param("ssssssss", $title, $slug, $short, $content, $cover, $author, $status, $pub_at);
@@ -89,6 +94,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($upload && isset($upload['url'])) $cover = $upload['url'];
         if ($upload && isset($upload['error'])) {
             $_SESSION['msg'] = $upload['error']; $_SESSION['msg_type'] = 'error';
+            header("Location: mag.php"); exit();
+        }
+
+        if (mb_strlen($title) > 255 || mb_strlen($short) > 500 || mb_strlen($content) > 10000 || mb_strlen($author) > 50 || mb_strlen($cover) > 500) {
+            $_SESSION['msg'] = 'INPUT TOO LONG. PLEASE CHECK CHARACTER LIMITS.'; $_SESSION['msg_type'] = 'error';
             header("Location: mag.php"); exit();
         }
 
@@ -115,44 +125,73 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // ── FETCH POSTS WITH FILTERS ──────────────────────────────────────────────────
-$search_query = isset($_GET['search']) ? trim($_GET['search']) : "";
+// ── FETCH POSTS WITH FILTERS ──────────────────────────────────────────────────
+$search_query = isset($_GET['search']) ? mb_substr(trim($_GET['search']), 0, 100) : "";
 $status_filter = isset($_GET['status_filter']) ? $_GET['status_filter'] : "ALL";
 $sort = isset($_GET['sort']) ? $_GET['sort'] : "newest";
 
-$sql = "SELECT * FROM magazine_posts WHERE 1=1";
+$where = ["1=1"];
+$types = "";
+$params = [];
 
 if ($status_filter === 'published') {
-    $sql .= " AND status = 'published'";
+    $where[] = "status = 'published'";
 } elseif ($status_filter === 'draft') {
-    $sql .= " AND status = 'draft'";
+    $where[] = "status = 'draft'";
 }
 
 if ($search_query !== "") {
-    $clean_search = $conn->real_escape_string($search_query);
-    $sql .= " AND (
-        id = '" . (int)$clean_search . "'
-        OR title LIKE '%$clean_search%'
-        OR author LIKE '%$clean_search%'
-    )";
+    $where[] = "(id = ? OR title LIKE ? OR author LIKE ?)";
+    $s_id = (int)$search_query;
+    $like = "%$search_query%";
+    $params[] = $s_id;
+    $params[] = $like;
+    $params[] = $like;
+    $types .= "iss";
 }
 
+$where_sql = implode(" AND ", $where);
+
+// Sorting logic
+$order_sql = "ORDER BY created_at DESC";
 if ($sort === 'oldest') {
-    $sql .= " ORDER BY created_at ASC";
-} else {
-    $sql .= " ORDER BY created_at DESC";
+    $order_sql = "ORDER BY created_at ASC";
 }
+
 // PAGINATION SETUP
 $limit = 6;
 $page = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
 $offset = ($page - 1) * $limit;
 
 // COUNT TOTAL RECORDS
-$count_res = $conn->query(str_replace("SELECT *", "SELECT COUNT(*) as total", $sql));
-$total_records = $count_res->fetch_assoc()['total'];
-$total_pages = ceil($total_records / $limit);
+$count_res = null;
+$count_sql = "SELECT COUNT(*) as total FROM magazine_posts WHERE $where_sql";
+$stmt_count = $conn->prepare($count_sql);
+if ($stmt_count) {
+    if ($types) {
+        $stmt_count->bind_param($types, ...$params);
+    }
+    $stmt_count->execute();
+    $count_res = $stmt_count->get_result();
+}
 
-$sql .= " LIMIT $limit OFFSET $offset";
-$posts_res = $conn->query($sql);
+$total_records = 0;
+$total_pages = 0;
+if ($count_res) {
+    $total_records = $count_res->fetch_assoc()['total'];
+    $total_pages = ceil($total_records / $limit);
+}
+
+$list_sql = "SELECT * FROM magazine_posts WHERE $where_sql $order_sql LIMIT ? OFFSET ?";
+$stmt_data = $conn->prepare($list_sql);
+$types_data = $types . "ii";
+$params_data = $params;
+$params_data[] = $limit;
+$params_data[] = $offset;
+$stmt_data->bind_param($types_data, ...$params_data);
+$stmt_data->execute();
+$posts_res = $stmt_data->get_result();
+
 $posts = [];
 if ($posts_res) {
     while ($r = $posts_res->fetch_assoc()) $posts[] = $r;
@@ -229,6 +268,7 @@ if ($posts_res) {
     .recent-activity-table td:last-child form { display: block !important; width: 100%; margin: 3px 0; }
 }
 </style>
+    <link rel="icon" href="../assets/images/skateshop_favicon.png" type="image/png">
 </head>
 <body>
 
@@ -261,7 +301,7 @@ if ($posts_res) {
                 <form method="GET" action="mag.php" class="search-filter-form">
                     <div class="filter-group search-box" style="flex: 2;">
                         <label>SEARCH ARTICLES</label>
-                        <input type="text" name="search" placeholder="ID, Title, or Author..." value="<?php echo htmlspecialchars($search_query); ?>">
+                        <input type="text" name="search" placeholder="ID, Title, or Author..." value="<?php echo htmlspecialchars($search_query, ENT_QUOTES, 'UTF-8'); ?>">
                     </div>
 
                     <div class="filter-group" style="flex: 1;">
@@ -289,7 +329,7 @@ if ($posts_res) {
                     </div>
                 </form>
             </div>
-            <table class="recent-activity-table">
+            <div class="table-responsive"><table class="recent-activity-table">
                 <thead>
                     <tr>
                         <th>ID</th>
@@ -322,10 +362,9 @@ if ($posts_res) {
                         <td>
                             <button class="btn-mini btn-view" onclick="openMagEditModal(<?php echo htmlspecialchars(json_encode($p), ENT_QUOTES); ?>)">EDIT</button>
                             <button class="btn-mini btn-view btn-preview" onclick="openMagPreviewModal(<?php echo htmlspecialchars(json_encode($p), ENT_QUOTES); ?>)">VIEW</button>
-                            <form method="POST" style="display:inline;" onsubmit="return confirm('DELETE THIS ARTICLE PERMANENTLY?');">
-                                <input type="hidden" name="post_id" value="<?php echo $p['id']; ?>">
-                                <button type="submit" name="delete_post" class="btn-mini btn-danger"><i class="fas fa-trash"></i></button>
-                            </form>
+                            <button type="button" class="btn-mini btn-danger" onclick="event.stopPropagation(); openConfirmDeleteMagModal(<?php echo $p['id']; ?>)">
+                                <i class="fas fa-trash"></i>
+                            </button>
                         </td>
                     </tr>
                     <?php endforeach; ?>
@@ -333,7 +372,7 @@ if ($posts_res) {
                     <tr><td colspan="7" style="text-align:center;font-weight:700;font-style:italic;">NO ARTICLES YET. CREATE THE FIRST ONE!</td></tr>
                 <?php endif; ?>
                 </tbody>
-            </table>
+            </table></div>
 
             <?php if ($total_pages > 0): ?>
             <div class="admin-pagination">
@@ -371,10 +410,10 @@ if ($posts_res) {
             <input type="text" name="title" placeholder="E.G. TOP 5 SPOTS IN THE CITY" required maxlength="255">
 
             <label>SHORT DESCRIPTION</label>
-            <textarea name="short_description" rows="3" placeholder="Brief preview shown on the magazine feed..."></textarea>
+            <textarea name="short_description" rows="3" placeholder="Brief preview shown on the magazine feed..." maxlength="500"></textarea>
 
             <label>COVER IMAGE URL</label>
-            <input type="url" name="cover_image_url" id="create-cover-url" placeholder="https://... (paste image URL)">
+            <input type="url" name="cover_image_url" id="create-cover-url" placeholder="https://... (paste image URL)" maxlength="500">
             <div class="cover-preview-wrap"><img id="create-cover-preview" src="" alt="" style="display:none;"></div>
 
             <label>— OR UPLOAD IMAGE FILE —</label>
@@ -382,12 +421,12 @@ if ($posts_res) {
 
             <label>FULL ARTICLE CONTENT</label>
             <p style="font-family:'Inter',sans-serif;font-size:0.8rem;color:#888;margin-bottom:0.5rem;margin-top:-0.6rem;">Supports HTML: &lt;p&gt; &lt;h3&gt; &lt;strong&gt; &lt;em&gt; &lt;ul&gt; &lt;li&gt;</p>
-            <textarea name="content" class="content-area" rows="10" placeholder="Write the full article here..." required></textarea>
+            <textarea name="content" class="content-area" rows="10" placeholder="Write the full article here..." required maxlength="10000"></textarea>
 
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
                 <div>
                     <label>AUTHOR</label>
-                    <input type="text" name="author" placeholder="Admin" value="Admin">
+                    <input type="text" name="author" placeholder="Admin" value="Admin" maxlength="50">
                 </div>
                 <div>
                     <label>PUBLISH STATUS</label>
@@ -415,10 +454,10 @@ if ($posts_res) {
             <input type="text" name="title" id="edit-title" required maxlength="255">
 
             <label>SHORT DESCRIPTION</label>
-            <textarea name="short_description" id="edit-short" rows="3"></textarea>
+            <textarea name="short_description" id="edit-short" rows="3" maxlength="500"></textarea>
 
             <label>COVER IMAGE URL</label>
-            <input type="url" name="cover_image_url" id="edit-cover-url" placeholder="https://...">
+            <input type="url" name="cover_image_url" id="edit-cover-url" placeholder="https://..." maxlength="500">
             <div class="cover-preview-wrap"><img id="edit-cover-preview" src="" alt="" style="display:none;"></div>
 
             <label>— OR UPLOAD NEW IMAGE —</label>
@@ -426,12 +465,12 @@ if ($posts_res) {
 
             <label>FULL ARTICLE CONTENT</label>
             <p style="font-family:'Inter',sans-serif;font-size:0.8rem;color:#888;margin-bottom:0.5rem;margin-top:-0.6rem;">Supports HTML: &lt;p&gt; &lt;h3&gt; &lt;strong&gt; &lt;em&gt; &lt;ul&gt; &lt;li&gt;</p>
-            <textarea name="content" id="edit-content" class="content-area" rows="10" required></textarea>
+            <textarea name="content" id="edit-content" class="content-area" rows="10" required maxlength="10000"></textarea>
 
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
                 <div>
                     <label>AUTHOR</label>
-                    <input type="text" name="author" id="edit-author">
+                    <input type="text" name="author" id="edit-author" maxlength="50">
                 </div>
                 <div>
                     <label>PUBLISH STATUS</label>
@@ -444,7 +483,7 @@ if ($posts_res) {
 
             <div style="display:grid;grid-template-columns:2fr 1fr;gap:10px;margin-top:20px;">
                 <button type="submit" name="update_post" class="btn btn-primary">SAVE CHANGES</button>
-                <button type="submit" name="delete_post" class="btn btn-danger" onclick="return confirm('PERMANENTLY DELETE THIS ARTICLE?');">
+                <button type="button" class="btn btn-danger" onclick="openConfirmDeleteMagModal(document.getElementById('edit-id').value)">
                     <span class="material-icons" style="vertical-align:middle;">delete</span>
                 </button>
             </div>
@@ -519,6 +558,31 @@ function escMagHtml(str) {
 }
 </script>
 
+<!-- ===== CONFIRM DELETE MODAL ===== -->
+<div id="confirmDeleteMagModal" class="modal-overlay" style="z-index: 9999;">
+    <div class="modal-content" style="max-width: 400px; text-align: center;">
+        <span class="close-modal" onclick="closeModal('confirmDeleteMagModal')">&times;</span>
+        <h3 class="admin-table-h3" style="border:none; margin-bottom:10px;">TRASH <span class="text-primary">ARTICLE?</span></h3>
+        <p style="font-family:'Inter',sans-serif; font-size:1rem; margin-bottom:20px;">Are you sure you want to permanently delete this article?</p>
+        <form method="POST" action="mag.php">
+            <input type="hidden" name="post_id" id="deleteMagIdInput" value="">
+            <input type="hidden" name="delete_post" value="1">
+            <div style="display: flex; gap: 10px;">
+                <button type="submit" class="btn btn-danger" style="flex: 1; font-size: 1rem;">YES</button>
+                <button type="button" class="btn btn-outline" style="flex: 1; font-size: 1rem;" onclick="closeModal('confirmDeleteMagModal')">CANCEL</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    function openConfirmDeleteMagModal(postId) {
+        document.getElementById('deleteMagIdInput').value = postId;
+        document.getElementById('confirmDeleteMagModal').classList.add('active');
+    }
+</script>
+
 </body>
 </html>
+
 

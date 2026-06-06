@@ -1,6 +1,0 @@
-Table: users
-  - id (int(11))
-  - username (varchar(50))
-  - email (varchar(100))
-  - password (varchar(255))
-  - created_at (timestamp)

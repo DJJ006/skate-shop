@@ -57,7 +57,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['revoke_seller'])) {
 }
 
 // SEARCH LOGIC
-$search = isset($_GET['search']) ? trim($_GET['search']) : '';
+$search = isset($_GET['search']) ? mb_substr(trim($_GET['search']), 0, 100) : '';
 $status_filter = isset($_GET['status_filter']) ? $_GET['status_filter'] : '';
 $where_sql = "1=1";
 $params = [];
@@ -114,6 +114,7 @@ $sellers_result = $sellers_stmt_query->get_result();
     <script src="../assets/admin-script.js" defer></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link rel="icon" href="../assets/images/skateshop_favicon.png" type="image/png">
 </head>
 <body>
 
@@ -151,7 +152,7 @@ $sellers_result = $sellers_stmt_query->get_result();
                     
                     <div class="filter-group search-box">
                         <label>SEARCH</label>
-                        <input type="text" name="search" placeholder="ID or Username..." value="<?php echo htmlspecialchars($search); ?>">
+                        <input type="text" name="search" placeholder="ID or Username..." value="<?php echo htmlspecialchars($search, ENT_QUOTES, 'UTF-8'); ?>">
                     </div>
 
                     <div class="filter-group">
@@ -171,7 +172,7 @@ $sellers_result = $sellers_stmt_query->get_result();
                 </form>
             </div>
 
-            <table class="recent-activity-table">
+            <div class="table-responsive"><table class="recent-activity-table">
                 <thead>
                     <tr>
                         <th>ID</th>
@@ -258,7 +259,7 @@ $sellers_result = $sellers_stmt_query->get_result();
                         <tr><td colspan="5" style="text-align: center; font-weight:700; font-style: italic;">NO USERS FOUND.</td></tr>
                     <?php endif; ?>
                 </tbody>
-            </table>
+            </table></div>
 
             <?php if ($total_pages > 0): ?>
             <div class="admin-pagination">
@@ -287,3 +288,4 @@ $sellers_result = $sellers_stmt_query->get_result();
 
 </body>
 </html>
+

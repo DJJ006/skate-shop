@@ -6,13 +6,19 @@ include '../db.php';
 $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
 $limit = 8;
 $offset = ($page - 1) * $limit;
-$search = isset($_GET['search']) ? $conn->real_escape_string($_GET['search']) : '';
+$search = isset($_GET['search']) ? mb_substr(trim($_GET['search']), 0, 100) : '';
 $sort = isset($_GET['sort']) ? $_GET['sort'] : 'newest';
 
 // 2. Build Query
 $whereClause = "WHERE status='published'";
+$params = [];
+$types = "";
+
 if ($search !== '') {
-    $whereClause .= " AND (title LIKE '%$search%' OR short_description LIKE '%$search%' OR content LIKE '%$search%' OR author LIKE '%$search%')";
+    $whereClause .= " AND (title LIKE ? OR short_description LIKE ? OR content LIKE ? OR author LIKE ?)";
+    $like_search = "%$search%";
+    $params = [$like_search, $like_search, $like_search, $like_search];
+    $types = "ssss";
 }
 
 $orderClause = "ORDER BY COALESCE(published_at, created_at) DESC";
@@ -23,12 +29,25 @@ if ($sort === 'oldest') {
 }
 
 // 3. Count Total for Pagination
-$count_res = $conn->query("SELECT COUNT(*) as total FROM magazine_posts $whereClause");
+$stmt_count = $conn->prepare("SELECT COUNT(*) as total FROM magazine_posts $whereClause");
+if ($types) {
+    $stmt_count->bind_param($types, ...$params);
+}
+$stmt_count->execute();
+$count_res = $stmt_count->get_result();
 $total_items = $count_res->fetch_assoc()['total'];
 $total_pages = ceil($total_items / $limit);
 
 // 4. Fetch Paginated Posts
-$posts_result = $conn->query("SELECT id, title, slug, short_description, cover_image, author, published_at, created_at FROM magazine_posts $whereClause $orderClause LIMIT $limit OFFSET $offset");
+$stmt_posts = $conn->prepare("SELECT id, title, slug, short_description, cover_image, author, published_at, created_at FROM magazine_posts $whereClause $orderClause LIMIT ? OFFSET ?");
+$posts_types = $types . "ii";
+$posts_params = $params;
+$posts_params[] = $limit;
+$posts_params[] = $offset;
+
+$stmt_posts->bind_param($posts_types, ...$posts_params);
+$stmt_posts->execute();
+$posts_result = $stmt_posts->get_result();
 $posts = [];
 while ($row = $posts_result->fetch_assoc()) $posts[] = $row;
 
@@ -42,8 +61,11 @@ function get_mag_url($params) {
 // Single article view
 $article = null;
 if (isset($_GET['slug'])) {
-    $slug = $conn->real_escape_string($_GET['slug']);
-    $res = $conn->query("SELECT * FROM magazine_posts WHERE slug='$slug' AND status='published' LIMIT 1");
+    $slug = $_GET['slug'];
+    $stmt = $conn->prepare("SELECT * FROM magazine_posts WHERE slug=? AND status='published' LIMIT 1");
+    $stmt->bind_param("s", $slug);
+    $stmt->execute();
+    $res = $stmt->get_result();
     if ($res && $res->num_rows > 0) $article = $res->fetch_assoc();
 }
 ?>
@@ -423,6 +445,7 @@ if (isset($_GET['slug'])) {
     .mag-feed-grid { grid-template-columns: 1fr; }
 }
 </style>
+    <link rel="icon" href="../assets/images/skateshop_favicon.png" type="image/png">
 </head>
 <body>
 
@@ -459,7 +482,7 @@ if (isset($_GET['slug'])) {
         <form action="the-mag.php" method="GET" class="mag-filter-controls">
             <div class="mag-search-section">
                 <div class="mag-search-field">
-                    <input type="text" name="search" id="mag-search" placeholder="SEARCH ARTICLES..." value="<?php echo htmlspecialchars($search); ?>" autocomplete="off">
+                    <input type="text" name="search" id="mag-search" placeholder="SEARCH ARTICLES..." value="<?php echo htmlspecialchars($search, ENT_QUOTES, 'UTF-8'); ?>" autocomplete="off">
                 </div>
             </div>
             <div class="mag-sort-section">
@@ -658,3 +681,4 @@ document.head.appendChild(style);
 
 </body>
 </html>
+

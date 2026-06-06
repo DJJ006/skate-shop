@@ -77,6 +77,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['email'])) {
     <link rel="stylesheet" href="../assets/style.css"> 
     <link rel="stylesheet" href="../assets/admin.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="icon" href="../assets/images/skateshop_favicon.png" type="image/png">
 </head>
 <body>
     <?php include 'header.php'; ?>
@@ -106,3 +107,4 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['email'])) {
     <?php include 'footer.php'; ?>
 </body>
 </html>
+

@@ -19,3 +19,4 @@ $content = str_replace("['product_id']", "['seller_id']", $content);
 $content = str_replace("['product_id']", "['seller_id']", $content);
 
 file_put_contents('review-sellers.php', $content);
+

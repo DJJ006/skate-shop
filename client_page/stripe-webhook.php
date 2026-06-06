@@ -104,7 +104,7 @@ if ($event->type === 'checkout.session.completed') {
             $buyer_id = (int)$order['buyer_id'];
             $amount = (float)$order['amount'];
 
-            $prod_stmt = $conn->prepare("SELECT id, is_marketplace, is_sold, quantity FROM products WHERE id = ? FOR UPDATE");
+            $prod_stmt = $conn->prepare("SELECT id, is_marketplace, is_sold, quantity, title FROM products WHERE id = ? FOR UPDATE");
             $prod_stmt->bind_param("i", $prod_id);
             $prod_stmt->execute();
             $product = $prod_stmt->get_result()->fetch_assoc();

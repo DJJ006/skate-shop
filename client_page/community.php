@@ -187,7 +187,7 @@ $users_json = json_encode($users_array);
             background: var(--textwhite);
             border: 3px solid var(--charcoal);
             border-top: none;
-            max-height: 500px;
+            max-height: 400px;
             overflow-y: auto;
             box-shadow: 6px 6px 0px var(--charcoal);
             display: none;
@@ -362,6 +362,7 @@ $users_json = json_encode($users_array);
             transition: var(--transition);
         }
     </style>
+    <link rel="icon" href="../assets/images/skateshop_favicon.png" type="image/png">
 </head>
 <body>
 
@@ -383,6 +384,7 @@ $users_json = json_encode($users_array);
                 id="community-user-search" 
                 placeholder="SEARCH MEMBERS BY USERNAME..."
                 autocomplete="off"
+                maxlength="100"
             >
             <div class="community-user-results" id="community-user-results"></div>
         </div>
@@ -592,3 +594,4 @@ $users_json = json_encode($users_array);
 
 </body>
 </html>
+

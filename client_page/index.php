@@ -35,6 +35,7 @@ if ($reels_result) {
 $market_sql = "SELECT id, title, price, image_url, brand, quantity FROM products 
                WHERE is_marketplace = 1 AND is_approved = 1 
                AND id NOT IN (SELECT product_id FROM orders WHERE status IN ('PAID', 'RECEIVED')) 
+               AND seller_id IN (SELECT id FROM users WHERE is_blocked = 0)
                ORDER BY created_at DESC LIMIT 3";
 $market_result = $conn->query($market_sql);
 $market_products = [];

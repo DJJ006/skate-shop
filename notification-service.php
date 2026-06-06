@@ -72,9 +72,20 @@ function sendOrderReceiptEmail($conn, $buyer_id, $order_ids) {
     
     // Fetch order details
     $order_sql = "
-        SELECT o.id, o.amount, o.amount_paid_wallet, o.amount_paid_stripe, o.shipping_name, p.title 
+        SELECT 
+            o.id, 
+            o.amount, 
+            o.amount_paid_wallet, 
+            o.amount_paid_stripe, 
+            o.shipping_fee, 
+            o.created_at,
+            o.stripe_session_id,
+            p.title, 
+            p.is_marketplace,
+            seller.username as seller_username
         FROM orders o
         LEFT JOIN products p ON o.product_id = p.id
+        LEFT JOIN users seller ON p.seller_id = seller.id
         WHERE o.id IN ($placeholders)
     ";
     
@@ -88,26 +99,112 @@ function sendOrderReceiptEmail($conn, $buyer_id, $order_ids) {
 
     if (empty($orders)) return;
 
-    $total_amount = 0;
+    $total_items_price = 0;
+    $total_shipping = 0;
     $total_wallet = 0;
     $total_stripe = 0;
-    $items_html = "<ul>";
+    $stripe_session = null;
+    $order_date = null;
+    
+    $items_html = "<table width='100%' cellpadding='10' cellspacing='0' style='border-collapse: collapse; margin-bottom: 20px; text-align: left; font-family: \"Inter\", sans-serif, Arial;'>
+        <thead>
+            <tr style='background-color: #212121; color: #fff; font-family: \"Staatliches\", sans-serif, Arial; letter-spacing: 1px;'>
+                <th style='padding: 10px; border: 2px solid #212121;'>PRODUCT</th>
+                <th style='padding: 10px; border: 2px solid #212121;'>TYPE</th>
+                <th style='padding: 10px; border: 2px solid #212121; text-align: right;'>PRICE</th>
+            </tr>
+        </thead>
+        <tbody>";
     
     foreach ($orders as $o) {
-        $total_amount += (float)$o['amount'];
+        if (!$order_date) $order_date = date("M d, Y H:i", strtotime($o['created_at']));
+        if (!$stripe_session && !empty($o['stripe_session_id'])) $stripe_session = $o['stripe_session_id'];
+        
+        $item_price = (float)$o['amount'];
+        $item_shipping = (float)$o['shipping_fee'];
+        
+        $total_items_price += $item_price;
+        $total_shipping += $item_shipping;
         $total_wallet += (float)$o['amount_paid_wallet'];
         $total_stripe += (float)$o['amount_paid_stripe'];
-        $items_html .= "<li><strong>" . htmlspecialchars($o['title']) . "</strong> - $" . number_format($o['amount'], 2) . "</li>";
+        
+        $type_label = $o['is_marketplace'] ? "MARKETPLACE<br><small style='color:#666;'>Seller: @" . htmlspecialchars($o['seller_username']) . "</small>" : "SHOP";
+        
+        $items_html .= "
+            <tr>
+                <td style='border: 2px solid #212121; padding: 10px;'><strong>" . htmlspecialchars($o['title']) . "</strong></td>
+                <td style='border: 2px solid #212121; padding: 10px; font-size: 0.9em;'>" . $type_label . "</td>
+                <td style='border: 2px solid #212121; padding: 10px; text-align: right;'>$" . number_format($item_price, 2) . "</td>
+            </tr>
+        ";
     }
-    $items_html .= "</ul>";
+    $items_html .= "</tbody></table>";
+
+    $final_total = $total_items_price + $total_shipping;
+
+    // Payment Method Breakdown
+    $payment_method_html = "<div style='background: #f1f1f1; padding: 15px; border: 3px solid #212121; margin-bottom: 20px;'>
+        <h4 style='margin-top: 0; margin-bottom: 10px; font-family: \"Staatliches\", sans-serif, Arial; font-size: 1.2rem; letter-spacing: 1px;'>PAYMENT SUMMARY</h4>
+        <ul style='list-style: none; padding: 0; margin: 0; font-family: \"Inter\", sans-serif, Arial; line-height: 1.6;'>";
+
+    if ($total_wallet > 0 && $total_stripe <= 0) {
+        $payment_method_html .= "<li><strong>Method:</strong> Wallet Only</li>";
+        $payment_method_html .= "<li><strong>Deducted from Wallet:</strong> $" . number_format($total_wallet, 2) . "</li>";
+    } elseif ($total_stripe > 0 && $total_wallet <= 0) {
+        $payment_method_html .= "<li><strong>Method:</strong> Stripe (Credit/Debit)</li>";
+        $payment_method_html .= "<li><strong>Charged via Stripe:</strong> $" . number_format($total_stripe, 2) . "</li>";
+    } else {
+        $payment_method_html .= "<li><strong>Method:</strong> Mixed (Wallet + Stripe)</li>";
+        $payment_method_html .= "<li><strong>Deducted from Wallet:</strong> $" . number_format($total_wallet, 2) . "</li>";
+        $payment_method_html .= "<li><strong>Charged via Stripe:</strong> $" . number_format($total_stripe, 2) . "</li>";
+    }
+    $payment_method_html .= "</ul></div>";
+
+    // Transaction Details
+    $tx_details = "";
+    if ($stripe_session) {
+        $tx_details = "<div style='font-size: 0.85em; color: #555; margin-top: 20px; font-family: \"Inter\", sans-serif, Arial;'>
+            <strong>Stripe Session Reference:</strong> " . htmlspecialchars($stripe_session) . "
+        </div>";
+    }
 
     $receipt_content = "
-        <p>Thank you for your purchase, " . htmlspecialchars($user['first_name'] ?: 'Skater') . "!</p>
-        <h3>Order Details:</h3>
+        <p style='font-family: \"Inter\", sans-serif, Arial; font-size: 1.1rem; margin-bottom: 25px;'>Thank you for your purchase, <strong>" . htmlspecialchars($user['first_name'] ?: 'Skater') . "</strong>! Here is your official digital receipt.</p>
+        
+        <table width='100%' cellpadding='0' cellspacing='0' style='margin-bottom: 20px; font-family: \"Inter\", sans-serif, Arial; border-bottom: 2px dashed #212121; padding-bottom: 15px;'>
+            <tr>
+                <td align='left'><strong>ORDER DATE:</strong><br>$order_date</td>
+                <td align='right'><strong>ORDER REFERENCE(S):</strong><br>#" . implode(", #", $order_ids) . "</td>
+            </tr>
+        </table>
+
         $items_html
-        <p><strong>Total:</strong> $" . number_format($total_amount, 2) . "</p>
-        <p>Paid via Wallet: $" . number_format($total_wallet, 2) . "<br>
-        Paid via Card/Stripe: $" . number_format($total_stripe, 2) . "</p>
+
+        <table width='100%' cellpadding='0' cellspacing='0' style='margin-bottom: 25px; font-family: \"Inter\", sans-serif, Arial;'>
+            <tr>
+                <td align='right'>
+                    <table width='250' cellpadding='5' cellspacing='0'>
+                        <tr>
+                            <td align='right'><strong>Items Subtotal:</strong></td>
+                            <td align='right'>$" . number_format($total_items_price, 2) . "</td>
+                        </tr>
+                        <tr>
+                            <td align='right'><strong>Shipping Fee:</strong></td>
+                            <td align='right'>$" . number_format($total_shipping, 2) . "</td>
+                        </tr>
+                        <tr><td colspan='2'><hr style='border: 1px solid #212121;'></td></tr>
+                        <tr>
+                            <td align='right' style='font-size: 1.2rem; font-family: \"Staatliches\", sans-serif, Arial; letter-spacing: 1px; color: #ff4b4b;'><strong>TOTAL PAID:</strong></td>
+                            <td align='right' style='font-size: 1.2rem; font-weight: bold; color: #ff4b4b;'>$" . number_format($final_total, 2) . "</td>
+                        </tr>
+                    </table>
+                </td>
+            </tr>
+        </table>
+
+        $payment_method_html
+
+        $tx_details
     ";
 
     $html_body = buildEmailTemplate("Your Purchase Receipt", $receipt_content);

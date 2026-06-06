@@ -59,7 +59,7 @@ if ($count_result) {
 // Handle search
 $search_query = "";
 if (isset($_GET['search'])) {
-    $search_query = trim($_GET['search']);
+    $search_query = mb_substr(trim($_GET['search']), 0, 100);
 }
 
 // Handle status filter
@@ -74,40 +74,49 @@ if (isset($_GET['type_filter'])) {
     $type_filter = $_GET['type_filter'];
 }
 
-// Build the conditions
-$where_sql = " o.is_hidden_admin = 0 ";
+$where = ["o.is_hidden_admin = 0"];
+$types = "";
+$params = [];
 
 if ($status_filter === 'PAID') {
-    $where_sql .= " AND o.status = 'PAID' ";
+    $where[] = "o.status = 'PAID'";
 } elseif ($status_filter === 'CANCELLED') {
-    $where_sql .= " AND o.status = 'CANCELLED' ";
+    $where[] = "o.status = 'CANCELLED'";
 } elseif ($status_filter === 'RECEIVED') {
-    $where_sql .= " AND o.status = 'RECEIVED' ";
+    $where[] = "o.status = 'RECEIVED'";
 } else {
-    $where_sql .= " AND o.status IN ('PAID', 'CANCELLED', 'RECEIVED') ";
+    $where[] = "o.status IN ('PAID', 'CANCELLED', 'RECEIVED')";
 }
 
 if ($type_filter === 'MARKETPLACE') {
-    $where_sql .= " AND p.is_marketplace = 1 ";
+    $where[] = "p.is_marketplace = 1";
 } elseif ($type_filter === 'SHOP') {
-    $where_sql .= " AND p.is_marketplace = 0 ";
+    $where[] = "p.is_marketplace = 0";
 }
 
 if ($search_query !== "") {
-    $clean_search = $conn->real_escape_string($search_query);
     $order_id_search = null;
-    if (preg_match('/^ORD-(\d+)$/i', $clean_search, $matches)) {
+    if (preg_match('/^ORD-(\d+)$/i', $search_query, $matches)) {
         $order_id_search = (int)$matches[1];
     }
     
-    $where_sql .= " AND (";
-    $where_sql .= " p.title LIKE '%$clean_search%' ";
-    $where_sql .= " OR u.username LIKE '%$clean_search%' ";
     if ($order_id_search !== null) {
-        $where_sql .= " OR o.id = $order_id_search ";
+        $where[] = "(p.title LIKE ? OR u.username LIKE ? OR o.id = ?)";
+        $like = "%$search_query%";
+        $params[] = $like;
+        $params[] = $like;
+        $params[] = $order_id_search;
+        $types .= "ssi";
+    } else {
+        $where[] = "(p.title LIKE ? OR u.username LIKE ?)";
+        $like = "%$search_query%";
+        $params[] = $like;
+        $params[] = $like;
+        $types .= "ss";
     }
-    $where_sql .= ") ";
 }
+
+$where_sql = implode(" AND ", $where);
 
 // PAGINATION SETUP
 $limit = 6;
@@ -115,10 +124,23 @@ $page = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
 $offset = ($page - 1) * $limit;
 
 // COUNT TOTAL RECORDS
+$count_res = null;
 $count_sql = "SELECT COUNT(*) as total FROM orders o JOIN products p ON o.product_id = p.id JOIN users u ON o.buyer_id = u.id WHERE $where_sql";
-$count_res = $conn->query($count_sql);
-$total_records = $count_res->fetch_assoc()['total'];
-$total_pages = ceil($total_records / $limit);
+$stmt_count = $conn->prepare($count_sql);
+if ($stmt_count) {
+    if ($types) {
+        $stmt_count->bind_param($types, ...$params);
+    }
+    $stmt_count->execute();
+    $count_res = $stmt_count->get_result();
+}
+
+$total_records = 0;
+$total_pages = 0;
+if ($count_res) {
+    $total_records = $count_res->fetch_assoc()['total'];
+    $total_pages = ceil($total_records / $limit);
+}
 
 // Build the final order query
 $sql = "
@@ -134,15 +156,24 @@ $sql = "
         p.image_url, 
         p.is_marketplace,
         u.username, 
-        u.email 
+        u.email,
+        seller.username as seller_username
     FROM orders o 
     JOIN products p ON o.product_id = p.id 
     JOIN users u ON o.buyer_id = u.id 
+    LEFT JOIN users seller ON p.seller_id = seller.id
     WHERE $where_sql
     ORDER BY o.created_at DESC 
-    LIMIT $limit OFFSET $offset
+    LIMIT ? OFFSET ?
 ";
-$orders_stmt = $conn->query($sql);
+$stmt_data = $conn->prepare($sql);
+$types_data = $types . "ii";
+$params_data = $params;
+$params_data[] = $limit;
+$params_data[] = $offset;
+$stmt_data->bind_param($types_data, ...$params_data);
+$stmt_data->execute();
+$orders_stmt = $stmt_data->get_result();
 ?>
 
 <!DOCTYPE html>
@@ -195,7 +226,7 @@ $orders_stmt = $conn->query($sql);
             <form method="GET" action="client-orders.php" class="search-filter-form">
                 <div class="filter-group search-box" style="flex: 2;">
                     <label>SEARCH ORDERS</label>
-                    <input type="text" name="search" placeholder="Product, ORD-XXXXXX, or Username..." value="<?php echo htmlspecialchars($search_query); ?>">
+                    <input type="text" name="search" placeholder="Product, ORD-XXXXXX, or Username..." value="<?php echo htmlspecialchars($search_query, ENT_QUOTES, 'UTF-8'); ?>">
                 </div>
 
                 <div class="filter-group" style="flex: 1;">
@@ -226,8 +257,7 @@ $orders_stmt = $conn->query($sql);
             </form>
         </div>
         
-            <div class="table-responsive">
-                <table class="recent-activity-table">
+            <div class="table-responsive"><table class="recent-activity-table">
                     <thead>
                         <tr>
                             <th>ORDER INFO</th>
@@ -251,7 +281,9 @@ $orders_stmt = $conn->query($sql);
                                         'amount' => $order['amount'],
                                         'created_at' => $order['created_at'],
                                         'status' => $order['status'],
-                                        'shipping' => $shipping_data
+                                        'shipping' => $shipping_data,
+                                        'is_marketplace' => $order['is_marketplace'],
+                                        'seller_username' => $order['seller_username']
                                     ]), ENT_QUOTES, 'UTF-8');
                                 ?>
                                 <tr onclick="openOrderDetailsModal(this)" data-order-info="<?php echo $shipping_json; ?>" style="cursor: pointer;" class="order-row-hover">
@@ -298,12 +330,9 @@ $orders_stmt = $conn->query($sql);
                                                 <i class="fa-solid fa-ban"></i> CANCEL
                                             </button>
                                         <?php else: ?>
-                                            <form method="POST" style="margin:0;" onsubmit="event.stopPropagation(); return confirm('Are you sure you want to remove this order from the list?');">
-                                                <input type="hidden" name="remove_order_id" value="<?php echo $order['order_id']; ?>">
-                                                <button type="submit" name="remove_order" class="btn-mini btn-danger" onclick="event.stopPropagation();" title="Remove order from list">
-                                                    <i class="fas fa-trash"></i>
-                                                </button>
-                                            </form>
+                                            <button type="button" class="btn-mini btn-danger" onclick="event.stopPropagation(); openConfirmDeleteOrderModal(<?php echo $order['order_id']; ?>)" title="Remove order from list">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
                                         <?php endif; ?>
                                     </td>
                                 </tr>
@@ -314,8 +343,7 @@ $orders_stmt = $conn->query($sql);
                             </tr>
                         <?php endif; ?>
                     </tbody>
-                </table>
-            </div>
+                </table></div>
 
             <?php if ($total_pages > 0): ?>
             <div class="admin-pagination">
@@ -363,7 +391,6 @@ $orders_stmt = $conn->query($sql);
                 maxlength="1000"
                 style="resize:vertical; margin-bottom:6px;"
             ></textarea>
-            <small id="cancelCharCount" style="display:block; text-align:right; color:#888; font-size:0.75rem; margin-bottom:20px;">0 / 1000</small>
 
             <div style="display:flex; gap:12px; margin-top: 1.5rem;">
                 <button type="submit" id="cancelSubmitBtn" class="btn-primary-brutal" style="flex:1; margin-top:0; padding: 0 15px;">
@@ -391,6 +418,9 @@ $orders_stmt = $conn->query($sql);
             <img id="detailsImage" src="" alt="Product" style="width: 80px; height: 80px; object-fit: cover; border: 3px solid var(--charcoal);">
             <div>
                 <h4 id="detailsTitle" style="margin: 0 0 5px 0; font-family: 'Staatliches', sans-serif; font-size: 1.4rem; letter-spacing: 1px; color: var(--charcoal);"></h4>
+                <p id="detailsSellerContainer" style="margin: 0 0 5px 0; font-size: 1.05rem; color: #666; display: none;">
+                    <strong style="color: var(--charcoal);">SELLER:</strong> <span id="detailsSeller"></span>
+                </p>
                 <p style="margin: 0; font-size: 1.05rem; color: #666;"><strong style="color: var(--charcoal);">AMOUNT:</strong> $<span id="detailsAmount"></span></p>
                 <p style="margin: 3px 0 0 0; font-size: 1rem; color: #888;"><strong style="color: var(--charcoal);">DATE:</strong> <span id="detailsDate"></span></p>
             </div>
@@ -439,18 +469,17 @@ function openCancelModal(orderId, purchaseCode) {
     document.getElementById('cancelOrderId').value = orderId;
     document.getElementById('cancelOrderCode').textContent = purchaseCode;
     document.getElementById('cancelReasonInput').value = '';
-    document.getElementById('cancelCharCount').textContent = '0 / 1000';
+    
+    // Dispatch input event to update global character counter
+    const evt = new Event('input');
+    document.getElementById('cancelReasonInput').dispatchEvent(evt);
+    
     document.getElementById('cancelOrderModal').classList.add('active');
 }
 
 function closeCancelModal() {
     document.getElementById('cancelOrderModal').classList.remove('active');
 }
-
-// Character counter
-document.getElementById('cancelReasonInput').addEventListener('input', function() {
-    document.getElementById('cancelCharCount').textContent = this.value.length + ' / 1000';
-});
 
 // Confirm before submit
 document.getElementById('cancelOrderForm').addEventListener('submit', function(e) {
@@ -494,6 +523,14 @@ function openOrderDetailsModal(rowElem) {
     
     document.getElementById('detailsImage').src = data.image_url;
     document.getElementById('detailsTitle').textContent = data.title;
+    
+    if (data.is_marketplace == 1 && data.seller_username) {
+        document.getElementById('detailsSeller').textContent = '@' + data.seller_username;
+        document.getElementById('detailsSellerContainer').style.display = 'block';
+    } else {
+        document.getElementById('detailsSellerContainer').style.display = 'none';
+    }
+    
     document.getElementById('detailsAmount').textContent = parseFloat(data.amount).toFixed(2);
     
     const dateObj = new Date(data.created_at);
@@ -530,6 +567,29 @@ function closeOrderDetailsModal() {
 document.getElementById('orderDetailsModal').addEventListener('click', function(e) {
     if (e.target === this) closeOrderDetailsModal();
 });
+</script>
+
+<div id="confirmDeleteOrderModal" class="modal-overlay" style="z-index: 9999;">
+    <div class="modal-content" style="max-width: 400px; text-align: center;">
+        <span class="close-modal" onclick="closeModal('confirmDeleteOrderModal')">&times;</span>
+        <h3 class="admin-table-h3" style="border:none; margin-bottom:10px;">TRASH <span class="text-primary">ORDER?</span></h3>
+        <p style="font-family:'Inter',sans-serif; font-size:1rem; margin-bottom:20px;">Are you sure you want to remove this order from the list?</p>
+        <form method="POST" action="client-orders.php">
+            <input type="hidden" name="remove_order_id" id="deleteOrderIdInput" value="">
+            <input type="hidden" name="remove_order" value="1">
+            <div style="display: flex; gap: 10px;">
+                <button type="submit" class="btn btn-danger" style="flex: 1; font-size: 1rem;">YES</button>
+                <button type="button" class="btn btn-outline" style="flex: 1; font-size: 1rem;" onclick="closeModal('confirmDeleteOrderModal')">CANCEL</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    function openConfirmDeleteOrderModal(orderId) {
+        document.getElementById('deleteOrderIdInput').value = orderId;
+        document.getElementById('confirmDeleteOrderModal').classList.add('active');
+    }
 </script>
 
 </body>

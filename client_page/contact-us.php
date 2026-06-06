@@ -81,6 +81,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_ticket'])) {
         exit();
     }
     
+    // Length validations
+    if (mb_strlen($full_name) > 50 || mb_strlen($subject) > 100 || mb_strlen($message) > 250) {
+        $_SESSION['msg'] = "INPUT EXCEEDS MAXIMUM ALLOWED LENGTH.";
+        $_SESSION['msg_type'] = "error";
+        header("Location: contact-us.php");
+        exit();
+    }
+    
     if (!filter_var($email, FILTER_VALIDATE_EMAIL) || !preg_match('/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/', $email)) {
         $_SESSION['msg'] = "INVALID EMAIL FORMAT.";
         $_SESSION['msg_type'] = "error";
@@ -192,6 +200,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_ticket'])) {
             }
         }
     </style>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link rel="icon" href="../assets/images/skateshop_favicon.png" type="image/png">
+    <script src="../assets/script.js" defer></script>
 </head>
 <body>
 
@@ -381,3 +392,4 @@ document.addEventListener("DOMContentLoaded", function() {
 
 </body>
 </html>
+

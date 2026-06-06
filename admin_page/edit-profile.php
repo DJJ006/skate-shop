@@ -41,6 +41,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
             $_SESSION['msg'] = "USERNAME OR EMAIL IS ALREADY TAKEN BY ANOTHER USER.";
             $_SESSION['msg_type'] = "error";
         } else {
+            if (mb_strlen($new_username) > 25) {
+                $_SESSION['msg'] = "USERNAME CANNOT EXCEED 25 CHARACTERS.";
+                $_SESSION['msg_type'] = "error";
+                header("Location: edit-profile.php");
+                exit();
+            }
+            if (mb_strlen($new_email) > 100) {
+                $_SESSION['msg'] = "EMAIL CANNOT EXCEED 100 CHARACTERS.";
+                $_SESSION['msg_type'] = "error";
+                header("Location: edit-profile.php");
+                exit();
+            }
             // Update profile
             $upd_sql = "UPDATE users SET username = ?, email = ?";
             $params = [$new_username, $new_email];
@@ -88,6 +100,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <script src="../assets/admin-script.js" defer></script>
+    <link rel="icon" href="../assets/images/skateshop_favicon.png" type="image/png">
 </head>
 <body>
 
@@ -115,13 +128,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
         <div class="grainy-card" style="padding: 30px; max-width: 600px; margin: 0 auto; border-color: var(--primary); border-width: 4px; box-shadow: 8px 8px 0px var(--primary);">
             <form method="POST" action="edit-profile.php" class="admin-form">
                 <label>USERNAME</label>
-                <input type="text" name="username" value="<?php echo htmlspecialchars($admin_data['username']); ?>" required minlength="3">
+                <input type="text" name="username" value="<?php echo htmlspecialchars($admin_data['username']); ?>" required minlength="3" maxlength="25">
                 
                 <label>EMAIL ADDRESS</label>
-                <input type="email" name="email" value="<?php echo htmlspecialchars($admin_data['email']); ?>" required>
+                <input type="email" name="email" value="<?php echo htmlspecialchars($admin_data['email']); ?>" required maxlength="100">
                 
                 <label>NEW PASSWORD <span style="color:#777; font-size: 0.8rem;">(Leave blank to keep current password)</span></label>
-                <input type="password" name="new_password" minlength="6">
+                <input type="password" name="new_password" minlength="6" maxlength="100">
                 
                 <hr style="border: 2px solid #000; margin: 30px 0;">
                 
@@ -137,3 +150,4 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
 
 </body>
 </html>
+

@@ -175,3 +175,4 @@ if ($action === 'get_comments' && $_SERVER['REQUEST_METHOD'] === 'GET') {
 }
 
 echo json_encode(['success' => false, 'error' => 'Unknown action']);
+

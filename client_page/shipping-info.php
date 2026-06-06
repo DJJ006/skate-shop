@@ -10,6 +10,9 @@ include '../db.php';
     <title>SkateShop | SHIPPING INFORMATION</title>
     <link rel="stylesheet" href="../assets/style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link rel="icon" href="../assets/images/skateshop_favicon.png" type="image/png">
+    <script src="../assets/script.js" defer></script>
 </head>
 <body>
 
@@ -43,17 +46,7 @@ include '../db.php';
                     <tr>
                         <td>Standard Domestic</td>
                         <td>3-5 Business Days</td>
-                        <td>$5.00 (Free over $100)</td>
-                    </tr>
-                    <tr>
-                        <td>Express Domestic</td>
-                        <td>1-2 Business Days</td>
-                        <td>$15.00</td>
-                    </tr>
-                    <tr>
-                        <td>Standard International</td>
-                        <td>7-14 Business Days</td>
-                        <td>$25.00</td>
+                        <td>$5.00</td>
                     </tr>
                 </tbody>
             </table>
@@ -85,3 +78,4 @@ include '../db.php';
 
 </body>
 </html>
+

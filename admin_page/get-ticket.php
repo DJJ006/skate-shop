@@ -21,6 +21,11 @@ $r_stmt = $conn->prepare("SELECT * FROM support_ticket_replies WHERE ticket_id =
 $r_stmt->bind_param("i", $ticket_id);
 $r_stmt->execute();
 $replies = $r_stmt->get_result();
+
+// Mark user replies as read by admin
+$read_stmt = $conn->prepare("UPDATE support_ticket_replies SET is_read_by_admin = 1 WHERE ticket_id = ? AND sender_type = 'user'");
+$read_stmt->bind_param("i", $ticket_id);
+$read_stmt->execute();
 ?>
 
 <div id="fetched_ticket_status" style="display:none;"><?php echo htmlspecialchars($ticket['status']); ?></div>
@@ -74,7 +79,8 @@ $replies = $r_stmt->get_result();
     </select>
     
     <label>WRITE A REPLY <span style="font-size:0.8rem; color:#666;">(Will be sent to user via Email & In-App Notification)</span></label>
-    <textarea name="reply_message" rows="4" style="width:100%; padding:10px; margin-bottom:15px; border:2px solid #000; font-family:'Inter',sans-serif;" placeholder="Type your response here... (Leave blank to only update status)"></textarea>
+    <textarea name="reply_message" rows="4" style="width:100%; padding:10px; margin-bottom:15px; border:2px solid #000; font-family:'Inter',sans-serif;" placeholder="Type your response here... (Leave blank to only update status)" maxlength="500"></textarea>
     
     <button type="submit" name="admin_reply" class="btn btn-primary" style="width:100%;">SUBMIT ACTION</button>
 </form>
+

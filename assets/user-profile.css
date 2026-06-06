@@ -404,6 +404,20 @@
     position: relative;
 }
 
+@media (max-width: 768px) {
+    .seller-profile-modal-shell {
+        padding: 20px;
+        width: 95%;
+    }
+}
+
+@media (max-width: 480px) {
+    .seller-profile-modal-shell {
+        padding: 15px;
+        box-shadow: 6px 6px 0px var(--charcoal);
+    }
+}
+
 .user-profile-loading {
     text-align: center;
     padding: 50px;

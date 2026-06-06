@@ -70,6 +70,7 @@ if (isset($conn)) {
 $current_page = basename($_SERVER['PHP_SELF']);
 ?>
 
+<div class="sidebar-overlay"></div>
 <aside class="admin-sidebar grainy-card">
     <h3 class="admin-sidebar-title">SYSTEM <span class="header-span">MENU</span></h3>
     <ul class="admin-nav-list">
@@ -156,3 +157,4 @@ $current_page = basename($_SERVER['PHP_SELF']);
         <li style="margin-top: 10px;"><a href="logout.php" style="color: var(--primary);"><span class="material-icons">logout</span> LOGOUT</a></li>
     </ul>
 </aside>
+

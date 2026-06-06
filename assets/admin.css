@@ -159,13 +159,15 @@
 
 .stat-card h3 {
     font-family: 'Staatliches', sans-serif;
-    font-size: 3.5rem;
+    font-size: clamp(1.8rem, 3vw, 3.5rem);
     margin: 0;
     color: var(--primary);
-    line-height: 1;
-    letter-spacing: -2px;
+    line-height: 1.1;
+    letter-spacing: -1px;
     transform: skewX(-8deg);
     display: inline-block;
+    word-break: break-word;
+    max-width: 100%;
 }
 
 .stat-card p {
@@ -220,6 +222,7 @@
     font-size: 1.2rem;
     color: var(--charcoal);
     background: var(--textwhite);
+    white-space: nowrap;
 }
 
 .recent-activity-table tr:hover td {
@@ -361,6 +364,7 @@
     color: var(--charcoal);
     appearance: none;
     resize: vertical;
+    box-sizing: border-box;
 }
 
 .admin-form input:focus,
@@ -398,6 +402,10 @@
 
 /*SHOP-PRODUCTS*/
 
+.admin-main {
+    min-width: 0;
+    max-width: 100%;
+}
 
 .admin-alert {
     padding: 15px;
@@ -561,7 +569,7 @@ input[type="file"] {
 /* FORM LAYOUT */
 .search-filter-form {
     display: flex;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
     gap: 1rem;
     align-items: flex-end;
     width: 100%;
@@ -576,6 +584,31 @@ input[type="file"] {
     min-width: 0;
     border: none;
     margin: 0;
+}
+
+@media (max-width: 768px) {
+    .search-filter-form {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .filter-group {
+        flex: 1 1 100% !important;
+        width: 100%;
+    }
+
+    .filter-actions {
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        gap: 10px;
+    }
+
+    .filter-actions button,
+    .filter-actions a {
+        width: 100%;
+        margin-top: 5px !important;
+    }
 }
 
 /* LABEL */
@@ -790,6 +823,37 @@ input[type="file"] {
     display: block !important;
 }
 
+.sidebar-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    z-index: 1040;
+    display: none;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.sidebar-overlay.active {
+    display: block;
+    opacity: 1;
+}
+
+.table-responsive {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    margin-bottom: 1.5rem;
+    display: block;
+}
+
+.table-responsive table {
+    width: 100%;
+    min-width: 600px;
+}
 
 /* ===== RESPONSIVE ===== */
 @media (max-width: 1024px) {
@@ -803,30 +867,139 @@ input[type="file"] {
     .admin-layout {
         grid-template-columns: 1fr;
         margin-top: 2rem;
+        width: 100%;
+        max-width: 100vw;
+        overflow-x: hidden;
+    }
+
+    .admin-main {
+        min-width: 0;
+        width: 100%;
+    }
+
+    .main-header {
+        max-width: 100vw;
+    }
+
+    .logo {
+        font-size: clamp(1.5rem, 5vw, 2rem) !important;
+        white-space: normal !important;
+        word-break: break-word;
+    }
+
+    .glitch-text-admin {
+        font-size: clamp(2.2rem, 8vw, 3rem) !important;
+        white-space: normal !important;
+    }
+
+    .admin-text-shop {
+        font-size: 1rem !important;
+    }
+
+    .admin-table-h3 {
+        font-size: clamp(1.5rem, 6vw, 2.2rem) !important;
+    }
+
+    .admin-user-trigger {
+        font-size: 0 !important;
+        padding: 5px 10px !important;
+    }
+
+    .admin-user-trigger i {
+        font-size: 1.2rem;
+    }
+
+    /* STACKED CARD TABLES FOR MOBILE */
+    .table-responsive {
+        overflow: visible !important;
+    }
+
+    .table-responsive table,
+    .table-responsive thead,
+    .table-responsive tbody,
+    .table-responsive tr,
+    .table-responsive th,
+    .table-responsive td {
+        display: block;
+        width: 100%;
+        min-width: 0 !important;
+    }
+
+    .table-responsive thead {
+        display: none;
+    }
+
+    .table-responsive tr {
+        margin-bottom: 1.5rem;
+        border: 4px solid var(--charcoal);
+        background: #fff;
+        box-shadow: 4px 4px 0px var(--charcoal);
+    }
+
+    .table-responsive td {
+        text-align: left !important;
+        padding: 12px 15px !important;
+        border: none !important;
+        border-bottom: 2px dashed #eee !important;
+        white-space: normal !important;
+        min-height: auto;
+    }
+
+    .table-responsive td:last-child {
+        border-bottom: none !important;
+        background: var(--bg-light);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        justify-content: flex-start;
+        align-items: center;
+        padding: 15px !important;
+    }
+
+    .table-responsive .td-id {
+        background: var(--charcoal) !important;
+        color: #fff !important;
+        font-size: 1.3rem !important;
+        padding: 12px 15px !important;
+        border-bottom: none !important;
     }
 
     .admin-sidebar {
-        position: static;
+        position: fixed;
+        top: 0;
+        left: -320px;
+        width: 300px;
+        height: 100vh;
+        max-height: 100vh;
+        z-index: 1050;
+        background-color: var(--bg-light);
+        transition: transform 0.3s ease;
+        border: none;
+        border-right: 4px solid var(--charcoal);
+        padding: 2rem 1.5rem;
+        overflow-y: auto;
+    }
+
+    .admin-sidebar.active {
+        transform: translateX(320px);
     }
 
     .admin-nav-list {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.5rem;
+        display: block;
     }
 
     .admin-nav-list li {
-        margin-bottom: 0;
+        margin-bottom: 0.5rem;
     }
 
     .admin-nav-list a {
-        font-size: 1.1rem;
-        padding: 0.5rem 0.8rem;
+        font-size: 1.3rem;
+        padding: 0.7rem 1rem 0.7rem 0.1rem;
     }
 
     .admin-nav-list a:hover,
     .admin-nav-list a.active {
-        transform: none;
+        transform: translateX(6px);
     }
 
     .stats-grid {
@@ -843,7 +1016,7 @@ input[type="file"] {
 
 @media (max-width: 480px) {
     .stats-grid {
-        grid-template-columns: 1fr 1fr;
+        grid-template-columns: 1fr;
     }
 
     .stat-card {
@@ -851,14 +1024,11 @@ input[type="file"] {
     }
 
     .stat-card h3 {
-        font-size: 2.5rem;
+        font-size: clamp(1.5rem, 6vw, 2.5rem);
     }
 
     .recent-activity-table {
         font-size: 0.9rem;
-        display: block;
-        overflow-x: auto;
-        -webkit-overflow-scrolling: touch;
     }
 }
 
@@ -1008,10 +1178,26 @@ input[type="file"] {
     margin-top: 1rem;
 }
 
+.auth-card {
+    padding: 2.5rem;
+}
+
+@media (max-width: 480px) {
+    .auth-card {
+        padding: 1.2rem !important;
+    }
+}
+
 .form-grid-3 {
     display: grid;
     grid-template-columns: 1fr 1fr 1fr;
     gap: 15px;
+}
+
+@media (max-width: 768px) {
+    .form-grid-3 {
+        grid-template-columns: 1fr;
+    }
 }
 
 /* Mini Listing Cards in Modals */
@@ -1518,6 +1704,8 @@ input[type="file"] {
     transition: var(--transition);
     position: relative;
 }
+
+
 
 /* Hover effect */
 .notification-item:hover {

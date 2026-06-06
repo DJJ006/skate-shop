@@ -39,7 +39,7 @@ if (empty($cancel_reason)) {
     exit();
 }
 
-if (strlen($cancel_reason) > 1000) {
+if (mb_strlen($cancel_reason) > 1000) {
     $_SESSION['admin_msg'] = 'CANCELLATION REASON IS TOO LONG (MAX 1000 CHARACTERS).';
     $_SESSION['admin_msg_type'] = 'error';
     header('Location: client-orders.php');
@@ -210,3 +210,4 @@ try {
     header('Location: client-orders.php');
     exit();
 }
+

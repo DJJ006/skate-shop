@@ -33,11 +33,23 @@ CREATE TABLE IF NOT EXISTS support_ticket_replies (
     FOREIGN KEY (ticket_id) REFERENCES support_tickets(id) ON DELETE CASCADE
 )");
 
+$check_col = $conn->query("SHOW COLUMNS FROM support_ticket_replies LIKE 'is_read_by_admin'");
+if ($check_col->num_rows == 0) {
+    $conn->query("ALTER TABLE support_ticket_replies ADD COLUMN is_read_by_admin TINYINT(1) DEFAULT 0");
+}
+
 // Handle Admin Reply and Status Update
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['admin_reply'])) {
     $ticket_id = (int)$_POST['ticket_id'];
     $new_status = $conn->real_escape_string($_POST['status']);
     $reply_message = trim($_POST['reply_message']);
+    
+    if (mb_strlen($reply_message) > 500) {
+        $_SESSION['msg'] = "REPLY MESSAGE CANNOT EXCEED 500 CHARACTERS.";
+        $_SESSION['msg_type'] = "error";
+        header("Location: reports.php");
+        exit();
+    }
     
     // Update status
     $conn->query("UPDATE support_tickets SET status = '$new_status' WHERE id = $ticket_id");
@@ -70,6 +82,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['admin_reply'])) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_ticket'])) {
     $ticket_id = (int)$_POST['delete_ticket_id'];
     $reason = $conn->real_escape_string($_POST['rejection_reason']);
+    
+    if (mb_strlen($_POST['rejection_reason']) > 500) {
+        $_SESSION['msg'] = "REJECTION REASON CANNOT EXCEED 500 CHARACTERS.";
+        $_SESSION['msg_type'] = "error";
+        header("Location: reports.php");
+        exit();
+    }
     
     $info_stmt = $conn->prepare("SELECT user_id, subject FROM support_tickets WHERE id = ?");
     $info_stmt->bind_param("i", $ticket_id);
@@ -123,7 +142,9 @@ $count_res = $conn->query("SELECT COUNT(*) as total FROM support_tickets t WHERE
 $total_records = $count_res->fetch_assoc()['total'];
 $total_pages = ceil($total_records / $limit);
 
-$sql = "SELECT t.*, u.username FROM support_tickets t LEFT JOIN users u ON t.user_id = u.id WHERE $where ORDER BY t.created_at $order_by LIMIT $limit OFFSET $offset";
+$sql = "SELECT t.*, u.username, 
+        (SELECT COUNT(*) FROM support_ticket_replies WHERE ticket_id = t.id AND sender_type = 'user' AND is_read_by_admin = 0) as unread_user_replies 
+        FROM support_tickets t LEFT JOIN users u ON t.user_id = u.id WHERE $where ORDER BY t.created_at $order_by LIMIT $limit OFFSET $offset";
 $tickets = $conn->query($sql);
 ?>
 
@@ -145,10 +166,12 @@ $tickets = $conn->query($sql);
             border: 4px solid var(--primary);
             box-shadow: 8px 8px 0px #000;
             max-width: 800px;
+            width: 95%;
             margin: 5% auto;
             max-height: 90vh;
             overflow-y: auto;
             position: relative;
+            box-sizing: border-box;
         }
         .badge-status {
             padding: 4px 8px;
@@ -201,6 +224,8 @@ $tickets = $conn->query($sql);
             font-size: 1.05rem;
             line-height: 1.6;
             white-space: pre-wrap;
+            word-wrap: break-word;
+            word-break: break-word;
             color: #111;
         }
         .attachment-link {
@@ -214,6 +239,7 @@ $tickets = $conn->query($sql);
             font-size: 0.9rem;
         }
     </style>
+    <link rel="icon" href="../assets/images/skateshop_favicon.png" type="image/png">
 </head>
 <body>
 
@@ -269,7 +295,7 @@ $tickets = $conn->query($sql);
             </form>
         </div>
 
-            <table class="recent-activity-table">
+            <div class="table-responsive"><table class="recent-activity-table">
                 <thead>
                     <tr>
                         <th>ID</th>
@@ -288,7 +314,12 @@ $tickets = $conn->query($sql);
                             $status_class = strtolower(str_replace(' ', '-', $row['status']));
                         ?>
                             <tr>
-                                <td class="td-id">#<?php echo $row['id']; ?></td>
+                                <td class="td-id">
+                                    #<?php echo $row['id']; ?>
+                                    <?php if ($row['unread_user_replies'] > 0): ?>
+                                        <i class="fa-solid fa-circle-exclamation" style="color: #E11D48; margin-left: 5px;" title="Client Responded"></i>
+                                    <?php endif; ?>
+                                </td>
                                 <td>
                                     <strong><?php echo htmlspecialchars($row['full_name']); ?></strong><br>
                                     <small><?php echo htmlspecialchars($row['email']); ?></small>
@@ -301,7 +332,7 @@ $tickets = $conn->query($sql);
                                 <td><?php echo date('M d, Y H:i', strtotime($row['created_at'])); ?></td>
                                 <td>
                                     <div style="display:flex; gap:10px;">
-                                        <button class="btn btn-primary" style="padding:5px 10px; font-size:0.9rem; border: 2px solid #000;" onclick="openTicketModal(<?php echo $row['id']; ?>)">VIEW</button>
+                                        <button class="btn btn-primary" style="padding:5px 10px; font-size:0.9rem; border: 2px solid #000;" onclick="openTicketModal(<?php echo $row['id']; ?>, this)">VIEW</button>
                                         <button class="btn-mini btn-danger" onclick="openModal('reject-ticket-<?php echo $row['id']; ?>')"><i class="fas fa-trash"></i></button>
                                     </div>
                                 </td>
@@ -315,7 +346,7 @@ $tickets = $conn->query($sql);
                                         <input type="hidden" name="delete_ticket_id" value="<?php echo $row['id']; ?>">
                                         <div class="admin-form-group">
                                             <label class="admin-form-label">WHY ARE YOU REMOVING THIS TICKET?</label>
-                                            <textarea name="rejection_reason" rows="4" class="admin-input-dark" placeholder="E.g. Duplicate ticket, spam, resolved elsewhere..." required style="width: 100%; border: 3px solid #000; padding: 10px; font-family: 'Inter', sans-serif; resize: vertical; margin-bottom: 20px;"></textarea>
+                                            <textarea name="rejection_reason" rows="4" class="admin-input-dark" placeholder="E.g. Duplicate ticket, spam, resolved elsewhere..." required style="width: 100%; border: 3px solid #000; padding: 10px; font-family: 'Inter', sans-serif; resize: vertical; margin-bottom: 20px;" maxlength="500"></textarea>
                                         </div>
                                         <button type="submit" name="delete_ticket" class="btn btn-danger btn-full btn-heavy-font">REMOVE TICKET</button>
                                     </form>
@@ -327,7 +358,7 @@ $tickets = $conn->query($sql);
                         <tr><td colspan="6" style="text-align: center; font-weight:700;">NO TICKETS FOUND.</td></tr>
                     <?php endif; ?>
                 </tbody>
-            </table>
+            </table></div>
 
             <?php if ($total_pages > 0): ?>
             <div class="admin-pagination">
@@ -373,9 +404,20 @@ foreach ($modals_html as $html) {
 </div>
 
 <script>
-function openTicketModal(ticketId) {
+function openTicketModal(ticketId, btnElement = null) {
     document.getElementById('t_id_display').innerText = ticketId;
     document.getElementById('ticketModal').classList.add('active');
+    
+    // Dynamically remove the exclamation icon if it exists
+    if (btnElement) {
+        const row = btnElement.closest('tr');
+        if (row) {
+            const exclamationIcon = row.querySelector('.fa-circle-exclamation');
+            if (exclamationIcon) {
+                exclamationIcon.style.display = 'none';
+            }
+        }
+    }
     
     // Fetch ticket details via AJAX
     fetch('get-ticket.php?id=' + ticketId)
@@ -388,4 +430,5 @@ function openTicketModal(ticketId) {
 
 </body>
 </html>
+
 

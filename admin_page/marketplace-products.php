@@ -14,6 +14,20 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_product'])){
     $description = $conn->real_escape_string($_POST['description']);
     $is_marketplace = 1; 
 
+    if (mb_strlen($_POST['title']) > 50 || mb_strlen($_POST['brand']) > 50 || mb_strlen($_POST['description']) > 500) {
+        $_SESSION['msg'] = "INPUT TOO LONG. MAX LIMITS: TITLE 50, BRAND 50, DESCRIPTION 500.";
+        $_SESSION['msg_type'] = "error";
+        header("Location: marketplace-products.php");
+        exit();
+    }
+
+    if ($price > 5000) {
+        $_SESSION['msg'] = "PRICE CANNOT EXCEED $5000.";
+        $_SESSION['msg_type'] = "error";
+        header("Location: marketplace-products.php");
+        exit();
+    }
+
     $image_url = '';
     if (isset($_FILES['image']) && $_FILES['image']['error'] == 0){
         $target_dir = "../assets/uploads/";
@@ -59,6 +73,20 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_product'])) {
     $condition = $conn->real_escape_string($_POST['condition_badge']); 
     $description = $conn->real_escape_string($_POST['description']);
 
+    if (mb_strlen($_POST['title']) > 50 || mb_strlen($_POST['brand']) > 50 || mb_strlen($_POST['description']) > 500) {
+        $_SESSION['msg'] = "INPUT TOO LONG. MAX LIMITS: TITLE 50, BRAND 50, DESCRIPTION 500.";
+        $_SESSION['msg_type'] = "error";
+        header("Location: marketplace-products.php");
+        exit();
+    }
+
+    if ($price > 5000) {
+        $_SESSION['msg'] = "PRICE CANNOT EXCEED $5000.";
+        $_SESSION['msg_type'] = "error";
+        header("Location: marketplace-products.php");
+        exit();
+    }
+
     $image_query_part = "";
     if (isset($_FILES['image']) && $_FILES['image']['error'] == 0) {
         $target_dir = "../assets/uploads/";
@@ -90,13 +118,41 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_product'])) {
 // --- HANDLE DELETE ---
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_product'])) {
     $id = (int)$_POST['product_id'];
-    $sql = "DELETE FROM products WHERE id=$id AND is_marketplace=1";
-    if ($conn->query($sql) === TRUE) {
-        $_SESSION['msg'] = "MARKET ITEM TRASHED.";
-        $_SESSION['msg_type'] = "success";
-    } else {
-        $_SESSION['msg'] = "ERROR DELETING ITEM.";
+    $reason = trim($_POST['deletion_reason'] ?? '');
+
+    if ($id <= 0 || $reason === '') {
+        $_SESSION['msg'] = "DELETION REASON IS REQUIRED.";
         $_SESSION['msg_type'] = "error";
+    } elseif (mb_strlen($reason) > 500) {
+        $_SESSION['msg'] = "DELETION REASON CANNOT EXCEED 500 CHARACTERS.";
+        $_SESSION['msg_type'] = "error";
+    } else {
+        // Fetch info for notification before delete
+        $info_stmt = $conn->prepare("SELECT seller_id, title FROM products WHERE id = ? AND is_marketplace = 1");
+        $info_stmt->bind_param("i", $id);
+        $info_stmt->execute();
+        $prod = $info_stmt->get_result()->fetch_assoc();
+
+        if ($prod) {
+            $sql = "DELETE FROM products WHERE id=$id AND is_marketplace=1";
+            if ($conn->query($sql) === TRUE) {
+                if (!empty($prod['seller_id'])) {
+                    require_once '../notification-service.php';
+                    $msg = "Your marketplace listing '" . $prod['title'] . "' was removed by an administrator. Reason: " . $reason;
+                    sendAppNotification($conn, $prod['seller_id'], $msg);
+                    $_SESSION['msg'] = "MARKET ITEM TRASHED & SELLER NOTIFIED.";
+                } else {
+                    $_SESSION['msg'] = "MARKET ITEM TRASHED. (NO SELLER ATTACHED)";
+                }
+                $_SESSION['msg_type'] = "success";
+            } else {
+                $_SESSION['msg'] = "ERROR DELETING ITEM.";
+                $_SESSION['msg_type'] = "error";
+            }
+        } else {
+            $_SESSION['msg'] = "ITEM NOT FOUND.";
+            $_SESSION['msg_type'] = "error";
+        }
     }
     
     header("Location: marketplace-products.php");
@@ -104,24 +160,34 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_product'])) {
 }
 
 // --- HANDLE SEARCH & FILTER ---
-$search = isset($_GET['search']) ? $conn->real_escape_string($_GET['search']) : '';
+$search = isset($_GET['search']) ? mb_substr(trim($_GET['search']), 0, 100) : '';
 $cat_filter = isset($_GET['filter_category']) ? $_GET['filter_category'] : []; 
 $sort_by = isset($_GET['sort_by']) ? $_GET['sort_by'] : 'created_at';
 $order = isset($_GET['order']) ? $_GET['order'] : 'DESC';
 
-$where_clauses = ["is_marketplace = 1"];
+$where_clauses = [
+    "p.is_marketplace = 1",
+    "p.id NOT IN (SELECT product_id FROM orders WHERE status IN ('PAID', 'RECEIVED'))"
+];
+
+$types = "";
+$params = [];
 
 if (!empty($search)) { 
-    $where_clauses[] = "(title LIKE '%$search%' OR id LIKE '%$search%')"; 
+    $where_clauses[] = "(p.title LIKE ? OR p.id LIKE ?)"; 
+    $like = "%$search%";
+    $params[] = $like;
+    $params[] = $like;
+    $types .= "ss";
 }
 
 if (!empty($cat_filter) && is_array($cat_filter)) {
-    $sanitized_cats = array_map(function($c) use ($conn) {
-        return "'" . $conn->real_escape_string($c) . "'";
-    }, $cat_filter);
-    
-    $cat_list = implode(',', $sanitized_cats);
-    $where_clauses[] = "category IN ($cat_list)";
+    $placeholders = implode(',', array_fill(0, count($cat_filter), '?'));
+    $where_clauses[] = "p.category IN ($placeholders)";
+    foreach ($cat_filter as $c) {
+        $params[] = $c;
+        $types .= "s";
+    }
 }
 
 $where_sql = implode(' AND ', $where_clauses);
@@ -136,14 +202,25 @@ $page = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
 $offset = ($page - 1) * $limit;
 
 // COUNT TOTAL RECORDS
-$count_sql = "SELECT COUNT(*) as total FROM products WHERE $where_sql";
-$count_res = $conn->query($count_sql);
-$total_records = $count_res->fetch_assoc()['total'];
+$count_sql = "SELECT COUNT(*) as total FROM products p WHERE $where_sql";
+$stmt_count = $conn->prepare($count_sql);
+if ($types) {
+    $stmt_count->bind_param($types, ...$params);
+}
+$stmt_count->execute();
+$total_records = $stmt_count->get_result()->fetch_assoc()['total'];
 $total_pages = ceil($total_records / $limit);
 
-$products_sql = "SELECT id, title, brand, price, category, condition_badge, description, created_at 
-                 FROM products WHERE $where_sql ORDER BY $sort_by $order LIMIT $limit OFFSET $offset";
-$products_result = $conn->query($products_sql);
+$products_sql = "SELECT p.id, p.title, p.brand, p.price, p.category, p.condition_badge, p.description, p.created_at, u.username AS seller_name 
+                 FROM products p LEFT JOIN users u ON p.seller_id = u.id WHERE $where_sql ORDER BY p.$sort_by $order LIMIT ? OFFSET ?";
+$stmt_data = $conn->prepare($products_sql);
+$types_data = $types . "ii";
+$params_data = $params;
+$params_data[] = $limit;
+$params_data[] = $offset;
+$stmt_data->bind_param($types_data, ...$params_data);
+$stmt_data->execute();
+$products_result = $stmt_data->get_result();
 ?>
 
 <!DOCTYPE html>
@@ -193,7 +270,7 @@ $products_result = $conn->query($products_sql);
                 <form method="GET" action="marketplace-products.php" class="search-filter-form">
                     <div class="filter-group search-box">
                         <label>SEARCH</label>
-                        <input type="text" name="search" placeholder="ID or Product Name..." value="<?php echo htmlspecialchars($search); ?>">
+                        <input type="text" name="search" placeholder="ID or Product Name..." value="<?php echo htmlspecialchars($search, ENT_QUOTES, 'UTF-8'); ?>">
                     </div>
 
                     <div class="filter-group">
@@ -251,10 +328,11 @@ $products_result = $conn->query($products_sql);
                 </form>
             </div>
             
-            <table class="recent-activity-table">
+            <div class="table-responsive"><table class="recent-activity-table">
                 <thead>
                     <tr>
                         <th>ID</th>
+                        <th>SELLER</th>
                         <th>ITEM NAME</th>
                         <th>CATEGORY</th>
                         <th>PRICE</th>
@@ -274,6 +352,7 @@ $products_result = $conn->query($products_sql);
                                 '<?php echo addslashes(htmlspecialchars($row['condition_badge'])); ?>'
                             )">
                                 <td class="td-id">#<?php echo $row['id']; ?></td>
+                                <td><strong>@<?php echo htmlspecialchars($row['seller_name'] ?? 'unknown'); ?></strong></td>
                                 <td>
                                     <strong><?php echo htmlspecialchars($row['title']); ?></strong><br>
                                     <small style="opacity: 0.7;"><?php echo htmlspecialchars($row['brand']); ?></small> | 
@@ -285,10 +364,10 @@ $products_result = $conn->query($products_sql);
                             </tr>
                         <?php endwhile; ?>
                     <?php else: ?>
-                        <tr><td colspan="5" style="text-align: center; font-weight:700; font-style: italic;">THE STREET MARKET IS CURRENTLY EMPTY.</td></tr>
+                        <tr><td colspan="6" style="text-align: center; font-weight:700; font-style: italic;">THE STREET MARKET IS CURRENTLY EMPTY.</td></tr>
                     <?php endif; ?>
                 </tbody>
-            </table>
+            </table></div>
 
             <?php if ($total_pages > 0): ?>
             <div class="admin-pagination">
@@ -323,16 +402,16 @@ $products_result = $conn->query($products_sql);
             <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 20px;">
                 <div>
                     <label>ITEM TITLE</label>
-                    <input type="text" name="title" placeholder="E.G. USED BAKER DECK" required>
+                    <input type="text" name="title" placeholder="E.G. USED BAKER DECK" required maxlength="50">
                 </div>
                 <div>
                     <label>BRAND</label>
-                    <input type="text" name="brand" placeholder="E.G. BAKER" required>
+                    <input type="text" name="brand" placeholder="E.G. BAKER" required maxlength="50">
                 </div>
             </div>
 
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
-                <div><label>PRICE ($)</label><input type="number" name="price" step="0.01" required></div>
+                <div><label>PRICE ($)</label><input type="number" name="price" step="0.01" required max="5000"></div>
                 <div>
                     <label>CONDITION</label>
                     <select name="condition_badge" required>
@@ -353,7 +432,7 @@ $products_result = $conn->query($products_sql);
                 <option value="Other">OTHER</option>
             </select>
             <label>DESCRIPTION</label>
-            <textarea name="description" rows="3" required></textarea>
+            <textarea name="description" rows="3" required maxlength="500"></textarea>
             <label>ITEM IMAGE</label>
             <input type="file" name="image" accept="image/*" required>
             <button type="submit" name="add_product" class="btn btn-primary" style="width: 100%; margin-top: 1rem; font-size: 1.4rem;">PUBLISH TO MARKET</button>
@@ -371,16 +450,16 @@ $products_result = $conn->query($products_sql);
             <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 20px;">
                 <div>
                     <label>ITEM TITLE</label>
-                    <input type="text" id="edit_title" name="title" required>
+                    <input type="text" id="edit_title" name="title" required maxlength="50">
                 </div>
                 <div>
                     <label>BRAND</label>
-                    <input type="text" id="edit_brand" name="brand" required>
+                    <input type="text" id="edit_brand" name="brand" required maxlength="50">
                 </div>
             </div>
 
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
-                <div><label>PRICE ($)</label><input type="number" id="edit_price" name="price" step="0.01" required></div>
+                <div><label>PRICE ($)</label><input type="number" id="edit_price" name="price" step="0.01" required max="5000"></div>
                 <div>
                     <label>CONDITION</label>
                     <select id="edit_condition" name="condition_badge" required>
@@ -401,15 +480,32 @@ $products_result = $conn->query($products_sql);
                 <option value="Other">OTHER</option>
             </select>
             <label>DESCRIPTION</label>
-            <textarea id="edit_description" name="description" rows="3" required></textarea>
+            <textarea id="edit_description" name="description" rows="3" required maxlength="500"></textarea>
             <label>CHANGE IMAGE (OPTIONAL)</label>
             <input type="file" name="image" accept="image/*">
             <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 10px; margin-top: 20px;">
                 <button type="submit" name="edit_product" class="btn btn-primary">SAVE CHANGES</button>
-                <button type="submit" name="delete_product" class="btn btn-danger" onclick="return confirm('PERMANENTLY TRASH THIS ITEM?');">
+                <button type="button" class="btn btn-danger" onclick="openModal('deleteModal'); document.getElementById('delete_id').value = document.getElementById('edit_id').value; closeModal('editModal');">
                     <span class="material-icons" style="vertical-align: middle;">delete</span>
                 </button>
             </div>
+        </form>
+    </div>
+</div>
+
+<div id="deleteModal" class="modal-overlay modal-top-layer">
+    <div class="modal-content">
+        <span class="close-modal" onclick="closeModal('deleteModal')">&times;</span>
+        <h3 class="admin-table-h3">DELETE <span class="header-span">CONFIRMATION</span></h3>
+        <form action="marketplace-products.php" method="POST" class="admin-form">
+            <input type="hidden" id="delete_id" name="product_id">
+            
+            <label>WHY ARE YOU DELETING THIS PRODUCT?</label>
+            <textarea name="deletion_reason" rows="4" placeholder="E.g. Inappropriate content, copyright violation, spam..." required maxlength="500"></textarea>
+            
+            <p style="margin-top: 1rem; color: var(--primary); font-family: 'Staatliches', sans-serif; font-size: 0.9rem;">* THIS WILL PERMANENTLY REMOVE THE LISTING AND NOTIFY THE SELLER.</p>
+            
+            <button type="submit" name="delete_product" class="btn btn-danger" style="width:100%; margin-top: 1rem; font-size: 1.2rem;">PERMANENTLY DELETE</button>
         </form>
     </div>
 </div>

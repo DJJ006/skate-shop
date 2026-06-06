@@ -141,7 +141,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     return;
                 }
                 if (data.cart_locked) {
-                    alert('Cart editing is disabled while checkout is in progress.');
+                    showCartAlert('Cart editing is disabled while checkout is in progress.', 'CHECKOUT ACTIVE');
                     if (buttonEl) {
                         buttonEl.innerHTML = isMarketplace ? 'BUY FROM SELLER <span class="material-icons">payments</span>' : 'ADD TO CART <span class="material-icons">shopping_cart</span>';
                         buttonEl.disabled = false;
@@ -159,7 +159,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                     openCart();
                 } else {
-                    alert(data.message || 'Error adding to cart');
+                    showCartAlert(data.message || 'Error adding to cart', 'ERROR');
                     if (buttonEl) {
                         buttonEl.innerHTML = isMarketplace ? 'BUY FROM SELLER <span class="material-icons">payments</span>' : 'ADD TO CART <span class="material-icons">shopping_cart</span>';
                         buttonEl.disabled = false;
@@ -168,7 +168,7 @@ document.addEventListener('DOMContentLoaded', () => {
             })
             .catch(err => {
                 console.error(err);
-                alert("Network error.");
+                showCartAlert("Network error occurred. Please try again.", "NETWORK ERROR");
                 if (buttonEl) { buttonEl.disabled = false; }
             });
     };
@@ -193,7 +193,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (data.success) {
                     refreshCartUI();
                 } else {
-                    alert(data.message || 'Error updating quantity');
+                    showCartAlert(data.message || 'Error updating quantity', 'NOTICE');
                 }
             });
     };
@@ -218,7 +218,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (clearCartBtn) {
         clearCartBtn.addEventListener('click', () => {
-            if (confirm('Are you sure you want to clear your cart?')) {
+            showCartConfirm('Are you sure you want to completely clear your cart?', 'CLEAR CART?', () => {
                 const formData = new FormData();
                 formData.append('action', 'clear');
 
@@ -233,7 +233,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             refreshCartUI();
                         }
                     });
-            }
+            });
         });
     }
 
@@ -271,4 +271,117 @@ document.addEventListener('DOMContentLoaded', () => {
                 updateCheckoutBtn(data.count);
             }
         });
+
+    // Custom Brutalist Alert Modal for Cart
+    function showCartAlert(message, title = 'NOTICE') {
+        let overlay = document.getElementById('cartAlertModalOverlay');
+        if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.id = 'cartAlertModalOverlay';
+            overlay.className = 'cart-modal-overlay';
+
+            const content = document.createElement('div');
+            content.className = 'cart-modal-content';
+
+            const titleEl = document.createElement('h3');
+            titleEl.id = 'cartAlertModalTitle';
+            titleEl.className = 'cart-modal-title';
+
+            const textEl = document.createElement('p');
+            textEl.id = 'cartAlertModalText';
+            textEl.className = 'cart-modal-text';
+
+            const btnEl = document.createElement('button');
+            btnEl.className = 'cart-modal-btn';
+            btnEl.innerText = 'OK';
+            btnEl.onclick = () => { overlay.classList.remove('active'); };
+
+            content.appendChild(titleEl);
+            content.appendChild(textEl);
+            content.appendChild(btnEl);
+            overlay.appendChild(content);
+            document.body.appendChild(overlay);
+
+            // Allow closing by clicking outside the modal content
+            overlay.onclick = (e) => {
+                if (e.target === overlay) {
+                    overlay.classList.remove('active');
+                }
+            };
+        }
+
+        document.getElementById('cartAlertModalTitle').innerHTML = title;
+        document.getElementById('cartAlertModalText').innerHTML = message;
+
+        overlay.classList.add('active');
+    }
+
+    // Custom Brutalist Confirm Modal for Cart
+    function showCartConfirm(message, title, onConfirmCallback) {
+        let overlay = document.getElementById('cartConfirmModalOverlay');
+        if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.id = 'cartConfirmModalOverlay';
+            overlay.className = 'cart-modal-overlay';
+
+            const content = document.createElement('div');
+            content.className = 'cart-modal-content';
+
+            const titleEl = document.createElement('h3');
+            titleEl.id = 'cartConfirmModalTitle';
+            titleEl.className = 'cart-modal-title';
+
+            const textEl = document.createElement('p');
+            textEl.id = 'cartConfirmModalText';
+            textEl.className = 'cart-modal-text';
+
+            const btnContainer = document.createElement('div');
+            btnContainer.style.display = 'flex';
+            btnContainer.style.gap = '10px';
+            btnContainer.style.justifyContent = 'center';
+
+            const confirmBtn = document.createElement('button');
+            confirmBtn.className = 'cart-modal-btn cart-modal-btn-danger';
+            confirmBtn.style.flex = '1';
+            confirmBtn.id = 'cartConfirmYesBtn';
+            confirmBtn.innerText = 'YES';
+
+            const cancelBtn = document.createElement('button');
+            cancelBtn.className = 'cart-modal-btn';
+            cancelBtn.style.flex = '1';
+            cancelBtn.innerText = 'CANCEL';
+            cancelBtn.onclick = () => { overlay.classList.remove('active'); };
+
+            btnContainer.appendChild(confirmBtn);
+            btnContainer.appendChild(cancelBtn);
+
+            content.appendChild(titleEl);
+            content.appendChild(textEl);
+            content.appendChild(btnContainer);
+            overlay.appendChild(content);
+            document.body.appendChild(overlay);
+
+            // Allow closing by clicking outside the modal content
+            overlay.onclick = (e) => {
+                if (e.target === overlay) {
+                    overlay.classList.remove('active');
+                }
+            };
+        }
+
+        document.getElementById('cartConfirmModalTitle').innerHTML = title;
+        document.getElementById('cartConfirmModalText').innerHTML = message;
+
+        const yesBtn = document.getElementById('cartConfirmYesBtn');
+        // Remove old event listeners by cloning the button
+        const newYesBtn = yesBtn.cloneNode(true);
+        yesBtn.parentNode.replaceChild(newYesBtn, yesBtn);
+
+        newYesBtn.onclick = () => {
+            overlay.classList.remove('active');
+            onConfirmCallback();
+        };
+
+        overlay.classList.add('active');
+    }
 });

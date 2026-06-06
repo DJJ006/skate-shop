@@ -14,11 +14,9 @@
             <div class="footer-links">
                 <h4>EXPLORE</h4>
                 <ul>
-                    <li><a href="#">NEW ARRIVALS</a></li>
-                    <li><a href="#">SKATEBOARDS</a></li>
-                    <li><a href="#">STREETWEAR</a></li>
-                    <li><a href="#">ACCESSORIES</a></li>
-                    <li><a href="#">MARKETPLACE</a></li>
+                    <li><a href="shop.php">SHOP</a></li>
+                    <li><a href="marketplace.php">MARKETPLACE</a></li>
+                    <li><a href="community.php">COMMUNITY</a></li>
                 </ul>
             </div>
 

@@ -95,3 +95,4 @@ inject_pagination("$dir/verify-seller.php", "sellers_sql", "users", "role='clien
 inject_pagination("$dir/reports.php", "tickets_sql", "support_tickets", "status = '\$st'");
 inject_pagination("$dir/admin-users.php", "admins_sql", "users", "role='admin'");
 ?>
+

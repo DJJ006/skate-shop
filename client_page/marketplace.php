@@ -2,7 +2,7 @@
 include '../db.php'; 
 
 // 1. Collect and Sanitize Inputs
-$search = isset($_GET['search']) ? $conn->real_escape_string($_GET['search']) : '';
+$search = isset($_GET['search']) ? mb_substr(trim($_GET['search']), 0, 100) : '';
 $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
 $sort = isset($_GET['sort']) ? $_GET['sort'] : 'newest';
 
@@ -22,26 +22,38 @@ $limit = 6;
 $offset = ($page - 1) * $limit;
 
 // 2. Build the WHERE Clause
-$whereClause = "WHERE is_marketplace = 1 AND is_approved = 1 AND id NOT IN (SELECT product_id FROM orders WHERE status IN ('PAID', 'RECEIVED'))";
+$whereClause = "WHERE is_marketplace = 1 AND is_approved = 1 AND id NOT IN (SELECT product_id FROM orders WHERE status IN ('PAID', 'RECEIVED')) AND seller_id IN (SELECT id FROM users WHERE is_blocked = 0)";
+
+$types = "";
+$params = [];
 
 if ($search != '') {
-    $whereClause .= " AND (title LIKE '%$search%' OR brand LIKE '%$search%' OR seller_name LIKE '%$search%')";
+    $whereClause .= " AND (title LIKE ? OR brand LIKE ? OR seller_name LIKE ?)";
+    $like = "%$search%";
+    $params[] = $like;
+    $params[] = $like;
+    $params[] = $like;
+    $types .= "sss";
 }
 
 // Filter by Condition
 if (!empty($selected_conditions)) {
-    $escaped_conds = array_map(function($c) use ($conn) { 
-        return "'" . $conn->real_escape_string($c) . "'"; 
-    }, $selected_conditions);
-    $whereClause .= " AND condition_badge IN (" . implode(',', $escaped_conds) . ")";
+    $placeholders = implode(',', array_fill(0, count($selected_conditions), '?'));
+    $whereClause .= " AND condition_badge IN ($placeholders)";
+    foreach ($selected_conditions as $c) {
+        $params[] = $c;
+        $types .= "s";
+    }
 }
 
 // Filter by Category
 if (!empty($selected_categories)) {
-    $escaped_cats = array_map(function($t) use ($conn) { 
-        return "'" . $conn->real_escape_string($t) . "'"; 
-    }, $selected_categories);
-    $whereClause .= " AND category IN (" . implode(',', $escaped_cats) . ")";
+    $placeholders = implode(',', array_fill(0, count($selected_categories), '?'));
+    $whereClause .= " AND category IN ($placeholders)";
+    foreach ($selected_categories as $c) {
+        $params[] = $c;
+        $types .= "s";
+    }
 }
 
 // 3. Sorting Logic
@@ -54,12 +66,23 @@ if ($sort === 'cheapest') {
 
 // 4. Execution
 $count_query = "SELECT COUNT(*) as total FROM products $whereClause";
-$count_result = $conn->query($count_query);
-$total_items = $count_result->fetch_assoc()['total'];
+$stmt_count = $conn->prepare($count_query);
+if ($types) {
+    $stmt_count->bind_param($types, ...$params);
+}
+$stmt_count->execute();
+$total_items = $stmt_count->get_result()->fetch_assoc()['total'];
 $total_pages = ceil($total_items / $limit);
 
-$sql = "SELECT * FROM products $whereClause $orderClause LIMIT $limit OFFSET $offset";
-$result = $conn->query($sql);
+$sql = "SELECT * FROM products $whereClause $orderClause LIMIT ? OFFSET ?";
+$stmt_data = $conn->prepare($sql);
+$types_data = $types . "ii";
+$params_data = $params;
+$params_data[] = $limit;
+$params_data[] = $offset;
+$stmt_data->bind_param($types_data, ...$params_data);
+$stmt_data->execute();
+$result = $stmt_data->get_result();
 
 $start_item = ($total_items > 0) ? $offset + 1 : 0;
 $end_item = min($offset + $limit, $total_items);
@@ -111,7 +134,7 @@ function get_filter_url($params) {
             <h2>GOT BOARDS COLLECTING DUST?</h2>
             <p>TURN YOUR OLD WOOD AND SCUFFED TRUCKS INTO COLD HARD CASH.</p>
         </div>
-        <a href="#sell" class="btn btn-primary" style="font-size: 1.5rem; text-decoration: none;">START SELLING</a>
+        <a href="client-profile.php?action=sellGear" class="btn btn-primary" style="font-size: 1.5rem; text-decoration: none;">START SELLING</a>
     </div>
 </section>
 </div>
@@ -124,7 +147,7 @@ function get_filter_url($params) {
 <section class="shop-layout container">
 <aside class="shop-sidebar">
         <form action="marketplace.php" method="GET" id="marketFilterForm">
-            <input type="hidden" name="search" value="<?php echo htmlspecialchars($search); ?>">
+            <input type="hidden" name="search" value="<?php echo htmlspecialchars($search, ENT_QUOTES, 'UTF-8'); ?>">
             <input type="hidden" name="sort" value="<?php echo htmlspecialchars($sort); ?>">
 
             <div class="mobile-filter-wrapper">
@@ -167,7 +190,7 @@ function get_filter_url($params) {
                 <div class="search-section">
 
                     <form class="search-wrapper" action="marketplace.php" method="GET">
-                        <input type="text" name="search" placeholder="SEARCH THE SCRAPHEAP..." id="shop-search" value="<?php echo htmlspecialchars($search); ?>">
+                        <input type="text" name="search" placeholder="SEARCH THE SCRAPHEAP..." id="shop-search" value="<?php echo htmlspecialchars($search, ENT_QUOTES, 'UTF-8'); ?>">
                         
                         <?php foreach($selected_conditions as $c): ?><input type="hidden" name="condition[]" value="<?php echo htmlspecialchars($c); ?>"><?php endforeach; ?>
                         <?php foreach($selected_categories as $t): ?><input type="hidden" name="category[]" value="<?php echo htmlspecialchars($t); ?>"><?php endforeach; ?>
@@ -245,57 +268,73 @@ function get_filter_url($params) {
     </div>
 </section>
 
-<div class="bounty">
-    <section class="bounty-board-section container">
-        <div class="bounty-wrapper">
-            <div class="bounty-header">
-                <h2 class="glitch-text-shop">THE BOUNTY BOARD</h2>
-                <p>CASH REWARDS FOR RARE GEAR</p>
+<div class="marketplace-info-banner" style="margin-top: 40px; margin-bottom: 80px;">
+    <section class="container marketplace-grain-bg" style="padding: 60px 30px; text-align: center; background: #111; border: 4px solid var(--charcoal); box-shadow: 12px 12px 0px var(--charcoal); position: relative; overflow: hidden;">
+        <div style="text-align: center; margin-bottom: 50px;">
+            <h2 class="glitch-text" style="font-size: 3rem; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 10px; color: var(--textwhite);">HOW THE <span class="text-primary">MARKETPLACE</span> WORKS</h2>
+            <p style="font-family: 'Inter', sans-serif; font-size: 1.1rem; color: #ccc; max-width: 600px; margin: 0 auto; text-transform: uppercase; font-weight: 800; letter-spacing: 1px;">Join the community. Buy, sell, and trade rare gear.</p>
+        </div>
+        
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 40px;">
+            <!-- Step 1 -->
+            <div class="market-step-card" style="position: relative; background: #fff; border: 4px solid var(--charcoal); padding: 40px 30px; box-shadow: 8px 8px 0px var(--charcoal); transition: all 0.2s ease; cursor: default;">
+                <div style="position: absolute; top: -20px; left: -20px; background: var(--primary); color: #fff; width: 55px; height: 55px; display: flex; align-items: center; justify-content: center; font-family: 'Staatliches', sans-serif; font-size: 2.2rem; border: 4px solid var(--charcoal); box-shadow: 4px 4px 0px var(--charcoal); transform: rotate(-5deg); z-index: 2;">1</div>
+                <div style="text-align: center; margin-bottom: 20px;">
+                    <i class="fa-solid fa-tags" style="font-size: 3.5rem; color: var(--charcoal); transition: color 0.2s ease;"></i>
+                </div>
+                <h4 style="font-family: 'Staatliches', sans-serif; font-size: 1.8rem; margin-bottom: 15px; color: var(--charcoal); text-align: center; letter-spacing: 1px;">LIST YOUR GEAR</h4>
+                <p style="color: #444; font-family: 'Inter', sans-serif; line-height: 1.6; font-size: 1.05rem; text-align: center; font-weight: 500; margin: 0;">Got extra parts or rare decks? Post them up! Set your price, upload clean photos, and let the community browse your stash.</p>
             </div>
             
-            <div class="bounty-grid">
-                <div class="bounty-item">
-                    <span class="tape-effect"></span>
-                    <div class="bounty-stamp">WANTED</div>
-                    <h5>2004 WORLD INDUSTRIES FLAME BOY</h5>
-                    <div class="reward-tag">
-                        <span>REWARD</span>
-                        <strong class="price">$300</strong>
-                    </div>
-                    <div class="buyer-info">
-                        <span class="material-icons">person</span> @OldSchoolDave
-                    </div>
+            <!-- Step 2 -->
+            <div class="market-step-card" style="position: relative; background: #fff; border: 4px solid var(--charcoal); padding: 40px 30px; box-shadow: 8px 8px 0px var(--charcoal); transition: all 0.2s ease; cursor: default;">
+                <div style="position: absolute; top: -20px; left: -20px; background: var(--primary); color: #fff; width: 55px; height: 55px; display: flex; align-items: center; justify-content: center; font-family: 'Staatliches', sans-serif; font-size: 2.2rem; border: 4px solid var(--charcoal); box-shadow: 4px 4px 0px var(--charcoal); transform: rotate(3deg); z-index: 2;">2</div>
+                <div style="text-align: center; margin-bottom: 20px;">
+                    <i class="fa-solid fa-shield-halved" style="font-size: 3.5rem; color: var(--charcoal); transition: color 0.2s ease;"></i>
                 </div>
-
-                <div class="bounty-item">
-                    <span class="tape-effect"></span>
-                    <div class="bounty-stamp red-stamp">HIGH PRIORITY</div>
-                    <h5>ZERO SKULL DECK (SIGNED BY JAMIE THOMAS)</h5>
-                    <div class="reward-tag">
-                        <span>REWARD</span>
-                        <strong class="price">NAME PRICE</strong>
-                    </div>
-                    <div class="buyer-info">
-                        <span class="material-icons">person</span> @ZeroOrDie
-                    </div>
+                <h4 style="font-family: 'Staatliches', sans-serif; font-size: 1.8rem; margin-bottom: 15px; color: var(--charcoal); text-align: center; letter-spacing: 1px;">SECURE CHECKOUT</h4>
+                <p style="color: #444; font-family: 'Inter', sans-serif; line-height: 1.6; font-size: 1.05rem; text-align: center; font-weight: 500; margin: 0;">Buyers pay safely via Stripe or internal Wallet. Funds are securely held until the order is successfully delivered and completed.</p>
+            </div>
+            
+            <!-- Step 3 -->
+            <div class="market-step-card" style="position: relative; background: #fff; border: 4px solid var(--charcoal); padding: 40px 30px; box-shadow: 8px 8px 0px var(--charcoal); transition: all 0.2s ease; cursor: default;">
+                <div style="position: absolute; top: -20px; left: -20px; background: var(--primary); color: #fff; width: 55px; height: 55px; display: flex; align-items: center; justify-content: center; font-family: 'Staatliches', sans-serif; font-size: 2.2rem; border: 4px solid var(--charcoal); box-shadow: 4px 4px 0px var(--charcoal); transform: rotate(-3deg); z-index: 2;">3</div>
+                <div style="text-align: center; margin-bottom: 20px;">
+                    <i class="fa-solid fa-handshake" style="font-size: 3.5rem; color: var(--charcoal); transition: color 0.2s ease;"></i>
                 </div>
-
-                <div class="bounty-item">
-                    <span class="tape-effect"></span>
-                    <div class="bounty-stamp">WANTED</div>
-                    <h5>SPITFIRE FORMULA FOUR 54MM (NEW)</h5>
-                    <div class="reward-tag">
-                        <span>REWARD</span>
-                        <strong class="price">$40</strong>
-                    </div>
-                    <div class="buyer-info">
-                        <span class="material-icons">person</span> @GromSkater
-                    </div>
-                </div>
+                <h4 style="font-family: 'Staatliches', sans-serif; font-size: 1.8rem; margin-bottom: 15px; color: var(--charcoal); text-align: center; letter-spacing: 1px;">BUILD YOUR REP</h4>
+                <p style="color: #444; font-family: 'Inter', sans-serif; line-height: 1.6; font-size: 1.05rem; text-align: center; font-weight: 500; margin: 0;">Ship fast and accurately to earn 5-star reviews. Top rated sellers unlock the coveted Verified Trusted Badge!</p>
             </div>
         </div>
     </section>
 </div>
+
+<style>
+.marketplace-grain-bg::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+    opacity: 0.15; 
+    pointer-events: none; 
+    z-index: 1;
+}
+.marketplace-grain-bg > * {
+    position: relative;
+    z-index: 2;
+}
+
+.market-step-card:hover {
+    transform: translate(-4px, -4px) !important;
+    box-shadow: 12px 12px 0px var(--primary) !important;
+}
+.market-step-card:hover i {
+    color: var(--primary) !important;
+}
+</style>
 
 
 <section id="qna" class="qna-section container">

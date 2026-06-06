@@ -13,14 +13,10 @@ if (isset($_SESSION['msg'])) {
     unset($_SESSION['msg'], $_SESSION['msg_type']);
 }
 
-$table_ok = true;
-$chk = @$conn->query("SELECT 1 FROM community_qna LIMIT 1");
-if ($chk === false) {
-    $table_ok = false;
-}
+
 
 // --- Submit question ---
-if ($table_ok && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_qna'])) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_qna'])) {
     if (!isset($_SESSION['user_id'])) {
         header('Location: login.php');
         exit();
@@ -61,7 +57,7 @@ if ($table_ok && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_q
 $page = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
 $limit = 6;
 $offset = ($page - 1) * $limit;
-$search = isset($_GET['search']) ? trim($_GET['search']) : '';
+$search = isset($_GET['search']) ? mb_substr(trim($_GET['search']), 0, 100) : '';
 $sort = isset($_GET['sort']) && $_GET['sort'] === 'oldest' ? 'oldest' : 'newest';
 
 $published = [];
@@ -69,18 +65,31 @@ $total_published = 0;
 $my_pending = [];
 $total_pages = 1;
 
-if ($table_ok) {
+if (true) {
     $where = "status = 'published'";
+    $types = "";
+    $params = [];
+
     if ($search !== '') {
-        $s = $conn->real_escape_string($search);
-        // Search by title, body content, or username
-        $where .= " AND (title LIKE '%$s%' OR body LIKE '%$s%' OR username LIKE '%$s%')";
+        $where .= " AND (title LIKE ? OR body LIKE ? OR username LIKE ?)";
+        $like = "%$search%";
+        $params[] = $like;
+        $params[] = $like;
+        $params[] = $like;
+        $types .= "sss";
     }
+    
     $order = $sort === 'oldest'
         ? 'ORDER BY COALESCE(published_at, created_at) ASC'
         : 'ORDER BY COALESCE(published_at, created_at) DESC';
 
-    $cr = $conn->query("SELECT COUNT(*) AS c FROM community_qna WHERE $where");
+    $stmt_count = $conn->prepare("SELECT COUNT(*) AS c FROM community_qna WHERE $where");
+    if ($types) {
+        $stmt_count->bind_param($types, ...$params);
+    }
+    $stmt_count->execute();
+    $cr = $stmt_count->get_result();
+    
     if ($cr) {
         $total_published = (int)$cr->fetch_assoc()['c'];
     }
@@ -90,7 +99,15 @@ if ($table_ok) {
         $offset = ($page - 1) * $limit;
     }
 
-    $pq = $conn->query("SELECT id, user_id, title, body, admin_answer, username, published_at, created_at FROM community_qna WHERE $where $order LIMIT $limit OFFSET $offset");
+    $stmt_data = $conn->prepare("SELECT id, user_id, title, body, admin_answer, username, published_at, created_at FROM community_qna WHERE $where $order LIMIT ? OFFSET ?");
+    $types_data = $types . "ii";
+    $params_data = $params;
+    $params_data[] = $limit;
+    $params_data[] = $offset;
+    $stmt_data->bind_param($types_data, ...$params_data);
+    $stmt_data->execute();
+    $pq = $stmt_data->get_result();
+    
     if ($pq) {
         while ($r = $pq->fetch_assoc()) {
             $published[] = $r;
@@ -750,12 +767,7 @@ function get_qna_url($params) {
             <div class="system-alert <?php echo htmlspecialchars($msg_type); ?>" id="form-alert"><?php echo htmlspecialchars($msg); ?></div>
         <?php endif; ?>
 
-        <?php if (!$table_ok): ?>
-            <div class="not-found" style="border-style: solid;">
-                <h3>SETUP REQUIRED</h3>
-                <p>The Q&amp;A database table is not set up yet. Ask your admin to run <code>sql/community_qna.sql</code>.</p>
-            </div>
-        <?php else: ?>
+
 
         <div class="qna-page-layout">
             <div class="qna-main">
@@ -766,7 +778,7 @@ function get_qna_url($params) {
                     <form action="qna.php" method="GET" class="mag-filter-controls">
                         <div class="mag-search-section">
                             <div class="mag-search-field">
-                                <input type="text" name="search" id="mag-search" placeholder="SEARCH BY TITLE, CONTENT OR USERNAME..." value="<?php echo htmlspecialchars($search); ?>" autocomplete="off">
+                                <input type="text" name="search" id="mag-search" placeholder="SEARCH BY TITLE, CONTENT OR USERNAME..." value="<?php echo htmlspecialchars($search, ENT_QUOTES, 'UTF-8'); ?>" autocomplete="off">
                                 <button type="submit" style="display:none;"></button> <!-- Hidden submit for enter key -->
                             </div>
                         </div>
@@ -860,7 +872,7 @@ function get_qna_url($params) {
             </aside>
         </div>
 
-        <?php endif; ?>
+
     </div>
 </section>
 
@@ -874,7 +886,7 @@ function get_qna_url($params) {
     </div>
 </div>
 
-<?php if ($table_ok && isset($_SESSION['user_id'])): ?>
+<?php if (isset($_SESSION['user_id'])): ?>
 <div class="reel-modal-overlay" id="qnaUploadModal">
     <div class="reel-modal-content">
         <span class="reel-modal-close" id="close-qna-modal">&times;</span>

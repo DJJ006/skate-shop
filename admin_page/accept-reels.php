@@ -34,7 +34,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['accept_reel'])) {
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reject_reel_final'])) {
     $id = (int)$_POST['reel_id'];
-    $reason = $conn->real_escape_string($_POST['rejection_reason']);
+    $reason = trim($_POST['rejection_reason']);
+
+    if (mb_strlen($reason) > 500) {
+        $_SESSION['msg'] = "REJECTION REASON CANNOT EXCEED 500 CHARACTERS.";
+        $_SESSION['msg_type'] = "error";
+        header("Location: accept-reels.php");
+        exit();
+    }
+    
+    $reason = $conn->real_escape_string($reason);
 
     $info_stmt = $conn->prepare("SELECT title, user_id FROM reels WHERE id = ?");
     $info_stmt->bind_param("i", $id);
@@ -92,6 +101,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['approve_reel_edit'])) 
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reject_reel_edit'])) {
     $edit_id = (int)$_POST['edit_id'];
     $reason = trim($_POST['rejection_reason']);
+
+    if (mb_strlen($reason) > 500) {
+        $_SESSION['msg'] = "REJECTION REASON CANNOT EXCEED 500 CHARACTERS.";
+        $_SESSION['msg_type'] = "error";
+        header("Location: accept-reels.php");
+        exit();
+    }
 
     $edit_stmt = $conn->prepare("SELECT rer.id, rer.reel_id, rer.user_id, r.title AS old_title FROM reel_edit_requests rer JOIN reels r ON r.id = rer.reel_id WHERE rer.id = ? AND rer.status = 'pending'");
     $edit_stmt->bind_param("i", $edit_id);
@@ -168,6 +184,7 @@ $modals_html = [];
             border: none;
         }
     </style>
+    <link rel="icon" href="../assets/images/skateshop_favicon.png" type="image/png">
 </head>
 <body>
 
@@ -199,7 +216,7 @@ $modals_html = [];
 
         <div class="grainy-card card-padding" style="padding: 20px;">
         <h3 class="admin-table-h3">PENDING <span class="header-span">CLIPS</span></h3>
-            <table class="recent-activity-table">
+            <div class="table-responsive"><table class="recent-activity-table">
                 <thead>
                     <tr>
                         <th>ID</th>
@@ -288,7 +305,7 @@ $modals_html = [];
                                                     rows="4" 
                                                     class="admin-input-dark" 
                                                     placeholder="E.g. Not a skate video, broken link..." 
-                                                    required></textarea>
+                                                    required maxlength="500"></textarea>
                                             </div>
                                             
                                             <button type="submit" name="reject_reel_final" class="btn btn-danger btn-full btn-heavy-font">
@@ -304,7 +321,7 @@ $modals_html = [];
                         <tr><td colspan="5" style="text-align: center; font-weight:700; font-style: italic;">NO PENDING REELS TO REVIEW.</td></tr>
                     <?php endif; ?>
                 </tbody>
-            </table>
+            </table></div>
 
             <?php if ($total_pages > 0): ?>
             <div class="admin-pagination">
@@ -330,7 +347,7 @@ $modals_html = [];
 
         <div class="grainy-card card-padding" style="padding: 20px; margin-top: 30px;">
             <h3 class="admin-table-h3">PENDING <span class="header-span">EDITS</span></h3>
-            <table class="recent-activity-table">
+            <div class="table-responsive"><table class="recent-activity-table">
                 <thead>
                     <tr>
                         <th>EDIT ID</th>
@@ -400,7 +417,7 @@ $modals_html = [];
                                         <input type="hidden" name="edit_id" value="<?php echo $e['edit_id']; ?>">
                                         <div class="admin-form-group">
                                             <label class="admin-form-label">WHY ARE YOU REJECTING THIS EDIT?</label>
-                                            <textarea name="rejection_reason" rows="4" class="admin-input-dark" placeholder="E.g. Title contains inappropriate content..." required></textarea>
+                                            <textarea name="rejection_reason" rows="4" class="admin-input-dark" placeholder="E.g. Title contains inappropriate content..." required maxlength="500"></textarea>
                                         </div>
                                         <button type="submit" name="reject_reel_edit" class="btn btn-danger btn-full btn-heavy-font">SEND REJECTION</button>
                                     </form>
@@ -413,7 +430,7 @@ $modals_html = [];
                         <tr><td colspan="5" style="text-align: center; font-weight:700; font-style: italic;">NO PENDING EDITS TO REVIEW.</td></tr>
                     <?php endif; ?>
                 </tbody>
-            </table>
+            </table></div>
 
             <?php if ($total_pages > 0): ?>
             <div class="admin-pagination">
@@ -457,4 +474,5 @@ $modals_html = [];
 
 </body>
 </html>
+
 

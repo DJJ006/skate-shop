@@ -10,15 +10,56 @@ include '../db.php';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_user'])) {
     $target_user = (int)$_POST['user_id'];
     
-    $del_products = $conn->prepare("DELETE FROM products WHERE seller_id = ?");
-    $del_products->bind_param("i", $target_user);
-    $del_products->execute();
+    $conn->begin_transaction();
+    try {
+        // Buyer Protection Logic (Deleted Seller)
+        $order_chk = $conn->prepare("SELECT o.buyer_id FROM orders o JOIN products p ON o.product_id = p.id WHERE p.seller_id = ? AND o.status = 'PAID'");
+        $order_chk->bind_param("i", $target_user);
+        $order_chk->execute();
+        $buyer_res = $order_chk->get_result();
+        
+        $msg = "The seller from whom you purchased an item is no longer active on the platform. If your order has not been completed or delivered, please contact Support regarding a potential refund or further assistance.";
+        while ($b = $buyer_res->fetch_assoc()) {
+            if (!empty($b['buyer_id'])) {
+                sendAppNotification($conn, $b['buyer_id'], $msg);
+            }
+        }
+        $order_chk->close();
 
-    $del_user = $conn->prepare("DELETE FROM users WHERE id = ?");
-    $del_user->bind_param("i", $target_user);
-    $del_user->execute();
+        // Safely attempt to alter orders table just in case they aren't nullable
+        @$conn->query("ALTER TABLE orders MODIFY buyer_id INT DEFAULT NULL");
+        @$conn->query("ALTER TABLE orders MODIFY seller_id INT DEFAULT NULL");
+        @$conn->query("ALTER TABLE orders MODIFY product_id INT DEFAULT NULL");
+
+        // Nullify order references to preserve order financial history
+        $conn->query("UPDATE orders SET buyer_id = NULL WHERE buyer_id = $target_user");
+        $conn->query("UPDATE orders SET seller_id = NULL WHERE seller_id = $target_user");
+        $conn->query("UPDATE orders o JOIN products p ON o.product_id = p.id SET o.product_id = NULL WHERE p.seller_id = $target_user");
+
+        // Cascading Deletes (hierarchy respected)
+        $conn->query("DELETE FROM user_follows WHERE follower_id = $target_user OR followed_id = $target_user");
+        $conn->query("DELETE FROM support_ticket_replies WHERE user_id = $target_user");
+        $conn->query("DELETE FROM support_tickets WHERE user_id = $target_user");
+        $conn->query("DELETE FROM notifications WHERE user_id = $target_user");
+        $conn->query("DELETE FROM community_shoutouts WHERE user_id = $target_user");
+        $conn->query("DELETE FROM community_qna WHERE user_id = $target_user");
+        $conn->query("DELETE FROM seller_ratings WHERE buyer_id = $target_user OR seller_id = $target_user");
+        $conn->query("DELETE FROM product_reviews WHERE user_id = $target_user");
+        $conn->query("DELETE FROM reel_likes WHERE user_id = $target_user");
+        $conn->query("DELETE FROM reel_comments WHERE user_id = $target_user");
+        $conn->query("DELETE FROM reel_edit_requests WHERE user_id = $target_user");
+        $conn->query("DELETE FROM reels WHERE user_id = $target_user");
+        $conn->query("DELETE FROM products WHERE seller_id = $target_user");
+        $conn->query("DELETE FROM users WHERE id = $target_user");
+
+        $conn->commit();
+        $_SESSION['admin_msg'] = "USER AND ALL ASSOCIATED DATA TERMINATED.";
+    } catch (Exception $e) {
+        $conn->rollback();
+        error_log("Failed to delete user ID {$target_user}: " . $e->getMessage());
+        $_SESSION['admin_msg'] = "ERROR: COULD NOT DELETE USER. Check database logs.";
+    }
     
-    $_SESSION['admin_msg'] = "USER AND LISTINGS TERMINATED.";
     header("Location: registered-users.php");
     exit();
 }
@@ -26,17 +67,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_user'])) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['toggle_block'])) {
     $target_user = (int)$_POST['user_id'];
     
-    $block_stmt = $conn->prepare("UPDATE users SET is_blocked = IF(is_blocked = 1, 0, 1) WHERE id = ?");
-    $block_stmt->bind_param("i", $target_user);
-    $block_stmt->execute();
+    $conn->begin_transaction();
+    try {
+        $chk = $conn->prepare("SELECT is_blocked FROM users WHERE id = ?");
+        $chk->bind_param("i", $target_user);
+        $chk->execute();
+        $is_blocked = $chk->get_result()->fetch_assoc()['is_blocked'] ?? 0;
+        $chk->close();
+        
+        $new_status = ($is_blocked == 1) ? 0 : 1;
+        
+        $block_stmt = $conn->prepare("UPDATE users SET is_blocked = ? WHERE id = ?");
+        $block_stmt->bind_param("ii", $new_status, $target_user);
+        $block_stmt->execute();
+        $block_stmt->close();
+        
+        // Buyer Protection Logic (Suspended Seller)
+        if ($new_status == 1) {
+            $order_chk = $conn->prepare("SELECT o.buyer_id FROM orders o JOIN products p ON o.product_id = p.id WHERE p.seller_id = ? AND o.status = 'PAID'");
+            $order_chk->bind_param("i", $target_user);
+            $order_chk->execute();
+            $buyer_res = $order_chk->get_result();
+            
+            $msg = "The seller from whom you purchased an item has been suspended from the platform. If your order has not been completed or delivered, please contact Support for assistance.";
+            while ($b = $buyer_res->fetch_assoc()) {
+                if (!empty($b['buyer_id'])) {
+                    sendAppNotification($conn, $b['buyer_id'], $msg);
+                }
+            }
+            $order_chk->close();
+        }
+        
+        $conn->commit();
+        $_SESSION['admin_msg'] = "USER STATUS UPDATED.";
+    } catch (Exception $e) {
+        $conn->rollback();
+        error_log("Failed to toggle block user ID {$target_user}: " . $e->getMessage());
+        $_SESSION['admin_msg'] = "ERROR: COULD NOT UPDATE STATUS.";
+    }
     
-    $_SESSION['admin_msg'] = "USER STATUS UPDATED.";
     header("Location: registered-users.php");
     exit();
 }
 
 // --- 2. HANDLE SEARCH & FILTER LOGIC ---
-$search = isset($_GET['search']) ? trim($_GET['search']) : '';
+$search = isset($_GET['search']) ? mb_substr(trim($_GET['search']), 0, 100) : '';
 $status_filter = isset($_GET['status']) ? $_GET['status'] : '';
 
 // Base query
@@ -138,7 +213,7 @@ $modals_html = [];
                 
                 <div class="filter-group search-box">
                     <label>SEARCH</label>
-                    <input type="text" name="search" placeholder="ID, Username or Email..." value="<?php echo htmlspecialchars($search); ?>">
+                    <input type="text" name="search" placeholder="ID, Username or Email..." value="<?php echo htmlspecialchars($search, ENT_QUOTES, 'UTF-8'); ?>">
                 </div>
 
                 <div class="filter-group">
@@ -158,7 +233,7 @@ $modals_html = [];
             </form>
         </div>
 
-            <table class="recent-activity-table">
+            <div class="table-responsive"><table class="recent-activity-table">
                 <thead>
                     <tr>
                         <th>ID</th>
@@ -193,10 +268,9 @@ $modals_html = [];
                                             </button>
                                         </form>
 
-                                        <form method="POST" style="margin:0;" onsubmit="return confirm('WARNING: THIS WILL DELETE THE USER AND ALL THEIR MARKETPLACE ITEMS. CONTINUE?');">
-                                            <input type="hidden" name="user_id" value="<?php echo $user['id']; ?>">
-                                            <button type="submit" name="delete_user" class="btn-mini btn-danger"><i class="fas fa-trash"></i></button>
-                                        </form>
+                                        <button type="button" class="btn-mini btn-danger" onclick="openConfirmDeleteUserModal(<?php echo $user['id']; ?>)">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
                                     </div>
                                 </td>
                             </tr>
@@ -244,7 +318,7 @@ $modals_html = [];
                         </tr>
                     <?php endif; ?>
                 </tbody>
-            </table>
+            </table></div>
 
             <?php if ($total_pages > 0): ?>
             <div class="admin-pagination">
@@ -275,6 +349,29 @@ $modals_html = [];
         echo $html;
     }
 ?>
+
+<div id="confirmDeleteUserModal" class="modal-overlay" style="z-index: 9999;">
+    <div class="modal-content" style="max-width: 400px; text-align: center;">
+        <span class="close-modal" onclick="closeModal('confirmDeleteUserModal')">&times;</span>
+        <h3 class="admin-table-h3" style="border:none; margin-bottom:10px;">TRASH <span class="text-primary">USER?</span></h3>
+        <p style="font-family:'Inter',sans-serif; font-size:1rem; margin-bottom:20px;">Are you sure you want to completely delete this user and all their marketplace items?</p>
+        <form method="POST" action="registered-users.php">
+            <input type="hidden" name="user_id" id="deleteUserIdInput" value="">
+            <input type="hidden" name="delete_user" value="1">
+            <div style="display: flex; gap: 10px;">
+                <button type="submit" class="btn btn-danger" style="flex: 1; font-size: 1rem;">YES</button>
+                <button type="button" class="btn btn-outline" style="flex: 1; font-size: 1rem;" onclick="closeModal('confirmDeleteUserModal')">CANCEL</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    function openConfirmDeleteUserModal(userId) {
+        document.getElementById('deleteUserIdInput').value = userId;
+        document.getElementById('confirmDeleteUserModal').classList.add('active');
+    }
+</script>
 
 </body>
 </html>

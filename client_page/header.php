@@ -7,6 +7,27 @@ if (session_status() === PHP_SESSION_NONE) {
 if (basename($_SERVER['PHP_SELF']) !== 'checkout.php') {
     unset($_SESSION['cart_locked']);
 }
+
+// --- Active Nav State Logic ---
+$current_page = basename($_SERVER['PHP_SELF']);
+$active_nav = '';
+
+if (in_array($current_page, ['shop.php', 'checkout.php', 'success.php'])) {
+    $active_nav = 'shop';
+} elseif (in_array($current_page, ['marketplace.php'])) {
+    $active_nav = 'market';
+} elseif (in_array($current_page, ['community.php', 'reels.php', 'shoutouts.php', 'qna.php', 'the-mag.php', 'mag-article.php', 'mag-api.php', 'user-profile.php'])) {
+    $active_nav = 'community';
+} elseif ($current_page === 'client-profile.php') {
+    $active_nav = 'profile';
+} elseif ($current_page === 'product.php') {
+    // Rely on $isMarketplace flag set in product.php before including header
+    if (isset($isMarketplace) && $isMarketplace) {
+        $active_nav = 'market';
+    } else {
+        $active_nav = 'shop';
+    }
+}
 ?>
 <header class="main-header">
     <div class="container header-content">
@@ -20,9 +41,9 @@ if (basename($_SERVER['PHP_SELF']) !== 'checkout.php') {
 
         <nav class="desktop-nav" id="nav-menu">
             <ul class="nav-links">
-                <li><a href="shop.php" class="nav-item">SHOP</a></li>
-                <li><a href="marketplace.php" class="nav-item">MARKET</a></li>
-                <li><a href="community.php" class="nav-item">COMMUNITY</a></li>
+                <li><a href="shop.php" class="nav-item <?php echo ($active_nav === 'shop') ? 'active-nav' : ''; ?>">SHOP</a></li>
+                <li><a href="marketplace.php" class="nav-item <?php echo ($active_nav === 'market') ? 'active-nav' : ''; ?>">MARKET</a></li>
+                <li><a href="community.php" class="nav-item <?php echo ($active_nav === 'community') ? 'active-nav' : ''; ?>">COMMUNITY</a></li>
                 <?php if (isset($_SESSION['user_id'])): ?>
                 <li>
                     <a href="#" class="nav-item" id="cartIcon" style="position: relative;">
@@ -36,7 +57,7 @@ if (basename($_SERVER['PHP_SELF']) !== 'checkout.php') {
 
                 <?php if(isset($_SESSION['user_id'])): ?>
                     <li>
-                        <a href="client-profile.php" class="nav-item" style="color: var(--primary); display: flex; align-items: center; gap: 5px; padding-bottom: .2rem;">
+                        <a href="client-profile.php" class="nav-item <?php echo ($active_nav === 'profile') ? 'active-nav' : ''; ?>" style="color: var(--primary); display: flex; align-items: center; gap: 5px; padding-bottom: .2rem;">
                             @<?php 
                                 $display_name = $_SESSION['username'];
                                 if (mb_strlen($display_name) > 5) {

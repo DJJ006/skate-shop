@@ -485,6 +485,7 @@ while ($row = $reels_result->fetch_assoc()) $reels[] = $row;
     .intro-tag { display: none; }
 }
     </style>
+    <link rel="icon" href="../assets/images/skateshop_favicon.png" type="image/png">
 </head>
 <body>
 
@@ -543,7 +544,7 @@ while ($row = $reels_result->fetch_assoc()) $reels[] = $row;
                         <div class="reels-filter-controls">
                             <div class="reels-search-section">
                                 <div class="reels-search-wrapper">
-                                    <input type="text" id="reel-search" placeholder="SEARCH REELS BY TITLE OR USERNAME...">
+                                    <input type="text" id="reel-search" placeholder="SEARCH REELS BY TITLE OR USERNAME..." maxlength="100">
                                     <button type="button" class="search-btn"><span class="material-icons">search</span></button>
                                 </div>
                             </div>
@@ -685,6 +686,41 @@ while ($row = $reels_result->fetch_assoc()) $reels[] = $row;
 
 <?php include 'footer.php'; ?>
 
+<script>
+// Character counters for the Reels Modal and Comments
+document.addEventListener('DOMContentLoaded', () => {
+    const reelTitle = document.getElementById('modal-title');
+    const reelTitleCounter = document.getElementById('title-counter');
+    if (reelTitle && reelTitleCounter) {
+        reelTitle.addEventListener('input', () => {
+            const remaining = 35 - reelTitle.value.length;
+            reelTitleCounter.textContent = remaining + ' characters remaining';
+            reelTitleCounter.className = 'modal-char-counter' + (remaining <= 5 ? ' danger' : (remaining <= 10 ? ' warning' : ''));
+        });
+    }
+
+    const reelDesc = document.getElementById('modal-desc');
+    const reelDescCounter = document.getElementById('desc-counter');
+    if (reelDesc && reelDescCounter) {
+        reelDesc.addEventListener('input', () => {
+            const remaining = 100 - reelDesc.value.length;
+            reelDescCounter.textContent = remaining + ' characters remaining';
+            reelDescCounter.className = 'modal-char-counter' + (remaining <= 10 ? ' danger' : (remaining <= 25 ? ' warning' : ''));
+        });
+    }
+
+    const commentInput = document.getElementById('comment-input');
+    const commentCounter = document.getElementById('comment-counter');
+    if (commentInput && commentCounter) {
+        commentInput.addEventListener('input', () => {
+            const remaining = 75 - commentInput.value.length;
+            commentCounter.textContent = remaining + ' characters remaining';
+            commentCounter.className = 'char-counter' + (remaining <= 10 ? ' danger' : (remaining <= 25 ? ' warning' : ''));
+        });
+    }
+});
+</script>
+
 <!-- User Profile Modal -->
 <div id="userProfileModal" class="reel-modal-overlay">
     <div class="modal-content seller-profile-modal-shell" id="userProfileContent" style="padding: 30px; width: 90%; max-width: 1100px; max-height: 90vh; overflow-y: auto;">
@@ -726,3 +762,4 @@ while ($row = $reels_result->fetch_assoc()) $reels[] = $row;
 
 </body>
 </html>
+

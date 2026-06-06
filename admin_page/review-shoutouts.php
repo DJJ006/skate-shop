@@ -178,17 +178,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['shoutout_delete'])) {
 
 // --- List query ---
 $status_filter = isset($_GET['status']) && in_array($_GET['status'], $shoutout_redirect_allowed, true) ? $_GET['status'] : 'all';
-$search_q = isset($_GET['q']) ? trim($_GET['q']) : '';
+$search_q = isset($_GET['q']) ? mb_substr(trim($_GET['q']), 0, 100) : '';
 $sort_filter = $_GET['sort'] ?? 'newest';
 
 $where = ['1=1'];
+$types = "";
+$params = [];
+
 if ($status_filter !== 'all') {
-    $sf = $conn->real_escape_string($status_filter);
-    $where[] = "q.status = '$sf'";
+    $where[] = "q.status = ?";
+    $params[] = $status_filter;
+    $types .= "s";
 }
 if ($search_q !== '') {
-    $s = $conn->real_escape_string($search_q);
-    $where[] = "(q.id = '" . (int)$s . "' OR q.title LIKE '%$s%' OR q.body LIKE '%$s%' OR q.username LIKE '%$s%')";
+    $where[] = "(q.id = ? OR q.title LIKE ? OR q.body LIKE ? OR q.username LIKE ?)";
+    $s_id = (int)$search_q;
+    $like = "%$search_q%";
+    $params[] = $s_id;
+    $params[] = $like;
+    $params[] = $like;
+    $params[] = $like;
+    $types .= "isss";
 }
 $where_sql = implode(' AND ', $where);
 
@@ -208,7 +218,17 @@ $page = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
 $offset = ($page - 1) * $limit;
 
 // COUNT TOTAL RECORDS
-$count_res = @$conn->query("SELECT COUNT(*) as total FROM community_shoutouts q WHERE $where_sql");
+$count_res = null;
+$count_sql = "SELECT COUNT(*) as total FROM community_shoutouts q WHERE $where_sql";
+$stmt_count = $conn->prepare($count_sql);
+if ($stmt_count) {
+    if ($types) {
+        $stmt_count->bind_param($types, ...$params);
+    }
+    $stmt_count->execute();
+    $count_res = $stmt_count->get_result();
+}
+
 if ($count_res) {
     $total_records = $count_res->fetch_assoc()['total'];
     $total_pages = ceil($total_records / $limit);
@@ -216,8 +236,16 @@ if ($count_res) {
     $total_pages = 0;
 }
 
-$list_sql = "SELECT q.* FROM community_shoutouts q WHERE $where_sql $order_sql LIMIT $limit OFFSET $offset";
-$list_result = @$conn->query($list_sql);
+$list_sql = "SELECT q.* FROM community_shoutouts q WHERE $where_sql $order_sql LIMIT ? OFFSET ?";
+$stmt_data = $conn->prepare($list_sql);
+$types_data = $types . "ii";
+$params_data = $params;
+$params_data[] = $limit;
+$params_data[] = $offset;
+$stmt_data->bind_param($types_data, ...$params_data);
+$stmt_data->execute();
+$list_result = $stmt_data->get_result();
+
 $rows = [];
 $table_missing = false;
 if ($list_result === false) {
@@ -347,7 +375,7 @@ function shoutout_status_badge_class(string $status): string {
             <form method="get" action="review-shoutouts.php" class="search-filter-form" id="qna-filter-form">
                 <div class="filter-group search-box">
                     <label>SEARCH SHOUTOUT</label>
-                    <input type="text" name="q" id="qna-search-input" placeholder="ID, title, body, username..." value="<?php echo htmlspecialchars($search_q); ?>" autocomplete="off">
+                    <input type="text" name="q" id="qna-search-input" placeholder="ID, title, body, username..." value="<?php echo htmlspecialchars($search_q, ENT_QUOTES, 'UTF-8'); ?>" autocomplete="off">
                 </div>
 
                 <div class="filter-group" style="flex: 1;">

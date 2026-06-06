@@ -80,8 +80,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_admin'])) {
     $email = trim($_POST['email']);
     $temp_pass = $_POST['temp_password'];
 
-    if (strlen($username) < 3 || strlen($temp_pass) < 6) {
-        $msg = "INVALID INPUTS. USERNAME OR PASSWORD TOO SHORT.";
+    if (strlen($username) < 3 || strlen($username) > 25) {
+        $msg = "INVALID INPUTS. USERNAME MUST BE BETWEEN 3 AND 25 CHARACTERS.";
+        $msg_type = "error";
+    } elseif (strlen($email) > 100) {
+        $msg = "INVALID INPUTS. EMAIL CANNOT EXCEED 100 CHARACTERS.";
+        $msg_type = "error";
+    } elseif (strlen($temp_pass) < 6 || strlen($temp_pass) > 100) {
+        $msg = "INVALID INPUTS. PASSWORD MUST BE BETWEEN 6 AND 100 CHARACTERS.";
         $msg_type = "error";
     } else {
         // Check uniqueness
@@ -153,23 +159,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_admin'])) {
 }
 
 // Fetch Admins
-$search = isset($_GET['search']) ? trim($_GET['search']) : '';
-$where = "role = 'admin'";
+$search = isset($_GET['search']) ? mb_substr(trim($_GET['search']), 0, 100) : '';
+
+$where_arr = ["role = 'admin'"];
+$types = "";
+$params = [];
+
 if ($search) {
-    $clean_search = $conn->real_escape_string($search);
-    $where .= " AND (username LIKE '%$clean_search%' OR email LIKE '%$clean_search%')";
+    $where_arr[] = "(username LIKE ? OR email LIKE ?)";
+    $like = "%$search%";
+    $params[] = $like;
+    $params[] = $like;
+    $types .= "ss";
 }
+
+$where_sql = implode(" AND ", $where_arr);
+
 // PAGINATION SETUP
 $limit = 6;
 $page = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
 $offset = ($page - 1) * $limit;
 
 // COUNT TOTAL RECORDS
-$count_res = $conn->query("SELECT COUNT(*) as total FROM users WHERE $where");
-$total_records = $count_res->fetch_assoc()['total'];
-$total_pages = ceil($total_records / $limit);
+$count_res = null;
+$count_sql = "SELECT COUNT(*) as total FROM users WHERE $where_sql";
+$stmt_count = $conn->prepare($count_sql);
+if ($stmt_count) {
+    if ($types) {
+        $stmt_count->bind_param($types, ...$params);
+    }
+    $stmt_count->execute();
+    $count_res = $stmt_count->get_result();
+}
 
-$admins_q = $conn->query("SELECT id, username, email, created_at, last_login, is_blocked FROM users WHERE $where ORDER BY id ASC LIMIT $limit OFFSET $offset");
+$total_records = 0;
+$total_pages = 0;
+if ($count_res) {
+    $total_records = $count_res->fetch_assoc()['total'];
+    $total_pages = ceil($total_records / $limit);
+}
+
+$list_sql = "SELECT id, username, email, created_at, last_login, is_blocked FROM users WHERE $where_sql ORDER BY id ASC LIMIT ? OFFSET ?";
+$stmt_data = $conn->prepare($list_sql);
+$types_data = $types . "ii";
+$params_data = $params;
+$params_data[] = $limit;
+$params_data[] = $offset;
+$stmt_data->bind_param($types_data, ...$params_data);
+$stmt_data->execute();
+$admins_q = $stmt_data->get_result();
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -183,6 +221,7 @@ $admins_q = $conn->query("SELECT id, username, email, created_at, last_login, is
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <script src="../assets/admin-script.js" defer></script>
+    <link rel="icon" href="../assets/images/skateshop_favicon.png" type="image/png">
 </head>
 <body>
 
@@ -216,7 +255,7 @@ $admins_q = $conn->query("SELECT id, username, email, created_at, last_login, is
                 
                 <div class="filter-group search-box">
                     <label>SEARCH</label>
-                    <input type="text" name="search" placeholder="Search username or email..." value="<?php echo htmlspecialchars($search); ?>">
+                    <input type="text" name="search" placeholder="Search username or email..." value="<?php echo htmlspecialchars($search, ENT_QUOTES, 'UTF-8'); ?>">
                 </div>
 
                 <div class="filter-actions" style="margin-top:22px;">
@@ -227,7 +266,7 @@ $admins_q = $conn->query("SELECT id, username, email, created_at, last_login, is
             </form>
         </div>
 
-            <table class="recent-activity-table">
+            <div class="table-responsive"><table class="recent-activity-table">
                 <thead>
                     <tr>
                         <th>ID</th>
@@ -262,10 +301,9 @@ $admins_q = $conn->query("SELECT id, username, email, created_at, last_login, is
                                         <input type="hidden" name="new_status" value="<?php echo $row['is_blocked'] == 1 ? 0 : 1; ?>">
                                         <button type="submit" name="toggle_admin" class="btn-mini btn-danger">TOGGLE</button>
                                     </form>
-                                    <form method="POST" style="display:inline-block;" onsubmit="return confirm('WARNING: Permanently delete this admin account?');">
-                                        <input type="hidden" name="admin_id" value="<?php echo $row['id']; ?>">
-                                        <button type="submit" name="delete_admin" class="btn-mini btn-danger"><i class="fas fa-trash"></i></button>
-                                    </form>
+                                    <button type="button" class="btn-mini btn-danger" onclick="openConfirmDeleteAdminModal(<?php echo $row['id']; ?>)" title="Delete Admin">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
                                     <button type="button" class="btn-mini btn-danger" onclick="openChangePasswordModal(<?php echo $row['id']; ?>)" title="Change Password"><i class="fas fa-key"></i></button>
                                 <?php endif; ?>
                             </td>
@@ -277,7 +315,7 @@ $admins_q = $conn->query("SELECT id, username, email, created_at, last_login, is
                         </tr>
                     <?php endif; ?>
                 </tbody>
-            </table>
+            </table></div>
 
             <?php if ($total_pages > 0): ?>
             <div class="admin-pagination">
@@ -311,13 +349,13 @@ $admins_q = $conn->query("SELECT id, username, email, created_at, last_login, is
         <h3 class="admin-table-h3">CREATE <span class="header-span">NEW ADMIN</span></h3>
         <form method="POST" action="admin-users.php" class="admin-form">
             <label>USERNAME *</label>
-            <input type="text" name="username" required minlength="3">
+            <input type="text" name="username" required minlength="3" maxlength="25">
             
             <label>EMAIL ADDRESS *</label>
-            <input type="email" name="email" required>
+            <input type="email" name="email" required maxlength="100">
             
             <label>TEMPORARY PASSWORD *</label>
-            <input type="text" name="temp_password" required minlength="6" placeholder="Will be hashed securely...">
+            <input type="text" name="temp_password" required minlength="6" maxlength="100" placeholder="Will be hashed securely...">
             
             <button type="submit" name="create_admin" class="btn-primary-brutal" style="width: 100%; margin-top: 20px; font-size: 1.5rem; padding: 15px;">CREATE ACCOUNT</button>
         </form>
@@ -333,11 +371,10 @@ $admins_q = $conn->query("SELECT id, username, email, created_at, last_login, is
             <input type="hidden" name="target_admin_id" id="target_admin_id" value="">
             
             <label>NEW PASSWORD</label>
-            <input type="password" name="new_password" id="admin_new_password" required maxlength="50">
-            <div style="font-size: 0.8rem; color: #666; text-align: right; margin-top: -10px; margin-bottom: 10px; font-family: 'Inter', sans-serif;"><span id="adminCharCount">0</span> / 50 characters</div>
+            <input type="password" name="new_password" id="admin_new_password" required maxlength="100">
             
             <label>CONFIRM NEW PASSWORD</label>
-            <input type="password" name="confirm_password" id="admin_confirm_password" required maxlength="50">
+            <input type="password" name="confirm_password" id="admin_confirm_password" required maxlength="100">
             
             <div style="background: var(--textwhite); border: 2px solid var(--charcoal); padding: 15px; margin-bottom: 20px; font-family: 'Inter', sans-serif; font-size: 0.9rem;">
                 <div id="admin-req-length" style="margin-bottom: 8px; display: flex; align-items: center; gap: 10px; color: #d32f2f;">
@@ -375,7 +412,6 @@ function openChangePasswordModal(id) {
 
 const apwd = document.getElementById('admin_new_password');
 const aconf = document.getElementById('admin_confirm_password');
-const achar = document.getElementById('adminCharCount');
 const abtn = document.getElementById('adminSubmitBtn');
 
 const areqL = document.getElementById('admin-req-length');
@@ -385,8 +421,6 @@ const areqM = document.getElementById('admin-req-match');
 function adminUpdateValidation() {
     const val = apwd.value;
     const confVal = aconf.value;
-
-    achar.textContent = val.length;
 
     let isLength = val.length >= 8;
     toggleValid(areqL, isLength);
@@ -427,6 +461,31 @@ if(apwd && aconf) {
 }
 </script>
 
+<!-- ===== CONFIRM DELETE MODAL ===== -->
+<div id="confirmDeleteAdminModal" class="modal-overlay" style="z-index: 9999;">
+    <div class="modal-content" style="max-width: 400px; text-align: center;">
+        <span class="close-modal" onclick="closeModal('confirmDeleteAdminModal')">&times;</span>
+        <h3 class="admin-table-h3" style="border:none; margin-bottom:10px;">TRASH <span class="text-primary">ADMIN?</span></h3>
+        <p style="font-family:'Inter',sans-serif; font-size:1rem; margin-bottom:20px;">WARNING: Permanently delete this admin account?</p>
+        <form method="POST" action="admin-users.php">
+            <input type="hidden" name="admin_id" id="deleteAdminIdInput" value="">
+            <input type="hidden" name="delete_admin" value="1">
+            <div style="display: flex; gap: 10px;">
+                <button type="submit" class="btn btn-danger" style="flex: 1; font-size: 1rem;">YES</button>
+                <button type="button" class="btn btn-outline" style="flex: 1; font-size: 1rem;" onclick="closeModal('confirmDeleteAdminModal')">CANCEL</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    function openConfirmDeleteAdminModal(adminId) {
+        document.getElementById('deleteAdminIdInput').value = adminId;
+        document.getElementById('confirmDeleteAdminModal').classList.add('active');
+    }
+</script>
+
 </body>
 </html>
+
 

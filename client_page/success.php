@@ -173,6 +173,7 @@ if (isset($_SESSION['user_id'])) {
             color: var(--textwhite);
         }
     </style>
+    <link rel="icon" href="../assets/images/skateshop_favicon.png" type="image/png">
 </head>
 <body>
 

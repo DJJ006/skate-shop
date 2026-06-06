@@ -15,6 +15,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_reel'])) {
     if ($id <= 0 || $reason === '') {
         $_SESSION['msg'] = "DELETION REASON IS REQUIRED.";
         $_SESSION['msg_type'] = "error";
+    } elseif (mb_strlen($reason) > 500) {
+        $_SESSION['msg'] = "DELETION REASON CANNOT EXCEED 500 CHARACTERS.";
+        $_SESSION['msg_type'] = "error";
     } else {
         // Fetch info for notification before delete
         $info_stmt = $conn->prepare("SELECT user_id, title FROM reels WHERE id = ?");
@@ -58,14 +61,21 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['admin_delete_comment']
 }
 
 // Handle search
-$search_query = isset($_GET['search']) ? trim($_GET['search']) : "";
+$search_query = isset($_GET['search']) ? mb_substr(trim($_GET['search']), 0, 100) : "";
 $sort_filter = isset($_GET['sort']) ? $_GET['sort'] : 'newest';
 
 $where = ["r.is_approved = 1"];
+$types = "";
+$params = [];
 
 if ($search_query !== "") {
-    $clean_search = $conn->real_escape_string($search_query);
-    $where[] = "(r.id = '" . (int)$clean_search . "' OR r.title LIKE '%$clean_search%' OR u.username LIKE '%$clean_search%')";
+    $where[] = "(r.id = ? OR r.title LIKE ? OR u.username LIKE ?)";
+    $s_id = (int)$search_query;
+    $like = "%$search_query%";
+    $params[] = $s_id;
+    $params[] = $like;
+    $params[] = $like;
+    $types .= "iss";
 }
 
 $where_sql = implode(" AND ", $where);
@@ -87,10 +97,23 @@ $page = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
 $offset = ($page - 1) * $limit;
 
 // COUNT TOTAL RECORDS
+$count_res = null;
 $count_sql = "SELECT COUNT(*) as total FROM reels r JOIN users u ON r.user_id = u.id WHERE $where_sql";
-$count_res = $conn->query($count_sql);
-$total_records = $count_res->fetch_assoc()['total'];
-$total_pages = ceil($total_records / $limit);
+$stmt_count = $conn->prepare($count_sql);
+if ($stmt_count) {
+    if ($types) {
+        $stmt_count->bind_param($types, ...$params);
+    }
+    $stmt_count->execute();
+    $count_res = $stmt_count->get_result();
+}
+
+$total_records = 0;
+$total_pages = 0;
+if ($count_res) {
+    $total_records = $count_res->fetch_assoc()['total'];
+    $total_pages = ceil($total_records / $limit);
+}
 
 $reels_sql = "SELECT r.*, u.username,
     (SELECT COUNT(*) FROM reel_likes WHERE reel_id = r.id) as like_count,
@@ -98,9 +121,16 @@ $reels_sql = "SELECT r.*, u.username,
     FROM reels r 
     JOIN users u ON r.user_id = u.id
     WHERE $where_sql
-    ORDER BY $order_sql LIMIT $limit OFFSET $offset";
+    ORDER BY $order_sql LIMIT ? OFFSET ?";
 
-$reels_result = $conn->query($reels_sql);
+$stmt_data = $conn->prepare($reels_sql);
+$types_data = $types . "ii";
+$params_data = $params;
+$params_data[] = $limit;
+$params_data[] = $offset;
+$stmt_data->bind_param($types_data, ...$params_data);
+$stmt_data->execute();
+$reels_result = $stmt_data->get_result();
 
 function reel_status_badge(int $is_approved): string {
     if ($is_approved == 0) return '<span class="listing-status-badge status-received">PENDING</span>';
@@ -174,6 +204,7 @@ $modals_html = [];
         }
     }
 </style>
+    <link rel="icon" href="../assets/images/skateshop_favicon.png" type="image/png">
 </head>
 <body>
 
@@ -204,7 +235,7 @@ $modals_html = [];
                 <form method="GET" action="reels.php" class="search-filter-form">
                     <div class="filter-group search-box" style="flex: 2;">
                         <label>SEARCH REELS</label>
-                        <input type="text" name="search" placeholder="ID, Title, or Username..." value="<?php echo htmlspecialchars($search_query); ?>">
+                        <input type="text" name="search" placeholder="ID, Title, or Username..." value="<?php echo htmlspecialchars($search_query, ENT_QUOTES, 'UTF-8'); ?>">
                     </div>
 
                     <div class="filter-group" style="flex: 1;">
@@ -226,7 +257,7 @@ $modals_html = [];
                 </form>
             </div>
 
-            <table class="recent-activity-table">
+            <div class="table-responsive"><table class="recent-activity-table">
                 <thead>
                     <tr>
                         <th>ID</th>
@@ -321,7 +352,7 @@ $modals_html = [];
                                         <input type="hidden" name="reel_id" value="<?php echo $item['id']; ?>">
                                         
                                         <label>WHY ARE YOU DELETING THIS REEL?</label>
-                                        <textarea name="deletion_reason" rows="4" placeholder="E.g. Inappropriate content, copyright violation, spam..." required></textarea>
+                                        <textarea name="deletion_reason" rows="4" placeholder="E.g. Inappropriate content, copyright violation, spam..." required maxlength="500"></textarea>
                                         
                                         <p style="margin-top: 1rem; color: var(--primary); font-family: 'Staatliches', sans-serif; font-size: 0.9rem;">* THIS WILL PERMANENTLY REMOVE THE REEL, LIKES, AND COMMENTS.</p>
                                         
@@ -336,7 +367,7 @@ $modals_html = [];
                         <tr><td colspan="7" style="text-align: center; font-weight:700; font-style: italic;">NO PUBLISHED REELS FOUND.</td></tr>
                     <?php endif; ?>
                 </tbody>
-            </table>
+            </table></div>
 
             <?php if ($total_pages > 0): ?>
             <div class="admin-pagination">
@@ -366,4 +397,5 @@ $modals_html = [];
 
 </body>
 </html>
+
 
