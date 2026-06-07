@@ -160,8 +160,6 @@ if ($types !== "") {
 }
 $stmt->execute();
 $users_result = $stmt->get_result();
-
-$modals_html = [];
 ?>
 
 <!DOCTYPE html>
@@ -259,8 +257,6 @@ $modals_html = [];
                                 </td>
                                 <td>
                                     <div class="action-cell">
-                                        <button class="btn-mini btn-view" onclick="openModal('modal-<?php echo $user['id']; ?>')">VIEW LISTINGS</button>
-
                                         <form method="POST" style="margin:0;">
                                             <input type="hidden" name="user_id" value="<?php echo $user['id']; ?>">
                                             <button type="submit" name="toggle_block" class="btn-mini btn-block">
@@ -275,41 +271,7 @@ $modals_html = [];
                                 </td>
                             </tr>
 
-                            <?php
-                            $market_sql = "SELECT id, title, price, image_url FROM products WHERE seller_id = " . $user['id'] . " AND is_marketplace = 1";
-                            $market_res = $conn->query($market_sql);
 
-                            ob_start();
-                            ?>
-                            <div id="modal-<?php echo $user['id']; ?>" class="modal-overlay">
-                                <div class="modal-content">
-                                    <span class="close-modal" onclick="closeModal('modal-<?php echo $user['id']; ?>')">&times;</span>
-                                    <h3 class="admin-table-h3 top-title"><?php echo htmlspecialchars($user['username']); ?>'S <span class="header-span">GEAR</span></h3>
-                                    
-                                    <div class="listings-grid">
-                                        <?php if($market_res && $market_res->num_rows > 0): ?>
-                                            <?php while($item = $market_res->fetch_assoc()): ?>
-                                                <div class="mini-listing">
-                                                    <img src="<?php echo htmlspecialchars($item['image_url']); ?>" alt="Gear">
-                                                    <div class="mini-listing-info">
-                                                        <h4 class="mini-listing-title"><?php echo htmlspecialchars($item['title']); ?></h4>
-                                                        <p class="mini-listing-price">$<?php echo number_format($item['price'], 2); ?></p>
-                                                    </div>
-                                                    <span class="mini-listing-id">#<?php echo $item['id']; ?></span>
-                                                </div>
-                                            <?php endwhile; ?>
-                                        <?php else: ?>
-                                            <div class="empty-placeholder-box">
-                                                <h4 class="empty-placeholder-title">NO GEAR LISTED</h4>
-                                                <p class="empty-placeholder-text">This user hasn't added anything to the street market.</p>
-                                            </div>
-                                        <?php endif; ?>
-                                    </div>
-                                </div>
-                            </div>
-                            <?php
-                            $modals_html[] = ob_get_clean();
-                            ?>
 
                         <?php endwhile; ?>
                     <?php else: ?>
@@ -343,12 +305,6 @@ $modals_html = [];
         </div>
     </main>
 </section>
-
-<?php 
-    foreach ($modals_html as $html) {
-        echo $html;
-    }
-?>
 
 <div id="confirmDeleteUserModal" class="modal-overlay" style="z-index: 9999;">
     <div class="modal-content" style="max-width: 400px; text-align: center;">

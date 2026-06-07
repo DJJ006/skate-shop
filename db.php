@@ -13,6 +13,20 @@ if(!$conn){
     #echo "Ir izveidots savienojums ar datubāzi";
 }
 
+try {
+    $conn->query("CREATE TABLE IF NOT EXISTS login_rate_limits (
+        ip_address VARCHAR(45) PRIMARY KEY,
+        failed_attempts INT DEFAULT 0,
+        lockout_until INT DEFAULT NULL
+    )");
+    $conn->query("CREATE TABLE IF NOT EXISTS login_lockout_logs (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        ip_address VARCHAR(45) NOT NULL,
+        email_attempted VARCHAR(255) NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )");
+} catch (Exception $e) { /* ignore */ }
+
 require_once __DIR__ . '/notification-service.php';
 
 if (!function_exists('sendSellerPayoutNotification')) {

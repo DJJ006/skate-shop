@@ -125,7 +125,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
             </div>
         <?php endif; ?>
 
-        <div class="grainy-card" style="padding: 30px; max-width: 600px; margin: 0 auto; border-color: var(--primary); border-width: 4px; box-shadow: 8px 8px 0px var(--primary);">
+        <div class="grainy-card" style="padding: 30px; max-width: 600px; margin: 0; border-color: var(--primary); border-width: 4px; box-shadow: 8px 8px 0px var(--primary);">
             <form method="POST" action="edit-profile.php" class="admin-form">
                 <label>USERNAME</label>
                 <input type="text" name="username" value="<?php echo htmlspecialchars($admin_data['username']); ?>" required minlength="3" maxlength="25">

@@ -137,6 +137,13 @@ if (isset($_GET['delete_notif'])) {
     exit();
 }
 
+// Delete all notifications
+if (isset($_GET['delete_all_notifs'])) {
+    $conn->query("DELETE FROM notifications WHERE user_id = $user_id");
+    header("Location: client-profile.php");
+    exit();
+}
+
 $msg = '';
 $msg_type = '';
 
@@ -568,6 +575,20 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['hide_sale_record'])) {
         $upd->bind_param("i", $order_id);
         $upd->execute();
         $_SESSION['msg'] = "SALE RECORD REMOVED.";
+        $_SESSION['msg_type'] = "success";
+    }
+    header("Location: client-profile.php");
+    exit();
+}
+
+// --- POST: REMOVE FOLLOWER ---
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['remove_follower'])) {
+    $follower_id = (int)$_POST['follower_id'];
+    
+    $del_stmt = $conn->prepare("DELETE FROM user_follows WHERE follower_id = ? AND followed_id = ?");
+    $del_stmt->bind_param("ii", $follower_id, $user_id);
+    if ($del_stmt->execute()) {
+        $_SESSION['msg'] = "FOLLOWER REMOVED.";
         $_SESSION['msg_type'] = "success";
     }
     header("Location: client-profile.php");
@@ -1552,7 +1573,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_user_ticket_bt
                         <span style="font-family: 'Staatliches', sans-serif; font-size: 1.2rem; color: var(--charcoal);">
                             @<?php echo htmlspecialchars($f['username']); ?>
                         </span>
-                        <button class="btn-mini btn-view" style="margin-left: auto;" onclick="closeModal('followersModal'); openMyProfile('<?php echo urlencode($f['username']); ?>')">VIEW</button>
+                        <div style="margin-left: auto; display: flex; gap: 0.5rem;">
+                            <button class="btn-mini btn-view" onclick="closeModal('followersModal'); openMyProfile('<?php echo urlencode($f['username']); ?>')">VIEW</button>
+                            <button class="btn-mini btn-danger" onclick="openConfirmRemoveFollowerModal(<?php echo $f['id']; ?>)">REMOVE</button>
+                        </div>
                     </div>
                 <?php endwhile; ?>
             <?php else: ?>
@@ -2049,8 +2073,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_user_ticket_bt
                 <div class="empty-placeholder-box"><p class="empty-placeholder-title">NO NOTIFICATIONS YET.</p></div>
             <?php endif; ?>
         </div>
-        <?php if ($unread_count > 0): ?>
-            <a href="client-profile.php?clear_notifs=1" class="btn-mark-read">MARK ALL READ</a>
+        <?php if ($notifications->num_rows > 0): ?>
+            <div style="display: flex; gap: 10px; margin-top: 15px;">
+                <?php if ($unread_count > 0): ?>
+                    <a href="client-profile.php?clear_notifs=1" class="btn-mark-read" style="flex: 1;">MARK ALL READ</a>
+                <?php endif; ?>
+                <button type="button" class="btn-mark-read" style="flex: 1;" onclick="openConfirmClearAllNotifsModal()">CLEAR ALL</button>
+            </div>
         <?php endif; ?>
         <div id="pagination-controls" class="notif-pagination">
             <button class="btn-pagination" onclick="changePage(-1)" id="prevBtn"><i class="fa-solid fa-chevron-left"></i></button>
@@ -2243,11 +2272,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_user_ticket_bt
             <h1 style="color: #2ecc71; font-size: 4rem; margin: 10px 0;">$<?php echo number_format($user_data['wallet_balance'] ?? 0, 2); ?></h1>
         </div>
 
-        <button class="btn-primary-brutal btn-full" onclick="alert('Withdrawal system coming soon! Connect your bank in settings.')">WITHDRAW TO BANK</button>
+        <button class="btn-primary-brutal btn-full" onclick="openModal('withdrawComingSoonModal')">WITHDRAW TO BANK</button>
         
         <p style="font-size: 0.8rem; color: #666; text-align: center; margin-top: 15px;">
             Funds from your marketplace sales appear here instantly.
         </p>
+    </div>
+</div>
+
+<div id="withdrawComingSoonModal" class="modal-overlay">
+    <div class="modal-content" style="max-width: 400px; text-align: center;">
+        <span class="close-modal" onclick="closeModal('withdrawComingSoonModal')">&times;</span>
+        <h3 class="admin-table-h3" style="margin-top:0; font-size:2.5rem;">STAY <span class="header-span">TUNED</span></h3>
+        <p style="font-family:'Inter',sans-serif; margin-bottom:20px; color:#666;">Withdrawal system is coming soon! You will be able to connect your bank in settings.</p>
+        <button type="button" class="btn-primary-brutal btn-full" style="margin-top:0; padding:15px;" onclick="closeModal('withdrawComingSoonModal')">OK</button>
     </div>
 </div>
 
@@ -2474,6 +2512,36 @@ document.querySelectorAll('.modal-content').forEach(mc => {
                 <button type="submit" class="btn-primary-brutal btn-full btn-receipt-yes" style="margin-top:0; padding:20px;">YES</button>
             </form>
             <button type="button" class="btn-primary-brutal btn-full btn-hide-cancel" style="margin-top:0;" onclick="closeModal('confirmDeleteNotifModal')">CANCEL</button>
+        </div>
+    </div>
+</div>
+
+<div id="confirmRemoveFollowerModal" class="modal-overlay">
+    <div class="modal-content" style="max-width: 400px; text-align: center;">
+        <span class="close-modal" onclick="closeModal('confirmRemoveFollowerModal')">&times;</span>
+        <h3 class="admin-table-h3" style="margin-top:0; font-size:2.5rem;">REMOVE <span class="header-span">FOLLOWER?</span></h3>
+        <p style="font-family:'Inter',sans-serif; margin-bottom:20px; color:#666;">Are you sure you want to remove this follower?</p>
+        <div style="display:flex; gap:10px;">
+            <form action="client-profile.php" method="POST" style="flex:1; margin:0;">
+                <input type="hidden" name="follower_id" id="removeFollowerId">
+                <button type="submit" name="remove_follower" class="btn-primary-brutal btn-full btn-receipt-yes" style="margin-top:0; padding:20px;">YES</button>
+            </form>
+            <button type="button" class="btn-primary-brutal btn-full btn-hide-cancel" style="margin-top:0;" onclick="closeModal('confirmRemoveFollowerModal')">CANCEL</button>
+        </div>
+    </div>
+</div>
+
+<div id="confirmClearAllNotifsModal" class="modal-overlay">
+    <div class="modal-content" style="max-width: 400px; text-align: center;">
+        <span class="close-modal" onclick="closeModal('confirmClearAllNotifsModal')">&times;</span>
+        <h3 class="admin-table-h3" style="margin-top:0; font-size:2.5rem;">CLEAR ALL <span class="header-span">NOTIFICATIONS?</span></h3>
+        <p style="font-family:'Inter',sans-serif; margin-bottom:20px; color:#666;">Are you sure you want to delete all system messages? This action cannot be undone.</p>
+        <div style="display:flex; gap:10px;">
+            <form action="client-profile.php" method="GET" style="flex:1;">
+                <input type="hidden" name="delete_all_notifs" value="1">
+                <button type="submit" class="btn-primary-brutal btn-full btn-receipt-yes" style="margin-top:0; padding:20px;">YES</button>
+            </form>
+            <button type="button" class="btn-primary-brutal btn-full btn-hide-cancel" style="margin-top:0;" onclick="closeModal('confirmClearAllNotifsModal')">CANCEL</button>
         </div>
     </div>
 </div>
@@ -2775,9 +2843,21 @@ document.querySelectorAll('.modal-content').forEach(mc => {
         document.getElementById('deleteShoutoutId').value = shoutoutId;
         openModal('confirmDeleteShoutoutModal');
     }
-    function openDeleteNotifModal(notifId) {
-        document.getElementById('deleteNotifId').value = notifId;
+    function openDeleteNotifModal(id) {
+        document.getElementById('deleteNotifId').value = id;
+        closeModal('notificationsModal');
         openModal('confirmDeleteNotifModal');
+    }
+
+    function openConfirmClearAllNotifsModal() {
+        closeModal('notificationsModal');
+        openModal('confirmClearAllNotifsModal');
+    }
+
+    function openConfirmRemoveFollowerModal(followerId) {
+        document.getElementById('removeFollowerId').value = followerId;
+        closeModal('followersModal');
+        openModal('confirmRemoveFollowerModal');
     }
 
     // --- Q&A DETAIL VIEW ---

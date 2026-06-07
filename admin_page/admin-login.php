@@ -3,44 +3,78 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 include '../db.php';
+include '../rate_limit.php';
 
 if (isset($_SESSION['admin_logged_in']) && $_SESSION['admin_logged_in'] === true) {
     header("Location: index.php");
     exit();
 }
 
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
 $error = '';
+if (isset($_SESSION['admin_login_error'])) {
+    $error = $_SESSION['admin_login_error'];
+    unset($_SESSION['admin_login_error']);
+}
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+    if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
+        $_SESSION['admin_login_error'] = "INVALID SECURITY TOKEN. PLEASE TRY AGAIN.";
+        header("Location: admin-login.php");
+        exit();
+    }
+
     $username_email = trim($_POST['username_email']);
     $password = $_POST['password'];
+    $ip = $_SERVER['REMOTE_ADDR'];
 
-    $stmt = $conn->prepare("SELECT id, username, password, is_blocked, role FROM users WHERE (username = ? OR email = ?) AND role = 'admin'");
-    $stmt->bind_param("ss", $username_email, $username_email);
-    $stmt->execute();
-    $result = $stmt->get_result();
+    $lockout_time = checkRateLimit($conn, $ip);
+    if ($lockout_time > 0) {
+        $mins = floor($lockout_time / 60);
+        $secs = $lockout_time % 60;
+        $_SESSION['admin_login_error'] = "Too many failed login attempts. For security reasons, your account has been temporarily locked. Please try again in {$mins} minutes and {$secs} seconds.";
+        header("Location: admin-login.php");
+        exit();
+    } else {
+        $stmt = $conn->prepare("SELECT id, username, password, is_blocked, role FROM users WHERE (username = ? OR email = ?) AND role = 'admin'");
+        $stmt->bind_param("ss", $username_email, $username_email);
+        $stmt->execute();
+        $result = $stmt->get_result();
 
-    if ($row = $result->fetch_assoc()) {
-        if (password_verify($password, $row['password'])) {
-            if ($row['is_blocked'] == 1) {
-                $error = "ACCESS DENIED. YOUR ADMIN ACCOUNT IS SUSPENDED.";
+        if ($row = $result->fetch_assoc()) {
+            if (password_verify($password, $row['password'])) {
+                if ($row['is_blocked'] == 1) {
+                    $_SESSION['admin_login_error'] = "ACCESS DENIED. YOUR ADMIN ACCOUNT IS SUSPENDED.";
+                    header("Location: admin-login.php");
+                    exit();
+                } else {
+                    resetRateLimit($conn, $ip);
+                    $_SESSION['admin_logged_in'] = true;
+                    $_SESSION['admin_id'] = $row['id'];
+                    
+                    // Update last_login
+                    $update = $conn->prepare("UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?");
+                    $update->bind_param("i", $row['id']);
+                    $update->execute();
+
+                    header("Location: index.php");
+                    exit();
+                }
             } else {
-                $_SESSION['admin_logged_in'] = true;
-                $_SESSION['admin_id'] = $row['id'];
-                
-                // Update last_login
-                $update = $conn->prepare("UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?");
-                $update->bind_param("i", $row['id']);
-                $update->execute();
-
-                header("Location: index.php");
+                recordFailedLogin($conn, $ip, $username_email);
+                $_SESSION['admin_login_error'] = "INVALID EMAIL OR PASSWORD.";
+                header("Location: admin-login.php");
                 exit();
             }
         } else {
-            $error = "INVALID CREDENTIALS.";
+            recordFailedLogin($conn, $ip, $username_email);
+            $_SESSION['admin_login_error'] = "INVALID EMAIL OR PASSWORD.";
+            header("Location: admin-login.php");
+            exit();
         }
-    } else {
-        $error = "INVALID CREDENTIALS OR INSUFFICIENT PRIVILEGES.";
     }
 }
 ?>
@@ -69,6 +103,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     <?php endif; ?>
 
     <form method="POST" action="admin-login.php" class="admin-form">
+        <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
         <label style="color: #fff;">USERNAME OR EMAIL</label>
         <input type="text" name="username_email" required style="background: #222; color: #fff; border: 2px solid #555;">
 

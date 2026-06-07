@@ -1,50 +1,104 @@
 <?php
 session_start();
 include '../db.php';
+include '../rate_limit.php';
 
 if (isset($_SESSION['user_id'])) {
     header("Location: index.php");
     exit();
 }
 
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
 $error = '';
+if (isset($_SESSION['register_error'])) {
+    $error = $_SESSION['register_error'];
+    unset($_SESSION['register_error']);
+}
+
 $success = '';
+if (isset($_SESSION['register_success'])) {
+    $success = $_SESSION['register_success'];
+    unset($_SESSION['register_success']);
+}
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+    if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
+        $_SESSION['register_error'] = "INVALID SECURITY TOKEN. PLEASE TRY AGAIN.";
+        header("Location: register.php");
+        exit();
+    }
+
     $username = trim($_POST['username']);
     $email = trim($_POST['email']);
     $password = $_POST['password'];
     $confirm_password = $_POST['confirm_password'];
+    $ip = $_SERVER['REMOTE_ADDR'];
 
-    if (!preg_match('/^[a-zA-Z0-9_]{3,25}$/', $username)) {
-        $error = "USERNAME MUST BE 3-25 CHARACTERS (ALPHANUMERIC & UNDERSCORES ONLY).";
-    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        $error = "INVALID EMAIL FORMAT.";
-    } elseif (strlen($password) < 8) {
-        $error = "PASSWORD MUST BE AT LEAST 8 CHARACTERS LONG.";
-    } elseif (!preg_match('/[^a-zA-Z0-9]/', $password)) {
-        $error = "PASSWORD MUST CONTAIN AT LEAST ONE SPECIAL CHARACTER.";
-    } elseif ($password !== $confirm_password) {
-        $error = "PASSWORDS DO NOT MATCH.";
+    $lockout_time = checkRateLimit($conn, $ip);
+    if ($lockout_time > 0) {
+        $mins = floor($lockout_time / 60);
+        $secs = $lockout_time % 60;
+        $_SESSION['register_error'] = "Too many failed attempts. For security reasons, your IP has been temporarily locked. Please try again in {$mins} minutes and {$secs} seconds.";
+        header("Location: register.php");
+        exit();
     } else {
-        // Check if username or email already exists
-        $stmt = $conn->prepare("SELECT id FROM users WHERE username = ? OR email = ?");
-        $stmt->bind_param("ss", $username, $email);
-        $stmt->execute();
-        $stmt->store_result();
-
-        if ($stmt->num_rows > 0) {
-            $error = "USERNAME OR EMAIL ALREADY TAKEN.";
+        if (!preg_match('/^[a-zA-Z0-9_]{3,25}$/', $username)) {
+            recordFailedLogin($conn, $ip, $email);
+            $_SESSION['register_error'] = "USERNAME MUST BE 3-25 CHARACTERS (ALPHANUMERIC & UNDERSCORES ONLY).";
+            header("Location: register.php");
+            exit();
+        } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            recordFailedLogin($conn, $ip, $email);
+            $_SESSION['register_error'] = "INVALID EMAIL FORMAT.";
+            header("Location: register.php");
+            exit();
+        } elseif (strlen($password) < 8) {
+            recordFailedLogin($conn, $ip, $email);
+            $_SESSION['register_error'] = "PASSWORD MUST BE AT LEAST 8 CHARACTERS LONG.";
+            header("Location: register.php");
+            exit();
+        } elseif (!preg_match('/[^a-zA-Z0-9]/', $password)) {
+            recordFailedLogin($conn, $ip, $email);
+            $_SESSION['register_error'] = "PASSWORD MUST CONTAIN AT LEAST ONE SPECIAL CHARACTER.";
+            header("Location: register.php");
+            exit();
+        } elseif ($password !== $confirm_password) {
+            recordFailedLogin($conn, $ip, $email);
+            $_SESSION['register_error'] = "PASSWORDS DO NOT MATCH.";
+            header("Location: register.php");
+            exit();
         } else {
-            // Hash password and insert
-            $hashed_password = password_hash($password, PASSWORD_DEFAULT);
-            $insert_stmt = $conn->prepare("INSERT INTO users (username, email, password) VALUES (?, ?, ?)");
-            $insert_stmt->bind_param("sss", $username, $email, $hashed_password);
-            
-            if ($insert_stmt->execute()) {
-                $success = "ACCOUNT CREATED. YOU CAN NOW LOGIN.";
+            // Check if username or email already exists
+            $stmt = $conn->prepare("SELECT id FROM users WHERE username = ? OR email = ?");
+            $stmt->bind_param("ss", $username, $email);
+            $stmt->execute();
+            $stmt->store_result();
+
+            if ($stmt->num_rows > 0) {
+                recordFailedLogin($conn, $ip, $email);
+                $_SESSION['register_error'] = "USERNAME OR EMAIL ALREADY TAKEN.";
+                header("Location: register.php");
+                exit();
             } else {
-                $error = "ERROR CREATING ACCOUNT.";
+                // Hash password and insert
+                $hashed_password = password_hash($password, PASSWORD_DEFAULT);
+                $insert_stmt = $conn->prepare("INSERT INTO users (username, email, password) VALUES (?, ?, ?)");
+                $insert_stmt->bind_param("sss", $username, $email, $hashed_password);
+                
+                if ($insert_stmt->execute()) {
+                    resetRateLimit($conn, $ip);
+                    $_SESSION['register_success'] = "ACCOUNT CREATED. YOU CAN NOW LOGIN.";
+                    header("Location: register.php");
+                    exit();
+                } else {
+                    recordFailedLogin($conn, $ip, $email);
+                    $_SESSION['register_error'] = "ERROR CREATING ACCOUNT.";
+                    header("Location: register.php");
+                    exit();
+                }
             }
         }
     }
@@ -83,6 +137,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             <?php endif; ?>
 
             <form action="register.php" method="POST" class="admin-form">
+                <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
                 <label>USERNAME</label>
                 <input type="text" name="username" id="register-username" maxlength="25" required>
                 <p id="register-username-counter" style="text-align: right; font-size: 0.8rem; margin-top: 5px; font-family: 'Inter', sans-serif; color: #777;">25 characters remaining</p>

@@ -1,58 +1,92 @@
 <?php
 session_start();
 include '../db.php';
+include '../rate_limit.php';
 
 if (isset($_SESSION['user_id'])) {
     header("Location: index.php");
     exit();
 }
 
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
 $error = '';
+if (isset($_SESSION['login_error'])) {
+    $error = $_SESSION['login_error'];
+    unset($_SESSION['login_error']);
+}
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+    if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
+        $_SESSION['login_error'] = "INVALID SECURITY TOKEN. PLEASE TRY AGAIN.";
+        header("Location: login.php");
+        exit();
+    }
+
     $username_email = trim($_POST['username_email']);
     $password = $_POST['password'];
+    $ip = $_SERVER['REMOTE_ADDR'];
 
-    // 1. Added is_blocked to the SELECT statement
-    $stmt = $conn->prepare("SELECT id, username, password, is_blocked FROM users WHERE username = ? OR email = ?");
-    $stmt->bind_param("ss", $username_email, $username_email);
-    $stmt->execute();
-    $result = $stmt->get_result();
+    $lockout_time = checkRateLimit($conn, $ip);
+    if ($lockout_time > 0) {
+        $mins = floor($lockout_time / 60);
+        $secs = $lockout_time % 60;
+        $_SESSION['login_error'] = "Too many failed login attempts. For security reasons, your account has been temporarily locked. Please try again in {$mins} minutes and {$secs} seconds.";
+        header("Location: login.php");
+        exit();
+    } else {
+        // 1. Added is_blocked to the SELECT statement
+        $stmt = $conn->prepare("SELECT id, username, password, is_blocked FROM users WHERE username = ? OR email = ?");
+        $stmt->bind_param("ss", $username_email, $username_email);
+        $stmt->execute();
+        $result = $stmt->get_result();
 
-    if ($row = $result->fetch_assoc()) {
-        // Verify password hash
-        if (password_verify($password, $row['password'])) {
-            
-            // 2. Check if the account is banned before letting them in
-            if (isset($row['is_blocked']) && $row['is_blocked'] == 1) {
-                $error = "ACCESS DENIED. YOUR ACCOUNT HAS BEEN SUSPENDED.";
-            } else {
-                $_SESSION['user_id'] = $row['id'];
-                $_SESSION['username'] = $row['username'];
-
-                // Restore cart from database
-                $cart_stmt = $conn->prepare("SELECT cart_data FROM users WHERE id = ?");
-                $cart_stmt->bind_param("i", $row['id']);
-                $cart_stmt->execute();
-                $cart_result = $cart_stmt->get_result()->fetch_assoc();
-                if (!empty($cart_result['cart_data'])) {
-                    $restored_cart = json_decode($cart_result['cart_data'], true);
-                    if (is_array($restored_cart)) {
-                        $_SESSION['cart'] = $restored_cart;
-                    }
+        if ($row = $result->fetch_assoc()) {
+            // Verify password hash
+            if (password_verify($password, $row['password'])) {
+                
+                // 2. Check if the account is banned before letting them in
+                if (isset($row['is_blocked']) && $row['is_blocked'] == 1) {
+                    $_SESSION['login_error'] = "ACCESS DENIED. YOUR ACCOUNT HAS BEEN SUSPENDED.";
+                    header("Location: login.php");
+                    exit();
                 } else {
-                    $_SESSION['cart'] = [];
-                }
+                    resetRateLimit($conn, $ip);
+                    $_SESSION['user_id'] = $row['id'];
+                    $_SESSION['username'] = $row['username'];
 
-                header("Location: index.php");
+                    // Restore cart from database
+                    $cart_stmt = $conn->prepare("SELECT cart_data FROM users WHERE id = ?");
+                    $cart_stmt->bind_param("i", $row['id']);
+                    $cart_stmt->execute();
+                    $cart_result = $cart_stmt->get_result()->fetch_assoc();
+                    if (!empty($cart_result['cart_data'])) {
+                        $restored_cart = json_decode($cart_result['cart_data'], true);
+                        if (is_array($restored_cart)) {
+                            $_SESSION['cart'] = $restored_cart;
+                        }
+                    } else {
+                        $_SESSION['cart'] = [];
+                    }
+
+                    header("Location: index.php");
+                    exit();
+                }
+                
+            } else {
+                recordFailedLogin($conn, $ip, $username_email);
+                $_SESSION['login_error'] = "INVALID EMAIL OR PASSWORD.";
+                header("Location: login.php");
                 exit();
             }
-            
         } else {
-            $error = "INCORRECT PASSWORD/USER NAME.";
+            recordFailedLogin($conn, $ip, $username_email);
+            $_SESSION['login_error'] = "INVALID EMAIL OR PASSWORD.";
+            header("Location: login.php");
+            exit();
         }
-    } else {
-        $error = "INCORRECT PASSWORD/USER NAME.";
     }
 }
 ?>
@@ -79,6 +113,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             <?php endif; ?>
 
             <form action="login.php" method="POST" class="admin-form">
+                <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
                 <label>USERNAME OR EMAIL</label>
                 <input type="text" name="username_email" required>
                 

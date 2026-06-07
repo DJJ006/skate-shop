@@ -283,17 +283,17 @@ function get_filter_url($params) {
                     <i class="fa-solid fa-tags" style="font-size: 3.5rem; color: var(--charcoal); transition: color 0.2s ease;"></i>
                 </div>
                 <h4 style="font-family: 'Staatliches', sans-serif; font-size: 1.8rem; margin-bottom: 15px; color: var(--charcoal); text-align: center; letter-spacing: 1px;">LIST YOUR GEAR</h4>
-                <p style="color: #444; font-family: 'Inter', sans-serif; line-height: 1.6; font-size: 1.05rem; text-align: center; font-weight: 500; margin: 0;">Got extra parts or rare decks? Post them up! Set your price, upload clean photos, and let the community browse your stash.</p>
+                <p style="color: #444; font-family: 'Inter', sans-serif; line-height: 1.6; font-size: 1.3rem; text-align: center; font-weight: 500; margin: 0;">Got extra parts or rare decks? Post them up! Set your price, upload clean photos, and let the community browse your stash.</p>
             </div>
             
             <!-- Step 2 -->
             <div class="market-step-card" style="position: relative; background: #fff; border: 4px solid var(--charcoal); padding: 40px 30px; box-shadow: 8px 8px 0px var(--charcoal); transition: all 0.2s ease; cursor: default;">
                 <div style="position: absolute; top: -20px; left: -20px; background: var(--primary); color: #fff; width: 55px; height: 55px; display: flex; align-items: center; justify-content: center; font-family: 'Staatliches', sans-serif; font-size: 2.2rem; border: 4px solid var(--charcoal); box-shadow: 4px 4px 0px var(--charcoal); transform: rotate(3deg); z-index: 2;">2</div>
                 <div style="text-align: center; margin-bottom: 20px;">
-                    <i class="fa-solid fa-shield-halved" style="font-size: 3.5rem; color: var(--charcoal); transition: color 0.2s ease;"></i>
+                    <i class="fa-solid fa-lock" style="font-size: 3.5rem; color: var(--charcoal); transition: color 0.2s ease;"></i>
                 </div>
                 <h4 style="font-family: 'Staatliches', sans-serif; font-size: 1.8rem; margin-bottom: 15px; color: var(--charcoal); text-align: center; letter-spacing: 1px;">SECURE CHECKOUT</h4>
-                <p style="color: #444; font-family: 'Inter', sans-serif; line-height: 1.6; font-size: 1.05rem; text-align: center; font-weight: 500; margin: 0;">Buyers pay safely via Stripe or internal Wallet. Funds are securely held until the order is successfully delivered and completed.</p>
+                <p style="color: #444; font-family: 'Inter', sans-serif; line-height: 1.6; font-size: 1.3rem; text-align: center; font-weight: 500; margin: 0;">Buyers pay safely via Stripe or internal Wallet. Funds are securely held until the order is successfully delivered and completed.</p>
             </div>
             
             <!-- Step 3 -->
@@ -303,7 +303,7 @@ function get_filter_url($params) {
                     <i class="fa-solid fa-handshake" style="font-size: 3.5rem; color: var(--charcoal); transition: color 0.2s ease;"></i>
                 </div>
                 <h4 style="font-family: 'Staatliches', sans-serif; font-size: 1.8rem; margin-bottom: 15px; color: var(--charcoal); text-align: center; letter-spacing: 1px;">BUILD YOUR REP</h4>
-                <p style="color: #444; font-family: 'Inter', sans-serif; line-height: 1.6; font-size: 1.05rem; text-align: center; font-weight: 500; margin: 0;">Ship fast and accurately to earn 5-star reviews. Top rated sellers unlock the coveted Verified Trusted Badge!</p>
+                <p style="color: #444; font-family: 'Inter', sans-serif; line-height: 1.6; font-size: 1.3rem; text-align: center; font-weight: 500; margin: 0;">Ship fast and accurately to earn 5-star reviews. Top rated sellers unlock the coveted Verified Trusted Badge!</p>
             </div>
         </div>
     </section>
