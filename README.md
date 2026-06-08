@@ -82,3 +82,11 @@ The system relies on lightweight open-source technologies for direct control and
 * **Tools**: GitHub Desktop and Git for version control, and Visual Studio Code for development.
 
 ---
+
+## Sites
+
+The following sites are for the website itself:
+
+* **(https://kristovskis.lv/4pt/jaunarajs/skate-shop/client_page/index.php)**: Client side website.
+* **(https://kristovskis.lv/4pt/jaunarajs/skate-shop/admin_page/admin-login.php)**: Admin side website. Email - Admin@admin.com; Username: Admin; Password: ADMIN123.
+---
