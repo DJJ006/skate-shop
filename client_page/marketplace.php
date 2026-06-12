@@ -226,11 +226,13 @@ function get_filter_url($params) {
                             <img src="<?php echo $row['image_url']; ?>" alt="<?php echo htmlspecialchars($row['title']); ?>">
                         </div>
                         <div class="card-info">
-                            <div>
-                                <h4><?php echo htmlspecialchars($row['title']); ?></h4>
-                                <p>SELLER: <span class="seller-name"><?php echo htmlspecialchars($row['seller_name']); ?></span></p>
+                            <div style="flex: 1; min-width: 0; padding-right: 10px;">
+                                <h4 style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"><?php echo htmlspecialchars($row['title']); ?></h4>
+                                <p style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">SELLER: <span class="seller-name"><?php echo htmlspecialchars($row['seller_name']); ?></span></p>
                             </div>
-                            <span class="price">$<?php echo number_format($row['price'], 2); ?></span>
+                            <div style="text-align: right; flex-shrink: 0;">
+                                <span class="price" style="display: block;">$<?php echo number_format($row['price'], 2); ?></span>
+                            </div>
                         </div>
                     </div>
                 </a>
@@ -246,25 +248,7 @@ function get_filter_url($params) {
         </div>
 
 
-        <?php if ($total_pages > 1): ?>
-        <div class="pagination">
-            <?php if($page > 1): ?>
-                <a href="<?php echo get_filter_url(['page' => $page - 1]); ?>" class="btn btn-outline">&lt; PREV</a>
-            <?php endif; ?>
-            
-            <?php for($i = 1; $i <= $total_pages; $i++): ?>
-                <?php if ($page == $i): ?>
-                    <span class="btn btn-primary active-page"><?php echo $i; ?></span>
-                <?php else: ?>
-                    <a href="<?php echo get_filter_url(['page' => $i]); ?>" class="btn btn-outline"><?php echo $i; ?></a>
-                <?php endif; ?>
-            <?php endfor; ?>
-
-            <?php if($page < $total_pages): ?>
-                <a href="<?php echo get_filter_url(['page' => $page + 1]); ?>" class="btn btn-outline">NEXT &gt;</a>
-            <?php endif; ?>
-        </div>
-        <?php endif; ?>
+        <?php render_intelligent_pagination($page, $total_pages, 'pagination'); ?>
     </div>
 </section>
 

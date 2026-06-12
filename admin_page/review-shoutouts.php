@@ -32,10 +32,9 @@ function shoutout_notify_user(mysqli $conn, int $user_id, string $message): void
 // --- POST: publish (pending -> published) ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['shoutout_publish'])) {
     $id = (int)$_POST['shoutout_id'];
-    $body = trim($_POST['body'] ?? '');
 
-    if ($id <= 0 || $body === '') {
-        $_SESSION['msg'] = 'ADMIN ANSWER IS REQUIRED TO PUBLISH.';
+    if ($id <= 0) {
+        $_SESSION['msg'] = 'INVALID SHOUTOUT ID.';
         $_SESSION['msg_type'] = 'error';
     } else {
         $info = $conn->prepare('SELECT user_id, title, status FROM community_shoutouts WHERE id = ?');
@@ -48,7 +47,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['shoutout_publish'])) 
             $_SESSION['msg_type'] = 'error';
         } else {
             $upd = $conn->prepare("UPDATE community_shoutouts SET status = 'published', published_at = NOW() WHERE id = ? AND status = 'pending'");
-            $upd->bind_param('si', $body, $id);
+            $upd->bind_param('i', $id);
             if ($upd->execute() && $upd->affected_rows > 0) {
                 $title = $row['title'];
                 $uid = (int)$row['user_id'];
@@ -433,7 +432,7 @@ function shoutout_status_badge_class(string $status): string {
                              <tr class="<?php echo ($status === 'pending') ? 'pending-row' : ''; ?>">
                                 <td class="td-id">#<?php echo (int)$item['id']; ?></td>
                                 <td><strong>@<?php echo htmlspecialchars($item['username']); ?></strong></td>
-                                <td><strong><?php echo htmlspecialchars($title_short); ?></strong></td>
+                                <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="<?php echo htmlspecialchars($item['title']); ?>"><strong><?php echo htmlspecialchars($item['title']); ?></strong></td>
                                 <td><span class="<?php echo shoutout_status_badge_class($status); ?>"><?php echo strtoupper(htmlspecialchars($status)); ?></span></td>
                                 <td><?php echo htmlspecialchars($submitted); ?></td>
                                 <td>
@@ -467,9 +466,6 @@ function shoutout_status_badge_class(string $status): string {
                                         <form method="post" action="review-shoutouts.php" class="admin-form" style="margin-top:1.5rem;">
                                             <?php echo $shoutout_redirect_hidden; ?>
                                             <input type="hidden" name="shoutout_id" value="<?php echo (int)$item['id']; ?>">
-                                            
-                                            <label>OFFICIAL ADMIN ANSWER (REQUIRED TO PUBLISH)</label>
-                                            <textarea name="body" rows="5" required placeholder="Write the shop’s official response..."></textarea>
                                             
                                             <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 10px; margin-top: 1rem;">
                                                 <button type="submit" name="shoutout_publish" class="btn btn-primary" style="font-size: 1.2rem;">ACCEPT &amp; PUBLISH</button>
@@ -546,24 +542,7 @@ function shoutout_status_badge_class(string $status): string {
             </table>
 
             <?php if (!$table_missing && $total_pages > 0): ?>
-            <div class="admin-pagination">
-                <?php
-                $query_string = $_GET;
-                if ($page > 1) {
-                    $query_string['page'] = $page - 1;
-                    echo '<a href="?' . http_build_query($query_string) . '" class="btn btn-outline">&laquo; PREV</a>';
-                }
-                for ($i = 1; $i <= $total_pages; $i++) {
-                    $query_string['page'] = $i;
-                    $active = ($i === $page) ? 'active' : '';
-                    echo '<a href="?' . http_build_query($query_string) . '" class="btn btn-outline ' . $active . '">' . $i . '</a>';
-                }
-                if ($page < $total_pages) {
-                    $query_string['page'] = $page + 1;
-                    echo '<a href="?' . http_build_query($query_string) . '" class="btn btn-outline">NEXT &raquo;</a>';
-                }
-                ?>
-            </div>
+            <?php render_intelligent_pagination($page, $total_pages, 'admin-pagination'); ?>
             <?php endif; ?>
 
         </div>

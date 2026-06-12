@@ -3,7 +3,7 @@ session_start();
 include '../db.php';
 
 // 1. Hero Section & Shop Drops (is_marketplace = 0)
-$shop_sql = "SELECT id, title, price, image_url, brand, quantity FROM products WHERE is_marketplace = 0 AND is_approved = 1 ORDER BY created_at DESC LIMIT 4";
+$shop_sql = "SELECT id, title, price, discount_price, image_url, brand, quantity FROM products WHERE is_marketplace = 0 AND is_approved = 1 ORDER BY created_at DESC LIMIT 4";
 $shop_result = $conn->query($shop_sql);
 $shop_products = [];
 if ($shop_result) {
@@ -171,11 +171,18 @@ function time_elapsed_string($datetime, $full = false) {
                         </div>
 
                         <div class="card-info">
-                            <div>
-                                <h4><?php echo htmlspecialchars($drop['title']); ?></h4>
-                                <p><?php echo htmlspecialchars($drop['brand']); ?></p>
+                            <div style="flex: 1; min-width: 0; padding-right: 10px;">
+                                <h4 style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"><?php echo htmlspecialchars($drop['title']); ?></h4>
+                                <p style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"><?php echo htmlspecialchars($drop['brand']); ?></p>
                             </div>
-                            <span class="price" style="<?php echo ((int)$drop['quantity'] <= 0) ? 'text-decoration: line-through; color: #888;' : ''; ?>">$<?php echo number_format($drop['price'], 2); ?></span>
+                            <div style="text-align: right;">
+                                <?php if (!empty($drop['discount_price']) && (int)$drop['quantity'] > 0): ?>
+                                    <span class="price" style="text-decoration: line-through; color: #888; font-size: 1.2rem; display: block; margin-bottom: -5px;">$<?php echo number_format($drop['price'], 2); ?></span>
+                                    <span class="price" style="color: var(--primary);">$<?php echo number_format($drop['discount_price'], 2); ?></span>
+                                <?php else: ?>
+                                    <span class="price" style="<?php echo ((int)$drop['quantity'] <= 0) ? 'text-decoration: line-through; color: #888;' : ''; ?>">$<?php echo number_format($drop['price'], 2); ?></span>
+                                <?php endif; ?>
+                            </div>
                         </div>
                     </div>
                 </a>
@@ -268,9 +275,9 @@ function time_elapsed_string($datetime, $full = false) {
                         </div>
 
                         <div class="card-info">
-                            <div>
-                                <h4><?php echo htmlspecialchars($market['title']); ?></h4>
-                                <p><?php echo htmlspecialchars($market['brand']); ?></p>
+                            <div style="flex: 1; min-width: 0; padding-right: 10px;">
+                                <h4 style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"><?php echo htmlspecialchars($market['title']); ?></h4>
+                                <p style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"><?php echo htmlspecialchars($market['brand']); ?></p>
                             </div>
                             <span class="price" style="<?php echo ((int)$market['quantity'] <= 0) ? 'text-decoration: line-through; color: #888;' : ''; ?>">$<?php echo number_format($market['price'], 2); ?></span>
                         </div>

@@ -72,6 +72,10 @@ $selected_categories = isset($_GET['category']) ? $_GET['category'] : [];
 if (!is_array($selected_categories) && !empty($selected_categories)) {
     $selected_categories = [$selected_categories];
 }
+$selected_brands = isset($_GET['brand']) ? $_GET['brand'] : [];
+if (!is_array($selected_brands) && !empty($selected_brands)) {
+    $selected_brands = [$selected_brands];
+}
 $price_range = isset($_GET['price']) ? $_GET['price'] : '';
 
 $limit = 6;
@@ -97,6 +101,15 @@ if (!empty($selected_categories)) {
     $whereClause .= " AND category IN ($placeholders)";
     foreach ($selected_categories as $c) {
         $params[] = $c;
+        $types .= "s";
+    }
+}
+
+if (!empty($selected_brands)) {
+    $placeholders = implode(',', array_fill(0, count($selected_brands), '?'));
+    $whereClause .= " AND brand IN ($placeholders)";
+    foreach ($selected_brands as $b) {
+        $params[] = $b;
         $types .= "s";
     }
 }
@@ -149,6 +162,19 @@ function get_filter_url($params) {
         $current_params[$key] = $value;
     }
     return "?" . http_build_query($current_params);
+}
+
+// Fetch dynamic brands for the filter
+$brands_query = "SELECT DISTINCT brand FROM products WHERE is_marketplace = 0 AND is_approved = 1 ORDER BY brand ASC";
+$brands_result = $conn->query($brands_query);
+$available_brands = [];
+if ($brands_result) {
+    while ($row = $brands_result->fetch_assoc()) {
+        $b = trim($row['brand']);
+        if (!empty($b) && !in_array($b, $available_brands)) {
+            $available_brands[] = $b;
+        }
+    }
 }
 ?>
 
@@ -227,6 +253,20 @@ function get_filter_url($params) {
                 </div>
 
                 <div class="filter-group">
+                    <h4>BRANDS</h4>
+                    <ul class="filter-list" style="max-height: 220px; overflow-y: auto; padding-right: 5px;">
+                        <?php foreach($available_brands as $brand): ?>
+                            <li>
+                                <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; text-transform: uppercase;">
+                                    <input type="checkbox" name="brand[]" value="<?php echo htmlspecialchars($brand); ?>" <?php echo in_array($brand, $selected_brands) ? 'checked' : ''; ?> onchange="this.form.submit()"> 
+                                    <?php echo htmlspecialchars($brand); ?>
+                                </label>
+                            </li>
+                        <?php endforeach; ?>
+                    </ul>
+                </div>
+
+                <div class="filter-group">
                     <h4>PRICE</h4>
                     <ul class="filter-list">
                         <li><label><input type="radio" name="price" value="" <?php echo $price_range == '' ? 'checked' : ''; ?> onchange="this.form.submit()"> ALL PRICES</label></li>
@@ -295,16 +335,16 @@ function get_filter_url($params) {
                 </div>
                 
                 <div class="card-info">
-                    <div>
-                        <h4><?php echo htmlspecialchars($row['title']); ?></h4>
-                        <p><?php echo htmlspecialchars($row['brand']); ?></p>
+                    <div style="flex: 1; min-width: 0; padding-right: 10px;">
+                        <h4 style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"><?php echo htmlspecialchars($row['title']); ?></h4>
+                        <p style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"><?php echo htmlspecialchars($row['brand']); ?></p>
                     </div>
-                    <div style="display: flex; gap: 10px; align-items: center; margin-top: 5px;">
+                    <div style="text-align: right; flex-shrink: 0;">
                         <?php if (!empty($row['discount_price']) && (float)$row['discount_price'] > 0): ?>
-                            <span class="price" style="text-decoration: line-through; color: #999; font-size: 1.1em;">
+                            <span class="price" style="text-decoration: line-through; color: #999; font-size: 1.1em; display: block; margin-bottom: -5px;">
                                 $<?php echo number_format($row['price'], 2); ?>
                             </span>
-                            <span class="price" style="color: var(--primary); font-weight: bold;">
+                            <span class="price" style="color: var(--primary); font-weight: bold; display: block;">
                                 $<?php echo number_format($row['discount_price'], 2); ?>
                             </span>
                         <?php else: ?>
@@ -326,22 +366,7 @@ function get_filter_url($params) {
         <?php endif; ?>
     </div>
 
-        <?php if ($total_pages > 1): ?>
-        <div class="pagination">
-            <?php if($page > 1): ?>
-                <a href="<?php echo get_filter_url(['page' => $page - 1]); ?>" class="btn btn-outline">&lt; PREV</a>
-            <?php endif; ?>
-            
-            <?php for($i = 1; $i <= $total_pages; $i++): ?>
-                <a href="<?php echo get_filter_url(['page' => $i]); ?>" class="btn <?php echo ($page == $i) ? 'btn-primary' : 'btn-outline'; ?>"><?php echo $i; ?></a>
-            <?php endfor; ?>
-
-            <?php if($page < $total_pages): ?>
-                <a href="<?php echo get_filter_url(['page' => $page + 1]); ?>" class="btn btn-outline">NEXT &gt;</a>
-            <?php endif; ?>
-        </div>
-        <?php endif; ?>
-
+        <?php render_intelligent_pagination($page, $total_pages, 'pagination'); ?>
     </div>
 </section>
 
@@ -350,7 +375,7 @@ function get_filter_url($params) {
 <section class="commercial-slider container">
     <div class="slider-wrapper">
         <div class="commercial-slide active">
-            <a href="https://www.nike.com/skateboarding" target="_blank">
+            <a href="shop.php?brand[]=Nike%20SB">
                 <div class="ad-content">
                     <img src="../assets/images/nike_sb_ad.jpeg" alt="Nike SB Ad">
                     <div class="ad-overlay">
@@ -363,7 +388,7 @@ function get_filter_url($params) {
         </div>
 
         <div class="commercial-slide">
-            <a href="#" target="_blank">
+            <a href="shop.php?brand[]=Vans">
                 <div class="ad-content">
                     <img src="../assets/images/vans_ad.jpg" alt="Vans Ad">
                     <div class="ad-overlay">

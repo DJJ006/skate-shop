@@ -1021,7 +1021,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['proceed_to_payment'])
                                 <?php echo isset($_POST['agree_terms']) ? 'checked' : ''; ?>
                             >
                             <span>
-                                I CONFIRM THAT MY SHIPPING INFORMATION IS CORRECT AND I AGREE TO THE STORE TERMS, PAYMENT PROCESSING, AND DELIVERY POLICY.
+                                I CONFIRM THAT MY SHIPPING INFORMATION IS CORRECT AND I AGREE TO THE TERMS OF SERVICE, SHIPPING INFORMATION, AND PRIVACY POLICY.
                             </span>
                         </label>
                     </div>

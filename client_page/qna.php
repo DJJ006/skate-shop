@@ -361,11 +361,10 @@ function get_qna_url($params) {
             color: var(--charcoal); 
             text-transform: uppercase;
             line-height: 1.1;
-            display: -webkit-box;
-            -webkit-line-clamp: 2;
-            -webkit-box-orient: vertical;
+            white-space: nowrap;
             overflow: hidden;
-            height: 3.4rem; /* Increased for padding */
+            text-overflow: ellipsis;
+            height: 1.8rem;
             font-weight: 800;
             margin-bottom: 0.3rem;
         }

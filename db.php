@@ -67,4 +67,40 @@ if (isset($_SESSION['user_id'])) {
         }
     }
 }
+
+if (!function_exists('render_intelligent_pagination')) {
+    function render_intelligent_pagination($current_page, $total_pages, $container_class = 'admin-pagination') {
+        if ($total_pages <= 1) return;
+        
+        $query_string = $_GET;
+        echo '<div class="' . htmlspecialchars($container_class) . '" style="display:flex; flex-wrap:wrap; gap:5px; justify-content:center;">';
+        
+        // Prev Button
+        if ($current_page > 1) {
+            $query_string['page'] = $current_page - 1;
+            echo '<a href="?' . http_build_query($query_string) . '" class="btn btn-outline">&laquo; PREV</a>';
+        }
+        
+        $window = 2; // Number of pages to show around current page
+        
+        for ($i = 1; $i <= $total_pages; $i++) {
+            if ($i == 1 || $i == $total_pages || ($i >= $current_page - $window && $i <= $current_page + $window)) {
+                $query_string['page'] = $i;
+                // Add both active and btn-primary depending on the template css
+                $active = ($i == $current_page) ? 'active btn-primary' : '';
+                echo '<a href="?' . http_build_query($query_string) . '" class="btn btn-outline ' . $active . '">' . $i . '</a>';
+            } elseif ($i == $current_page - $window - 1 || $i == $current_page + $window + 1) {
+                echo '<span style="padding: 8px 12px; color: #000; font-family: \'Staatliches\', sans-serif; font-size: 1.2rem; font-weight: 900; letter-spacing: 1px; display: inline-flex; align-items: center; justify-content: center;">...</span>';
+            }
+        }
+        
+        // Next Button
+        if ($current_page < $total_pages) {
+            $query_string['page'] = $current_page + 1;
+            echo '<a href="?' . http_build_query($query_string) . '" class="btn btn-outline">NEXT &raquo;</a>';
+        }
+        
+        echo '</div>';
+    }
+}
 ?>

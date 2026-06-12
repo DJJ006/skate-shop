@@ -323,26 +323,7 @@ $modals_html = [];
                 </tbody>
             </table></div>
 
-            <?php if ($total_pages > 0): ?>
-            <div class="admin-pagination">
-                <?php
-                $query_string = $_GET;
-                if ($page > 1) {
-                    $query_string['page'] = $page - 1;
-                    echo '<a href="?' . http_build_query($query_string) . '" class="btn btn-outline">&laquo; PREV</a>';
-                }
-                for ($i = 1; $i <= $total_pages; $i++) {
-                    $query_string['page'] = $i;
-                    $active = ($i === $page) ? 'active' : '';
-                    echo '<a href="?' . http_build_query($query_string) . '" class="btn btn-outline ' . $active . '">' . $i . '</a>';
-                }
-                if ($page < $total_pages) {
-                    $query_string['page'] = $page + 1;
-                    echo '<a href="?' . http_build_query($query_string) . '" class="btn btn-outline">NEXT &raquo;</a>';
-                }
-                ?>
-            </div>
-            <?php endif; ?>
+            <?php render_intelligent_pagination($page, $total_pages, 'admin-pagination'); ?>
         </div>
 
         <div class="grainy-card card-padding" style="padding: 20px; margin-top: 30px;">
@@ -432,26 +413,7 @@ $modals_html = [];
                 </tbody>
             </table></div>
 
-            <?php if ($total_pages > 0): ?>
-            <div class="admin-pagination">
-                <?php
-                $query_string = $_GET;
-                if ($page > 1) {
-                    $query_string['page'] = $page - 1;
-                    echo '<a href="?' . http_build_query($query_string) . '" class="btn btn-outline">&laquo; PREV</a>';
-                }
-                for ($i = 1; $i <= $total_pages; $i++) {
-                    $query_string['page'] = $i;
-                    $active = ($i === $page) ? 'active' : '';
-                    echo '<a href="?' . http_build_query($query_string) . '" class="btn btn-outline ' . $active . '">' . $i . '</a>';
-                }
-                if ($page < $total_pages) {
-                    $query_string['page'] = $page + 1;
-                    echo '<a href="?' . http_build_query($query_string) . '" class="btn btn-outline">NEXT &raquo;</a>';
-                }
-                ?>
-            </div>
-            <?php endif; ?>
+            <?php render_intelligent_pagination($page, $total_pages, 'admin-pagination'); ?>
         </div>
     </main>
 </section>

@@ -542,21 +542,7 @@ if (isset($_GET['slug'])) {
     </div>
 
     <!-- PAGINATION -->
-    <?php if ($total_pages > 1): ?>
-    <div class="pagination">
-        <?php if($page > 1): ?>
-            <a href="<?php echo get_mag_url(['page' => $page - 1]); ?>" class="btn btn-outline">&lt; PREV</a>
-        <?php endif; ?>
-        
-        <?php for($i = 1; $i <= $total_pages; $i++): ?>
-            <a href="<?php echo get_mag_url(['page' => $i]); ?>" class="btn <?php echo ($page == $i) ? 'btn-primary' : 'btn-outline'; ?>"><?php echo $i; ?></a>
-        <?php endfor; ?>
-
-        <?php if($page < $total_pages): ?>
-            <a href="<?php echo get_mag_url(['page' => $page + 1]); ?>" class="btn btn-outline">NEXT &gt;</a>
-        <?php endif; ?>
-    </div>
-    <?php endif; ?>
+    <?php render_intelligent_pagination($page, $total_pages, 'pagination'); ?>
 
 </main>
 

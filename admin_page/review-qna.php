@@ -433,7 +433,7 @@ function qna_status_badge_class(string $status): string {
                              <tr class="<?php echo ($status === 'pending') ? 'pending-row' : ''; ?>">
                                 <td class="td-id">#<?php echo (int)$item['id']; ?></td>
                                 <td><strong>@<?php echo htmlspecialchars($item['username']); ?></strong></td>
-                                <td><strong><?php echo htmlspecialchars($title_short); ?></strong></td>
+                                <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="<?php echo htmlspecialchars($item['title']); ?>"><strong><?php echo htmlspecialchars($item['title']); ?></strong></td>
                                 <td><span class="<?php echo qna_status_badge_class($status); ?>"><?php echo strtoupper(htmlspecialchars($status)); ?></span></td>
                                 <td><?php echo htmlspecialchars($submitted); ?></td>
                                 <td>
@@ -546,24 +546,7 @@ function qna_status_badge_class(string $status): string {
             </table>
 
             <?php if (!$table_missing && $total_pages > 0): ?>
-            <div class="admin-pagination">
-                <?php
-                $query_string = $_GET;
-                if ($page > 1) {
-                    $query_string['page'] = $page - 1;
-                    echo '<a href="?' . http_build_query($query_string) . '" class="btn btn-outline">&laquo; PREV</a>';
-                }
-                for ($i = 1; $i <= $total_pages; $i++) {
-                    $query_string['page'] = $i;
-                    $active = ($i === $page) ? 'active' : '';
-                    echo '<a href="?' . http_build_query($query_string) . '" class="btn btn-outline ' . $active . '">' . $i . '</a>';
-                }
-                if ($page < $total_pages) {
-                    $query_string['page'] = $page + 1;
-                    echo '<a href="?' . http_build_query($query_string) . '" class="btn btn-outline">NEXT &raquo;</a>';
-                }
-                ?>
-            </div>
+            <?php render_intelligent_pagination($page, $total_pages, 'admin-pagination'); ?>
             <?php endif; ?>
 
         </div>

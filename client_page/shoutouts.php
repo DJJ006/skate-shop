@@ -828,21 +828,7 @@ function get_shoutouts_url($params) {
                     </div>
 
                     <!-- PAGINATION -->
-                    <?php if ($total_pages > 1): ?>
-                    <div class="pagination">
-                        <?php if($page > 1): ?>
-                            <a href="<?php echo get_shoutouts_url(['page' => $page - 1]); ?>" class="btn btn-outline">&lt; PREV</a>
-                        <?php endif; ?>
-                        
-                        <?php for($i = 1; $i <= $total_pages; $i++): ?>
-                            <a href="<?php echo get_shoutouts_url(['page' => $i]); ?>" class="btn <?php echo ($page == $i) ? 'btn-primary' : 'btn-outline'; ?>"><?php echo $i; ?></a>
-                        <?php endfor; ?>
-
-                        <?php if($page < $total_pages): ?>
-                            <a href="<?php echo get_shoutouts_url(['page' => $page + 1]); ?>" class="btn btn-outline">NEXT &gt;</a>
-                        <?php endif; ?>
-                    </div>
-                    <?php endif; ?>
+                    <?php render_intelligent_pagination($page, $total_pages, 'pagination'); ?>
                 <?php endif; ?>
             </div>
 
@@ -890,7 +876,7 @@ function get_shoutouts_url($params) {
     </div>
 </div>
 
-<?php if ($table_ok && isset($_SESSION['user_id'])): ?>
+<?php if (isset($_SESSION['user_id'])): ?>
 <div class="reel-modal-overlay" id="shoutoutUploadModal">
     <div class="reel-modal-content">
         <span class="reel-modal-close" id="close-shoutout-modal">&times;</span>

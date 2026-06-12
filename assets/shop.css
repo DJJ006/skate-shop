@@ -311,11 +311,13 @@ body {
 }
 
 
-.pagination .btn-outline:hover {
+.pagination .btn-outline:hover,
+.pagination .btn.active {
     background-color: var(--primary);
     color: #ffffff !important;
+    transform: translateY(-4px);
+    box-shadow: var(--boxshadow);
 }
-
 
 .pagination a,
 .pagination a:visited {

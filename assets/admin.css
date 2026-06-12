@@ -1885,6 +1885,7 @@ input[type="file"] {
 .admin-pagination .btn.active {
     background: var(--primary);
     color: var(--textwhite);
+    transform: translateY(-2px);
     box-shadow: 3px 3px 0px var(--charcoal);
 }
 
